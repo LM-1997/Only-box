@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 是面向同人 Only 活动与新媒体运营的纯前端图片工具箱。">
+  <title>Only-box｜同人 Only 活动新媒体工具箱</title>
+  <link rel="stylesheet" href="./only-box.css">
+</head>
+<body>
+  <nav class="site-nav" aria-label="主导航">
+    <div class="nav-inner">
+      <a class="brand-link" href="./index.html" aria-current="page"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a>
+      <div class="nav-links"><a href="./index.html" aria-current="page">首页</a><a href="./grid-cutter.html">九宫格</a><a href="./avatar-preview.html">头像预览</a></div>
+    </div>
+  </nav>
+  <main class="home-main">
+    <div class="page-shell">
+      <section class="home-hero">
+        <div>
+          <div class="eyebrow-pill">For fan events & creators</div>
+          <h1>Only-box<br>快速协助摊主宣发</h1>
+          <p class="lead">Only-box主要是为同人 Only 活动、新媒体运营和个人创作者准备的轻量图片工具箱。无需上传服务器，打开浏览器就能完成裁切、预览与导出。</p>
+          <div class="home-actions"><a class="primary-link" href="#tools">开始使用</a><a class="secondary-link" href="./grid-cutter.html">制作九宫格</a></div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="visual-card grid-visual"><div class="mini-grid"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="visual-label"><span>九宫格裁切</span><span>20px gap</span></div></div>
+          <div class="visual-card avatar-visual"><div class="avatar-sample"><span>O</span></div><div class="visual-label"><span>头像场景预览</span><span>1:1</span></div></div>
+        </div>
+      </section>
+      <section class="feature-strip" aria-label="工具特点">
+        <div class="feature-item"><strong>纯本地处理</strong><span>图片只在当前浏览器中处理，不会上传到服务器。</span></div>
+        <div class="feature-item"><strong>打开即用</strong><span>纯 HTML、CSS 与 JavaScript，适合 Git 静态页面托管。</span></div>
+        <div class="feature-item"><strong>移动端友好</strong><span>手机、平板与电脑都能完成主要操作和导出。</span></div>
+      </section>
+      <section class="tools-section" id="tools">
+        <p class="section-kicker">Tools</p><h2 class="section-heading">当前可用工具</h2><p class="section-copy">每个工具都附有操作教程和设置建议。第一次使用时，按页面中的步骤操作即可。</p>
+        <div class="tools-grid">
+          <a class="tool-card" href="./grid-cutter.html"><span class="tool-card-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4h16v16H4zM9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16" stroke="currentColor" stroke-width="1.8"/></svg></span><p class="tagline">Social layout</p><h3>九宫格裁切</h3><p>把一张主视觉切成 9 张 1000 × 1000px 图片。可设置平台间隙、拖动构图，并在预览模式和下载模式之间切换。</p><span class="enter-link">进入工具 <span aria-hidden="true">→</span></span></a>
+          <a class="tool-card" href="./avatar-preview.html"><span class="tool-card-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4.8 20c.8-4 3.2-6 7.2-6s6.4 2 7.2 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><p class="tagline">Identity check</p><h3>头像 Logo 预览</h3><p>一次检查圆形、方形、圆角、透明通道、深浅背景与小尺寸表现，快速判断活动 Logo 是否适合作为社交平台头像。</p><span class="enter-link">进入工具 <span aria-hidden="true">→</span></span></a>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>© 2026 Only-box · 同人 Only 活动新媒体工具箱</span><span>所有图片均在浏览器本地处理</span></div></footer>
+</body>
+</html>

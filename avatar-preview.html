@@ -1,0 +1,1340 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Only-box 头像 Logo 预览工具：检查不同形状、背景和小尺寸下的实际显示效果。">
+  <title>头像 Logo 预览｜Only-box</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --text: #17202a;
+      --muted: #64748b;
+      --line: #d9e1ea;
+      --accent: #256f8f;
+      --accent-dark: #18526b;
+      --danger: #b42318;
+      --radius: 8px;
+      --shadow: 0 16px 40px rgba(22, 34, 51, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      color: var(--text);
+      background:
+        linear-gradient(135deg, rgba(37, 111, 143, 0.08), transparent 34%),
+        linear-gradient(315deg, rgba(92, 125, 78, 0.08), transparent 30%),
+        var(--bg);
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+      gap: 10px;
+      width: min(1440px, 100%);
+      min-height: 100dvh;
+      margin: 0 auto;
+      padding: 10px;
+    }
+
+    .sidebar,
+    .workspace {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(217, 225, 234, 0.9);
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border-radius: var(--radius);
+      align-self: start;
+      position: sticky;
+      top: 10px;
+      max-height: calc(100dvh - 20px);
+      overflow: auto;
+    }
+
+    .workspace {
+      min-width: 0;
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+
+    .brand h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .brand p,
+    .hint,
+    .file-meta,
+    .empty p,
+    .card-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .card-note {
+      display: none;
+    }
+
+    .section {
+      display: grid;
+      gap: 8px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .dropzone {
+      display: grid;
+      place-items: center;
+      min-height: 88px;
+      padding: 10px;
+      text-align: center;
+      border: 1.5px dashed #9bb0c2;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(45deg, #eef2f6 25%, transparent 25%),
+        linear-gradient(-45deg, #eef2f6 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #eef2f6 75%),
+        linear-gradient(-45deg, transparent 75%, #eef2f6 75%),
+        #fbfdff;
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+    }
+
+    .dropzone.is-dragging {
+      border-color: var(--accent);
+      background-color: #eef8fb;
+      transform: scale(0.99);
+    }
+
+    .dropzone strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .hidden-input {
+      display: none;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border-radius: var(--radius);
+      color: #fff;
+      background: var(--accent);
+      transition: background 160ms ease, transform 160ms ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--accent-dark);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn.secondary {
+      color: var(--text);
+      background: #e8eef4;
+    }
+
+    .btn.secondary:hover {
+      background: #dce6ef;
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .control {
+      display: grid;
+      gap: 4px;
+    }
+
+    .control label,
+    .toggle span {
+      color: #344256;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .range-line {
+      display: grid;
+      grid-template-columns: 1fr 58px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="color"] {
+      width: 100%;
+      height: 30px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .value {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+    }
+
+    .toggle input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+    }
+
+    .swatch {
+      width: 100%;
+      aspect-ratio: 1;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72);
+    }
+
+    .swatch.is-active {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+    }
+
+    .topbar h2 {
+      margin: 0 0 3px;
+      font-size: 19px;
+      line-height: 1.3;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 8px;
+    }
+
+    .preview-card {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .preview-card.wide {
+      grid-column: span 2;
+    }
+
+    .preview-card.full {
+      grid-column: 1 / -1;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .card-title {
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-size {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stage-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 158px;
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      overflow: hidden;
+    }
+
+    .stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: min(var(--stage-size, 150px), 145px);
+      height: min(var(--stage-size, 150px), 145px);
+      background: var(--stage-bg, #ffffff);
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .stage.circle {
+      border-radius: 50%;
+    }
+
+    .stage.rounded {
+      border-radius: var(--avatar-radius, 24px);
+    }
+
+    .stage.square {
+      border-radius: 0;
+    }
+
+    .stage.checker {
+      background:
+        linear-gradient(45deg, #dfe6ed 25%, transparent 25%),
+        linear-gradient(-45deg, #dfe6ed 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #dfe6ed 75%),
+        linear-gradient(-45deg, transparent 75%, #dfe6ed 75%),
+        #ffffff;
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    }
+
+    .logo-img {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: var(--auto-logo-width, 100%);
+      height: var(--auto-logo-height, 100%);
+      object-fit: fill;
+      transform: translate(
+        calc(-50% + var(--auto-logo-x, 0%) + var(--offset-x, 0px)),
+        calc(-50% + var(--auto-logo-y, 0%) + var(--offset-y, 0px))
+      ) scale(var(--logo-scale, 1));
+      transform-origin: center;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .safe-line::after {
+      content: "";
+      position: absolute;
+      inset: var(--safe-inset, 18px);
+      border: 1px dashed rgba(180, 35, 24, 0.62);
+      border-radius: inherit;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 150px;
+      text-align: center;
+      border: 1px dashed #b9c8d6;
+      border-radius: var(--radius);
+      background: #fbfdff;
+    }
+
+    .empty strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 16px;
+    }
+
+    .mini-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      min-height: 140px;
+      padding: 10px;
+      border-radius: var(--radius);
+      background: #eef2f6;
+    }
+
+    .background-matrix {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(92px, 1fr));
+      gap: 8px;
+      min-height: 250px;
+      padding: 10px;
+      border-radius: var(--radius);
+      background: #eef2f6;
+    }
+
+    .background-group {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .background-label {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .shape-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .shape-demo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .shape-demo .stage-wrap {
+      min-height: auto;
+      background: transparent;
+    }
+
+    .shape-demo span {
+      color: var(--muted);
+      width: 28px;
+      font-size: 10px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .mini-item {
+      display: grid;
+      justify-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .mini-item .stage-wrap {
+      min-height: auto;
+      background: transparent;
+    }
+
+    .mini-item span {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .export-status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1180px) {
+      .preview-grid {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+
+      .background-matrix {
+        grid-template-columns: repeat(4, minmax(92px, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .app {
+        grid-template-columns: 1fr;
+        padding: 12px;
+      }
+
+      .sidebar {
+        position: static;
+        max-height: none;
+      }
+
+      .topbar {
+        display: grid;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .preview-grid,
+      .button-row,
+      .mini-strip,
+      .background-matrix {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-card.wide {
+        grid-column: auto;
+      }
+
+      .stage-wrap,
+      .mini-strip {
+        min-height: 190px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="./only-box.css">
+</head>
+<body class="avatar-tool">
+  <nav class="site-nav" aria-label="主导航"><div class="nav-inner"><a class="brand-link" href="./index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="./index.html">首页</a><a href="./grid-cutter.html">九宫格</a><a href="./avatar-preview.html" aria-current="page">头像预览</a></div></div></nav>
+  <div class="page-shell">
+    <header class="tool-hero"><div><div class="eyebrow-pill">Avatar preview</div><h1>头像 Logo 预览</h1><p class="lead">在正式发布前，一次检查活动 Logo 在圆形、方形、圆角头像、透明通道、深浅背景和小尺寸中的实际表现。</p></div><aside class="hero-note"><strong>推荐先看圆形与 40px 小尺寸</strong><p>社交平台最常见的问题不是原图不清晰，而是圆形裁切切掉文字、主体太贴边，或缩小后细节糊成一团。</p></aside></header>
+    <section class="guide-section" aria-labelledby="avatar-guide-title"><p class="section-kicker">How to use</p><h2 class="section-heading" id="avatar-guide-title">三步完成头像检查</h2><p class="section-copy">工具不会修改原文件。所有缩放、位置和背景设置只用于当前预览与最终导出的检查图。</p><div class="guide-grid"><article class="guide-card"><span class="guide-number">01</span><h3>上传原始 Logo</h3><p>优先使用透明背景的 PNG、WebP 或 SVG。保留适量画布边缘，避免主体一开始就贴住图片边界。</p></article><article class="guide-card"><span class="guide-number">02</span><h3>调整安全范围</h3><p>先看圆形头像，再用缩放、水平位置、垂直位置与安全边距微调。参考线以内应保留核心文字和识别元素。</p></article><article class="guide-card"><span class="guide-number">03</span><h3>检查并导出</h3><p>切换黑、白、灰和品牌色背景，重点检查透明边缘与反差；最后确认 40px 和 28px 下是否仍能辨认。</p></article></div><div class="guide-callout"><span class="callout-icon">✓</span><div><strong>什么状态算通过？</strong><p>圆形裁切不丢主体、浅色和深色底都能看清边缘、40px 下仍能识别核心图形。若小尺寸过于复杂，建议另做一版简化头像。</p></div></div></section>
+  </div>
+  <main class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>预览设置</h1>
+        <p>上传 Logo 后调整背景、位置与安全边距，右侧会实时更新全部场景。</p>
+      </div>
+
+      <section class="section">
+        <div class="section-title">上传 Logo</div>
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <span>
+            <strong>点击或拖拽图片到这里</strong>
+            <span class="hint">支持 PNG、SVG、WebP、JPG、GIF</span>
+          </span>
+        </label>
+        <input class="hidden-input" id="fileInput" type="file" accept="image/*,.svg,.webp">
+        <p class="file-meta" id="fileMeta">当前未选择文件</p>
+        <div class="button-row">
+          <button class="btn secondary" id="resetBtn" type="button">重置参数</button>
+          <button class="btn" id="exportBtn" type="button" disabled>导出预览图</button>
+        </div>
+        <div class="export-status" id="exportStatus" aria-live="polite"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-title">背景测试</div>
+        <div class="swatches" id="swatches"></div>
+        <div class="control">
+          <label for="customBg">自定义背景色</label>
+          <input id="customBg" type="color" value="#ffffff">
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title">显示调整</div>
+        <div class="control">
+          <label for="scale">缩放</label>
+          <div class="range-line">
+            <input id="scale" type="range" min="50" max="180" value="100">
+            <span class="value" id="scaleValue">100%</span>
+          </div>
+        </div>
+        <div class="control">
+          <label for="offsetX">水平位置</label>
+          <div class="range-line">
+            <input id="offsetX" type="range" min="-60" max="60" value="0">
+            <span class="value" id="offsetXValue">0px</span>
+          </div>
+        </div>
+        <div class="control">
+          <label for="offsetY">垂直位置</label>
+          <div class="range-line">
+            <input id="offsetY" type="range" min="-60" max="60" value="0">
+            <span class="value" id="offsetYValue">0px</span>
+          </div>
+        </div>
+        <div class="control">
+          <label for="radius">圆角方形圆角</label>
+          <div class="range-line">
+            <input id="radius" type="range" min="0" max="42" value="18">
+            <span class="value" id="radiusValue">18%</span>
+          </div>
+        </div>
+        <div class="control">
+          <label for="padding">安全边距</label>
+          <div class="range-line">
+            <input id="padding" type="range" min="0" max="36" value="0">
+            <span class="value" id="paddingValue">0%</span>
+          </div>
+        </div>
+        <label class="toggle">
+          <span>显示安全边距参考线</span>
+          <input id="safeGuide" type="checkbox" checked>
+        </label>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="topbar">
+        <div>
+          <h2>头像场景预览</h2>
+          <p class="hint">默认保留完整 logo，可通过缩放和位置微调模拟平台头像裁切后的效果。</p>
+        </div>
+      </div>
+
+      <div class="empty" id="emptyState">
+        <div>
+          <strong>先上传一个 logo</strong>
+          <p>透明 logo 建议重点看黑、白和彩色背景下的边缘与识别度。</p>
+        </div>
+      </div>
+
+      <div class="preview-grid" id="previewGrid" hidden>
+        <article class="preview-card">
+          <div class="card-head">
+            <span class="card-title">圆形头像</span>
+            <span class="card-size">1:1</span>
+          </div>
+          <div class="stage-wrap">
+            <div class="stage circle safe-line" data-bg="custom" data-shape="circle" style="--stage-size: 168px">
+              <img class="logo-img" alt="圆形头像预览">
+            </div>
+          </div>
+          <p class="card-note">适合微信、微博、社交账号头像。</p>
+        </article>
+
+        <article class="preview-card">
+          <div class="card-head">
+            <span class="card-title">正方形头像</span>
+            <span class="card-size">1:1</span>
+          </div>
+          <div class="stage-wrap">
+            <div class="stage square safe-line" data-bg="custom" data-shape="square" style="--stage-size: 168px">
+              <img class="logo-img" alt="正方形头像预览">
+            </div>
+          </div>
+          <p class="card-note">适合系统账号、后台列表和品牌资料。</p>
+        </article>
+
+        <article class="preview-card">
+          <div class="card-head">
+            <span class="card-title">圆角方形</span>
+            <span class="card-size">可调圆角</span>
+          </div>
+          <div class="stage-wrap">
+            <div class="stage rounded safe-line" data-bg="custom" data-shape="rounded" style="--stage-size: 168px">
+              <img class="logo-img" alt="圆角方形头像预览">
+            </div>
+          </div>
+          <p class="card-note">适合应用图标、企业微信和工具头像。</p>
+        </article>
+
+        <article class="preview-card">
+          <div class="card-head">
+            <span class="card-title">透明通道检查</span>
+            <span class="card-size">棋盘格</span>
+          </div>
+          <div class="stage-wrap">
+            <div class="stage rounded checker safe-line" data-bg="checker" data-shape="rounded" style="--stage-size: 168px">
+              <img class="logo-img" alt="透明通道检查预览">
+            </div>
+          </div>
+          <p class="card-note">检查透明边缘、白边、暗边和裁切余量。</p>
+        </article>
+
+        <article class="preview-card full">
+          <div class="card-head">
+            <span class="card-title">不同背景色</span>
+            <span class="card-size">圆形 / 方形 / 圆角</span>
+          </div>
+          <div class="background-matrix" id="backgroundStrip"></div>
+          <p class="card-note">用于判断 logo 在深色、浅色和品牌色底上的识别度。</p>
+        </article>
+
+        <article class="preview-card wide">
+          <div class="card-head">
+            <span class="card-title">社交平台小尺寸</span>
+            <span class="card-size">96 / 64 / 40 / 28</span>
+          </div>
+          <div class="mini-strip" id="sizeStrip"></div>
+          <p class="card-note">小尺寸下仍然清楚，才适合作为头像主图。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 头像 Logo 预览</span><a href="./grid-cutter.html">还需要制作活动九宫格？前往九宫格裁切 →</a></div></footer>
+
+  <script>
+    const state = {
+      fileName: "",
+      imageSrc: "",
+      image: null,
+      trim: null,
+      scale: 100,
+      offsetX: 0,
+      offsetY: 0,
+      radius: 18,
+      padding: 0,
+      safeGuide: true,
+      bg: "#ffffff"
+    };
+
+    const swatchList = [
+      { name: "白色", value: "#ffffff" },
+      { name: "黑色", value: "#111827" },
+      { name: "浅灰", value: "#eef2f6" },
+      { name: "深灰", value: "#364152" },
+      { name: "品牌蓝", value: "#1d6fa3" },
+      { name: "品牌红", value: "#c2413b" },
+      { name: "品牌绿", value: "#5f7f45" }
+    ];
+
+    const bgPreviewList = swatchList;
+    const bgShapes = [
+      { label: "圆", shape: "circle", className: "circle" },
+      { label: "方", shape: "square", className: "square" },
+      { label: "圆角", shape: "rounded", className: "rounded" }
+    ];
+    const miniSizes = [96, 64, 48, 40, 28];
+
+    const els = {
+      fileInput: document.getElementById("fileInput"),
+      dropzone: document.getElementById("dropzone"),
+      fileMeta: document.getElementById("fileMeta"),
+      resetBtn: document.getElementById("resetBtn"),
+      exportBtn: document.getElementById("exportBtn"),
+      exportStatus: document.getElementById("exportStatus"),
+      customBg: document.getElementById("customBg"),
+      swatches: document.getElementById("swatches"),
+      scale: document.getElementById("scale"),
+      offsetX: document.getElementById("offsetX"),
+      offsetY: document.getElementById("offsetY"),
+      radius: document.getElementById("radius"),
+      padding: document.getElementById("padding"),
+      safeGuide: document.getElementById("safeGuide"),
+      scaleValue: document.getElementById("scaleValue"),
+      offsetXValue: document.getElementById("offsetXValue"),
+      offsetYValue: document.getElementById("offsetYValue"),
+      radiusValue: document.getElementById("radiusValue"),
+      paddingValue: document.getElementById("paddingValue"),
+      emptyState: document.getElementById("emptyState"),
+      previewGrid: document.getElementById("previewGrid"),
+      backgroundStrip: document.getElementById("backgroundStrip"),
+      sizeStrip: document.getElementById("sizeStrip")
+    };
+
+    function init() {
+      renderSwatches();
+      renderMiniStrips();
+      bindEvents();
+      updateControls();
+      updatePreview();
+    }
+
+    function bindEvents() {
+      els.fileInput.addEventListener("change", event => {
+        const file = event.target.files[0];
+        if (file) loadFile(file);
+      });
+
+      ["dragenter", "dragover"].forEach(type => {
+        els.dropzone.addEventListener(type, event => {
+          event.preventDefault();
+          els.dropzone.classList.add("is-dragging");
+        });
+      });
+
+      ["dragleave", "drop"].forEach(type => {
+        els.dropzone.addEventListener(type, event => {
+          event.preventDefault();
+          els.dropzone.classList.remove("is-dragging");
+        });
+      });
+
+      els.dropzone.addEventListener("drop", event => {
+        const file = event.dataTransfer.files[0];
+        if (file) loadFile(file);
+      });
+
+      els.resetBtn.addEventListener("click", resetControls);
+      els.exportBtn.addEventListener("click", exportPreview);
+      els.customBg.addEventListener("input", event => {
+        state.bg = event.target.value;
+        updatePreview();
+        renderSwatches();
+      });
+
+      [
+        ["scale", "scale"],
+        ["offsetX", "offsetX"],
+        ["offsetY", "offsetY"],
+        ["radius", "radius"],
+        ["padding", "padding"]
+      ].forEach(([id, key]) => {
+        els[id].addEventListener("input", event => {
+          state[key] = Number(event.target.value);
+          updateControls();
+          updatePreview();
+        });
+      });
+
+      els.safeGuide.addEventListener("change", event => {
+        state.safeGuide = event.target.checked;
+        updatePreview();
+      });
+    }
+
+    function renderSwatches() {
+      els.swatches.innerHTML = "";
+      swatchList.forEach(item => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "swatch" + (item.value.toLowerCase() === state.bg.toLowerCase() ? " is-active" : "");
+        button.style.background = item.value;
+        button.title = item.name;
+        button.setAttribute("aria-label", item.name);
+        button.addEventListener("click", () => {
+          state.bg = item.value;
+          els.customBg.value = item.value;
+          renderSwatches();
+          updatePreview();
+        });
+        els.swatches.appendChild(button);
+      });
+    }
+
+    function renderMiniStrips() {
+      els.backgroundStrip.innerHTML = "";
+      bgPreviewList.forEach(item => {
+        const node = createBackgroundGroup(item);
+        els.backgroundStrip.appendChild(node);
+      });
+
+      els.sizeStrip.innerHTML = "";
+      miniSizes.forEach(size => {
+        const node = createMiniItem(size + "px", size, state.bg);
+        els.sizeStrip.appendChild(node);
+      });
+    }
+
+    function createBackgroundGroup(bgItem) {
+      const group = document.createElement("div");
+      group.className = "background-group";
+
+      const label = document.createElement("div");
+      label.className = "background-label";
+      label.textContent = bgItem.name;
+      group.appendChild(label);
+
+      const row = document.createElement("div");
+      row.className = "shape-row";
+
+      bgShapes.forEach(shape => {
+        const demo = document.createElement("div");
+        demo.className = "shape-demo";
+
+        const wrap = document.createElement("div");
+        wrap.className = "stage-wrap";
+
+        const stage = document.createElement("div");
+        stage.className = "stage " + shape.className;
+        stage.dataset.bg = bgItem.value;
+        stage.dataset.shape = shape.shape;
+        stage.style.setProperty("--stage-size", "64px");
+        stage.style.setProperty("--stage-bg", bgItem.value);
+
+        const img = document.createElement("img");
+        img.className = "logo-img";
+        img.alt = bgItem.name + shape.label + "形预览";
+        stage.appendChild(img);
+        wrap.appendChild(stage);
+
+        const text = document.createElement("span");
+        text.textContent = shape.label;
+
+        demo.appendChild(wrap);
+        demo.appendChild(text);
+        row.appendChild(demo);
+      });
+
+      group.appendChild(row);
+      return group;
+    }
+
+    function createMiniItem(label, size, bg) {
+      const item = document.createElement("div");
+      item.className = "mini-item";
+
+      const wrap = document.createElement("div");
+      wrap.className = "stage-wrap";
+
+      const stage = document.createElement("div");
+      stage.className = "stage circle";
+      stage.dataset.bg = bg;
+      stage.dataset.shape = "circle";
+      stage.style.setProperty("--stage-size", size + "px");
+      stage.style.setProperty("--stage-bg", bg);
+
+      const img = document.createElement("img");
+      img.className = "logo-img";
+      img.alt = label + " 预览";
+      stage.appendChild(img);
+      wrap.appendChild(stage);
+
+      const text = document.createElement("span");
+      text.textContent = label;
+
+      item.appendChild(wrap);
+      item.appendChild(text);
+      return item;
+    }
+
+    function loadFile(file) {
+      if (!file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".svg")) {
+        els.fileMeta.textContent = "请选择图片文件";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          state.fileName = file.name;
+          state.imageSrc = reader.result;
+          state.image = img;
+          state.trim = getVisiblePixelBounds(img);
+          els.fileMeta.textContent = `${file.name} · ${img.naturalWidth || "-"} x ${img.naturalHeight || "-"}`;
+          els.exportBtn.disabled = false;
+          els.exportStatus.textContent = "";
+          updatePreview();
+        };
+        img.onerror = () => {
+          els.fileMeta.textContent = "图片读取失败，请换一个文件试试";
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function resetControls() {
+      Object.assign(state, {
+        scale: 100,
+        offsetX: 0,
+        offsetY: 0,
+        radius: 18,
+        padding: 0,
+        safeGuide: true,
+        bg: "#ffffff"
+      });
+      updateControls();
+      renderSwatches();
+      renderMiniStrips();
+      updatePreview();
+      els.exportStatus.textContent = "";
+    }
+
+    function updateControls() {
+      els.scale.value = state.scale;
+      els.offsetX.value = state.offsetX;
+      els.offsetY.value = state.offsetY;
+      els.radius.value = state.radius;
+      els.padding.value = state.padding;
+      els.safeGuide.checked = state.safeGuide;
+      els.customBg.value = state.bg;
+
+      els.scaleValue.textContent = state.scale + "%";
+      els.offsetXValue.textContent = state.offsetX + "px";
+      els.offsetYValue.textContent = state.offsetY + "px";
+      els.radiusValue.textContent = state.radius + "%";
+      els.paddingValue.textContent = state.padding + "%";
+    }
+
+    function updatePreview() {
+      const hasImage = Boolean(state.imageSrc);
+      els.emptyState.hidden = hasImage;
+      els.previewGrid.hidden = !hasImage;
+
+      document.documentElement.style.setProperty("--logo-scale", state.scale / 100);
+      document.documentElement.style.setProperty("--offset-x", state.offsetX + "px");
+      document.documentElement.style.setProperty("--offset-y", state.offsetY + "px");
+      document.documentElement.style.setProperty("--avatar-radius", state.radius + "%");
+      document.documentElement.style.setProperty("--padding-safe", state.padding + "%");
+      document.documentElement.style.setProperty("--safe-inset", state.padding + "%");
+
+      document.querySelectorAll(".stage").forEach(stage => {
+        if (!stage.classList.contains("checker")) {
+          const explicitBg = stage.dataset.bg && stage.dataset.bg.startsWith("#") ? stage.dataset.bg : state.bg;
+          stage.style.setProperty("--stage-bg", explicitBg);
+        }
+        stage.classList.toggle("safe-line", state.safeGuide);
+      });
+
+      renderMiniStrips();
+      applyLogoImages();
+    }
+
+    function applyLogoImages() {
+      const metrics = getAutoFitMetrics();
+      document.querySelectorAll(".logo-img").forEach(img => {
+        if (!state.imageSrc) return;
+        img.src = state.imageSrc;
+        img.style.setProperty("--auto-logo-width", metrics.widthPct + "%");
+        img.style.setProperty("--auto-logo-height", metrics.heightPct + "%");
+        img.style.setProperty("--auto-logo-x", metrics.shiftXPct + "%");
+        img.style.setProperty("--auto-logo-y", metrics.shiftYPct + "%");
+      });
+    }
+
+    function getAutoFitMetrics() {
+      const img = state.image;
+      const naturalW = img ? (img.naturalWidth || img.width || 1) : 1;
+      const naturalH = img ? (img.naturalHeight || img.height || 1) : 1;
+      const trim = state.trim || { x: 0, y: 0, width: naturalW, height: naturalH };
+      const targetPct = Math.max(1, 100 - state.padding * 2);
+      const fit = targetPct / Math.max(trim.width, trim.height, 1);
+      const widthPct = naturalW * fit;
+      const heightPct = naturalH * fit;
+      const trimCenterX = trim.x + trim.width / 2;
+      const trimCenterY = trim.y + trim.height / 2;
+      const shiftXPct = (naturalW / 2 - trimCenterX) * fit;
+      const shiftYPct = (naturalH / 2 - trimCenterY) * fit;
+      return { widthPct, heightPct, shiftXPct, shiftYPct };
+    }
+
+    function getVisiblePixelBounds(img) {
+      const naturalW = img.naturalWidth || img.width || 1;
+      const naturalH = img.naturalHeight || img.height || 1;
+      const maxScan = 1200;
+      const ratio = Math.min(1, maxScan / Math.max(naturalW, naturalH));
+      const scanW = Math.max(1, Math.round(naturalW * ratio));
+      const scanH = Math.max(1, Math.round(naturalH * ratio));
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      canvas.width = scanW;
+      canvas.height = scanH;
+      ctx.clearRect(0, 0, scanW, scanH);
+      try {
+        ctx.drawImage(img, 0, 0, scanW, scanH);
+      } catch (error) {
+        return { x: 0, y: 0, width: naturalW, height: naturalH };
+      }
+
+      let minX = scanW;
+      let minY = scanH;
+      let maxX = -1;
+      let maxY = -1;
+      let data;
+      try {
+        data = ctx.getImageData(0, 0, scanW, scanH).data;
+      } catch (error) {
+        return { x: 0, y: 0, width: naturalW, height: naturalH };
+      }
+
+      for (let y = 0; y < scanH; y++) {
+        for (let x = 0; x < scanW; x++) {
+          const alpha = data[(y * scanW + x) * 4 + 3];
+          if (alpha > 12) {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+
+      if (maxX < 0 || maxY < 0) {
+        return { x: 0, y: 0, width: naturalW, height: naturalH };
+      }
+
+      return {
+        x: minX / ratio,
+        y: minY / ratio,
+        width: Math.max(1, (maxX - minX + 1) / ratio),
+        height: Math.max(1, (maxY - minY + 1) / ratio)
+      };
+    }
+
+    function exportPreview() {
+      if (!state.image) return;
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const scale = 2;
+      const width = 1200;
+      const height = 1100;
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = "#f4f6f8";
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "700 30px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText("头像 Logo 预览", 42, 58);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "15px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText(state.fileName || "logo", 42, 86);
+
+      const cards = [
+        { title: "圆形头像", x: 42, y: 122, w: 250, h: 250, size: 158, bg: state.bg, shape: "circle" },
+        { title: "正方形头像", x: 318, y: 122, w: 250, h: 250, size: 158, bg: state.bg, shape: "square" },
+        { title: "圆角方形", x: 594, y: 122, w: 250, h: 250, size: 158, bg: state.bg, shape: "rounded" },
+        { title: "透明检查", x: 870, y: 122, w: 250, h: 250, size: 158, bg: "checker", shape: "rounded" }
+      ];
+
+      cards.forEach(card => drawCard(ctx, card));
+
+      drawBackgroundMatrixCard(ctx, {
+        title: "不同背景色",
+        x: 42,
+        y: 408,
+        w: 1078,
+        h: 300
+      });
+
+      drawStripCard(ctx, {
+        title: "社交平台小尺寸",
+        x: 42,
+        y: 740,
+        w: 528,
+        h: 200,
+        items: miniSizes.map(size => ({ label: size + "px", bg: state.bg, size, shape: "circle" }))
+      });
+
+      drawNotes(ctx, 740, 592, 528);
+
+      const link = document.createElement("a");
+      link.download = "only-box-avatar-preview.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      els.exportStatus.textContent = "已导出 only-box-avatar-preview.png";
+    }
+
+    function drawCard(ctx, card) {
+      drawPanel(ctx, card.x, card.y, card.w, card.h);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "700 16px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText(card.title, card.x + 18, card.y + 30);
+      drawAvatar(ctx, card.x + (card.w - card.size) / 2, card.y + 58, card.size, card.bg, card.shape);
+    }
+
+    function drawStripCard(ctx, config) {
+      drawPanel(ctx, config.x, config.y, config.w, config.h);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "700 16px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText(config.title, config.x + 18, config.y + 30);
+      const gap = 24;
+      const slot = (config.w - 36 - gap * (config.items.length - 1)) / config.items.length;
+      config.items.forEach((item, index) => {
+        const cx = config.x + 18 + index * (slot + gap) + slot / 2;
+        drawAvatar(ctx, cx - item.size / 2, config.y + 64, item.size, item.bg, item.shape);
+        ctx.fillStyle = "#64748b";
+        ctx.font = "13px Segoe UI, Microsoft YaHei, Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(item.label, cx, config.y + 160);
+        ctx.textAlign = "left";
+      });
+    }
+
+    function drawBackgroundMatrixCard(ctx, config) {
+      drawPanel(ctx, config.x, config.y, config.w, config.h);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "700 16px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText(config.title, config.x + 18, config.y + 30);
+
+      const gap = 14;
+      const startX = config.x + 18;
+      const startY = config.y + 58;
+      const slot = (config.w - 36 - gap * (bgPreviewList.length - 1)) / bgPreviewList.length;
+
+      bgPreviewList.forEach((bgItem, index) => {
+        const colX = startX + index * (slot + gap);
+        const centerX = colX + slot / 2;
+        ctx.fillStyle = "#64748b";
+        ctx.font = "12px Segoe UI, Microsoft YaHei, Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(bgItem.name, centerX, startY);
+
+        bgShapes.forEach((shape, shapeIndex) => {
+          const size = 52;
+          const y = startY + 18 + shapeIndex * 70;
+          drawAvatar(ctx, centerX - size / 2 - 12, y, size, bgItem.value, shape.shape);
+          ctx.fillStyle = "#64748b";
+          ctx.font = "11px Segoe UI, Microsoft YaHei, Arial";
+          ctx.fillText(shape.label, centerX + 42, y + 31);
+        });
+        ctx.textAlign = "left";
+      });
+    }
+
+    function drawNotes(ctx, y = 650, x = 42, w = 1078) {
+      drawPanel(ctx, x, y, w, 160);
+      ctx.fillStyle = "#17202a";
+      ctx.font = "700 16px Segoe UI, Microsoft YaHei, Arial";
+      ctx.fillText("检查建议", x + 22, y + 34);
+      ctx.fillStyle = "#475569";
+      ctx.font = "14px Segoe UI, Microsoft YaHei, Arial";
+      [
+        "1. 圆形头像中主体不要贴边。",
+        "2. 深浅和彩色背景都要检查边缘。",
+        "3. 小尺寸不清楚时建议用简化版。"
+      ].forEach((line, index) => ctx.fillText(line, x + 22, y + 68 + index * 26));
+    }
+
+    function drawPanel(ctx, x, y, w, h) {
+      ctx.save();
+      roundedRect(ctx, x, y, w, h, 8);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = "#d9e1ea";
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawAvatar(ctx, x, y, size, bg, shape) {
+      ctx.save();
+      const radius = shape === "circle" ? size / 2 : shape === "rounded" ? size * state.radius / 100 : 0;
+      roundedRect(ctx, x, y, size, size, radius);
+      ctx.clip();
+
+      if (bg === "checker") {
+        drawChecker(ctx, x, y, size, size, 12);
+      } else {
+        ctx.fillStyle = bg;
+        ctx.fillRect(x, y, size, size);
+      }
+
+      drawContainedImage(ctx, state.image, x, y, size, size);
+      ctx.restore();
+
+      if (state.safeGuide) {
+        ctx.save();
+        const inset = size * state.padding / 100;
+        roundedRect(ctx, x + inset, y + inset, size - inset * 2, size - inset * 2, Math.max(0, radius - inset));
+        ctx.strokeStyle = "rgba(180, 35, 24, 0.62)";
+        ctx.setLineDash([5, 4]);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function drawContainedImage(ctx, img, x, y, w, h) {
+      const safe = Math.min(w, h) * state.padding / 100;
+      const boxW = Math.max(1, w - safe * 2);
+      const boxH = Math.max(1, h - safe * 2);
+      const naturalW = img.naturalWidth || img.width || 1;
+      const naturalH = img.naturalHeight || img.height || 1;
+      const trim = state.trim || { x: 0, y: 0, width: naturalW, height: naturalH };
+      const fit = Math.min(boxW / trim.width, boxH / trim.height) * state.scale / 100;
+      const drawW = naturalW * fit;
+      const drawH = naturalH * fit;
+      const trimCenterX = trim.x + trim.width / 2;
+      const trimCenterY = trim.y + trim.height / 2;
+      const dx = x + w / 2 - trimCenterX * fit + state.offsetX;
+      const dy = y + h / 2 - trimCenterY * fit + state.offsetY;
+      ctx.drawImage(img, dx, dy, drawW, drawH);
+    }
+
+    function drawChecker(ctx, x, y, w, h, cell) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#dfe6ed";
+      for (let row = 0; row < Math.ceil(h / cell); row++) {
+        for (let col = 0; col < Math.ceil(w / cell); col++) {
+          if ((row + col) % 2 === 0) {
+            ctx.fillRect(x + col * cell, y + row * cell, cell, cell);
+          }
+        }
+      }
+    }
+
+    function roundedRect(ctx, x, y, w, h, r) {
+      const radius = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    }
+
+    init();
+  </script>
+</body>
+</html>
