@@ -383,25 +383,12 @@
       position: absolute;
       left: 50%;
       top: 50%;
-      width: var(--auto-logo-width, 100%);
-      height: var(--auto-logo-height, 100%);
-      object-fit: fill;
-      transform: translate(
-        calc(-50% + var(--auto-logo-x, 0%) + var(--offset-x, 0px)),
-        calc(-50% + var(--auto-logo-y, 0%) + var(--offset-y, 0px))
-      ) scale(var(--logo-scale, 1));
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transform: translate(-50%, -50%);
       transform-origin: center;
       user-select: none;
-      pointer-events: none;
-    }
-
-    .safe-line::after {
-      content: "";
-      position: absolute;
-      inset: var(--safe-inset, 18px);
-      border: 1px dashed rgba(180, 35, 24, 0.62);
-      border-radius: inherit;
-      z-index: 2;
       pointer-events: none;
     }
 
@@ -515,6 +502,79 @@
       line-height: 1.5;
     }
 
+    .compact-title {
+      font-size: 13px;
+    }
+
+    .compact-title span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .crop-panel {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #f8fafc;
+    }
+
+    .crop-frame {
+      position: relative;
+      width: min(100%, 220px);
+      aspect-ratio: 1;
+      justify-self: center;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(45deg, #dde6ee 25%, transparent 25%),
+        linear-gradient(-45deg, #dde6ee 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #dde6ee 75%),
+        linear-gradient(-45deg, transparent 75%, #dde6ee 75%),
+        #fff;
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      cursor: grab;
+      touch-action: auto;
+    }
+
+    .crop-frame:active {
+      cursor: grabbing;
+    }
+
+    .crop-frame::after {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border: 1px dashed rgba(37, 111, 143, 0.7);
+      border-radius: 6px;
+      pointer-events: none;
+    }
+
+    .crop-frame img {
+      display: block;
+      max-width: 100%;
+      height: 100%;
+    }
+
+    .crop-frame .cropper-container {
+      max-width: 100% !important;
+      max-height: 220px !important;
+    }
+
+    .crop-frame .cropper-container,
+    .crop-frame .cropper-canvas,
+    .crop-frame .cropper-drag-box,
+    .crop-frame .cropper-crop-box {
+      touch-action: none;
+    }
+
+    .crop-panel .btn {
+      width: 100%;
+    }
     @media (max-width: 1180px) {
       .preview-grid {
         grid-template-columns: repeat(2, minmax(180px, 1fr));
@@ -558,20 +618,21 @@
         min-height: 190px;
       }
     }
-  </style>
+</style>
   <link rel="stylesheet" href="./only-box.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
 </head>
 <body class="avatar-tool">
-  <nav class="site-nav" aria-label="主导航"><div class="nav-inner"><a class="brand-link" href="./index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="./index.html">首页</a><a href="./grid-cutter.html">九宫格</a><a href="./avatar-preview.html" aria-current="page">头像预览</a></div></div></nav>
+  <nav class="site-nav" aria-label="主导航"><div class="nav-inner"><a class="brand-link" href="./index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="./index.html">首页</a><a href="./grid-cutter.html">九宫格</a><a href="./avatar-preview.html" aria-current="page">头像预览</a><a href="./payment-merge.html">收款码</a></div></div></nav>
   <div class="page-shell">
     <header class="tool-hero"><div><div class="eyebrow-pill">Avatar preview</div><h1>头像 Logo 预览</h1><p class="lead">在正式发布前，一次检查活动 Logo 在圆形、方形、圆角头像、透明通道、深浅背景和小尺寸中的实际表现。</p></div><aside class="hero-note"><strong>推荐先看圆形与 40px 小尺寸</strong><p>社交平台最常见的问题不是原图不清晰，而是圆形裁切切掉文字、主体太贴边，或缩小后细节糊成一团。</p></aside></header>
-    <section class="guide-section" aria-labelledby="avatar-guide-title"><p class="section-kicker">How to use</p><h2 class="section-heading" id="avatar-guide-title">三步完成头像检查</h2><p class="section-copy">工具不会修改原文件。所有缩放、位置和背景设置只用于当前预览与最终导出的检查图。</p><div class="guide-grid"><article class="guide-card"><span class="guide-number">01</span><h3>上传原始 Logo</h3><p>优先使用透明背景的 PNG、WebP 或 SVG。保留适量画布边缘，避免主体一开始就贴住图片边界。</p></article><article class="guide-card"><span class="guide-number">02</span><h3>调整安全范围</h3><p>先看圆形头像，再用缩放、水平位置、垂直位置与安全边距微调。参考线以内应保留核心文字和识别元素。</p></article><article class="guide-card"><span class="guide-number">03</span><h3>检查并导出</h3><p>切换黑、白、灰和品牌色背景，重点检查透明边缘与反差；最后确认 40px 和 28px 下是否仍能辨认。</p></article></div><div class="guide-callout"><span class="callout-icon">✓</span><div><strong>什么状态算通过？</strong><p>圆形裁切不丢主体、浅色和深色底都能看清边缘、40px 下仍能识别核心图形。若小尺寸过于复杂，建议另做一版简化头像。</p></div></div></section>
+    <section class="guide-section" aria-labelledby="avatar-guide-title"><p class="section-kicker">How to use</p><h2 class="section-heading" id="avatar-guide-title">三步完成头像检查</h2><p class="section-copy">工具不会修改原文件。上传后先用裁切框确定 1:1 头像范围，再检查不同形状、背景和小尺寸表现。</p><div class="guide-grid"><article class="guide-card"><span class="guide-number">01</span><h3>上传原始 Logo</h3><p>优先使用透明背景的 PNG、WebP 或 SVG。横图、竖图和非正方形图片都可以先裁切再预览。</p></article><article class="guide-card"><span class="guide-number">02</span><h3>裁切头像范围</h3><p>用 Cropper.js 拖动和缩放图片，确认最终头像只显示裁切框里的内容。</p></article><article class="guide-card"><span class="guide-number">03</span><h3>检查并导出</h3><p>切换黑、白、灰和品牌色背景，重点检查透明边缘与反差；最后确认 40px 和 28px 下是否仍能辨认。</p></article></div><div class="guide-callout"><span class="callout-icon">✓</span><div><strong>什么状态算通过？</strong><p>圆形裁切不丢主体、浅色和深色底都能看清边缘、40px 下仍能识别核心图形。若小尺寸过于复杂，建议另做一版简化头像。</p></div></div></section>
   </div>
   <main class="app">
     <aside class="sidebar">
       <div class="brand">
         <h1>预览设置</h1>
-        <p>上传 Logo 后调整背景、位置与安全边距，右侧会实时更新全部场景。</p>
+        <p>上传 Logo 后先裁切头像范围，再切换背景和圆角，右侧会实时更新全部场景。</p>
       </div>
 
       <section class="section">
@@ -584,6 +645,11 @@
         </label>
         <input class="hidden-input" id="fileInput" type="file" accept="image/*,.svg,.webp">
         <p class="file-meta" id="fileMeta">当前未选择文件</p>
+        <div class="crop-panel" id="cropPanel" hidden>
+          <div class="section-title compact-title">头像裁切 <span>拖动图片或用滑杆微调</span></div>
+          <div class="crop-frame" id="cropFrame"><img id="cropImage" alt="头像裁切预览"></div>
+          <button class="btn secondary" id="resetCropBtn" type="button">重置裁切</button>
+        </div>
         <div class="button-row">
           <button class="btn secondary" id="resetBtn" type="button">重置参数</button>
           <button class="btn" id="exportBtn" type="button" disabled>导出预览图</button>
@@ -601,28 +667,7 @@
       </section>
 
       <section class="section">
-        <div class="section-title">显示调整</div>
-        <div class="control">
-          <label for="scale">缩放</label>
-          <div class="range-line">
-            <input id="scale" type="range" min="50" max="180" value="100">
-            <span class="value" id="scaleValue">100%</span>
-          </div>
-        </div>
-        <div class="control">
-          <label for="offsetX">水平位置</label>
-          <div class="range-line">
-            <input id="offsetX" type="range" min="-60" max="60" value="0">
-            <span class="value" id="offsetXValue">0px</span>
-          </div>
-        </div>
-        <div class="control">
-          <label for="offsetY">垂直位置</label>
-          <div class="range-line">
-            <input id="offsetY" type="range" min="-60" max="60" value="0">
-            <span class="value" id="offsetYValue">0px</span>
-          </div>
-        </div>
+        <div class="section-title">头像样式</div>
         <div class="control">
           <label for="radius">圆角方形圆角</label>
           <div class="range-line">
@@ -630,17 +675,6 @@
             <span class="value" id="radiusValue">18%</span>
           </div>
         </div>
-        <div class="control">
-          <label for="padding">安全边距</label>
-          <div class="range-line">
-            <input id="padding" type="range" min="0" max="36" value="0">
-            <span class="value" id="paddingValue">0%</span>
-          </div>
-        </div>
-        <label class="toggle">
-          <span>显示安全边距参考线</span>
-          <input id="safeGuide" type="checkbox" checked>
-        </label>
       </section>
     </aside>
 
@@ -648,7 +682,7 @@
       <div class="topbar">
         <div>
           <h2>头像场景预览</h2>
-          <p class="hint">默认保留完整 logo，可通过缩放和位置微调模拟平台头像裁切后的效果。</p>
+          <p class="hint">头像预览只显示左侧裁切框内的 1:1 图片，切换背景后可检查透明边缘与小尺寸识别度。</p>
         </div>
       </div>
 
@@ -666,7 +700,7 @@
             <span class="card-size">1:1</span>
           </div>
           <div class="stage-wrap">
-            <div class="stage circle safe-line" data-bg="custom" data-shape="circle" style="--stage-size: 168px">
+            <div class="stage circle" data-bg="custom" data-shape="circle" style="--stage-size: 168px">
               <img class="logo-img" alt="圆形头像预览">
             </div>
           </div>
@@ -679,7 +713,7 @@
             <span class="card-size">1:1</span>
           </div>
           <div class="stage-wrap">
-            <div class="stage square safe-line" data-bg="custom" data-shape="square" style="--stage-size: 168px">
+            <div class="stage square" data-bg="custom" data-shape="square" style="--stage-size: 168px">
               <img class="logo-img" alt="正方形头像预览">
             </div>
           </div>
@@ -692,7 +726,7 @@
             <span class="card-size">可调圆角</span>
           </div>
           <div class="stage-wrap">
-            <div class="stage rounded safe-line" data-bg="custom" data-shape="rounded" style="--stage-size: 168px">
+            <div class="stage rounded" data-bg="custom" data-shape="rounded" style="--stage-size: 168px">
               <img class="logo-img" alt="圆角方形头像预览">
             </div>
           </div>
@@ -705,7 +739,7 @@
             <span class="card-size">棋盘格</span>
           </div>
           <div class="stage-wrap">
-            <div class="stage rounded checker safe-line" data-bg="checker" data-shape="rounded" style="--stage-size: 168px">
+            <div class="stage rounded checker" data-bg="checker" data-shape="rounded" style="--stage-size: 168px">
               <img class="logo-img" alt="透明通道检查预览">
             </div>
           </div>
@@ -735,18 +769,17 @@
 
   <footer class="site-footer"><div class="footer-inner"><span>Only-box · 头像 Logo 预览</span><a href="./grid-cutter.html">还需要制作活动九宫格？前往九宫格裁切 →</a></div></footer>
 
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
   <script>
     const state = {
       fileName: "",
       imageSrc: "",
       image: null,
       trim: null,
-      scale: 100,
-      offsetX: 0,
-      offsetY: 0,
+      croppedSrc: "",
+      croppedCanvas: null,
+      cropper: null,
       radius: 18,
-      padding: 0,
-      safeGuide: true,
       bg: "#ffffff"
     };
 
@@ -772,22 +805,17 @@
       fileInput: document.getElementById("fileInput"),
       dropzone: document.getElementById("dropzone"),
       fileMeta: document.getElementById("fileMeta"),
+      cropPanel: document.getElementById("cropPanel"),
+      cropFrame: document.getElementById("cropFrame"),
+      cropImage: document.getElementById("cropImage"),
+      resetCropBtn: document.getElementById("resetCropBtn"),
       resetBtn: document.getElementById("resetBtn"),
       exportBtn: document.getElementById("exportBtn"),
       exportStatus: document.getElementById("exportStatus"),
       customBg: document.getElementById("customBg"),
       swatches: document.getElementById("swatches"),
-      scale: document.getElementById("scale"),
-      offsetX: document.getElementById("offsetX"),
-      offsetY: document.getElementById("offsetY"),
       radius: document.getElementById("radius"),
-      padding: document.getElementById("padding"),
-      safeGuide: document.getElementById("safeGuide"),
-      scaleValue: document.getElementById("scaleValue"),
-      offsetXValue: document.getElementById("offsetXValue"),
-      offsetYValue: document.getElementById("offsetYValue"),
       radiusValue: document.getElementById("radiusValue"),
-      paddingValue: document.getElementById("paddingValue"),
       emptyState: document.getElementById("emptyState"),
       previewGrid: document.getElementById("previewGrid"),
       backgroundStrip: document.getElementById("backgroundStrip"),
@@ -828,6 +856,13 @@
       });
 
       els.resetBtn.addEventListener("click", resetControls);
+      els.resetCropBtn.addEventListener("click", () => {
+        resetCropToImage();
+        syncCropperToTrim();
+        updatePreview();
+      });
+      els.exportBtn.addEventListener("click", exportPreview);
+      // Cropper.js 在固定裁切容器内处理拖拽和缩放，页面其余区域保持正常滚动。
       els.exportBtn.addEventListener("click", exportPreview);
       els.customBg.addEventListener("input", event => {
         state.bg = event.target.value;
@@ -836,22 +871,13 @@
       });
 
       [
-        ["scale", "scale"],
-        ["offsetX", "offsetX"],
-        ["offsetY", "offsetY"],
-        ["radius", "radius"],
-        ["padding", "padding"]
+        ["radius", "radius"]
       ].forEach(([id, key]) => {
         els[id].addEventListener("input", event => {
           state[key] = Number(event.target.value);
           updateControls();
           updatePreview();
         });
-      });
-
-      els.safeGuide.addEventListener("change", event => {
-        state.safeGuide = event.target.checked;
-        updatePreview();
       });
     }
 
@@ -973,11 +999,12 @@
           state.fileName = file.name;
           state.imageSrc = reader.result;
           state.image = img;
-          state.trim = getVisiblePixelBounds(img);
+          resetCropToImage();
           els.fileMeta.textContent = `${file.name} · ${img.naturalWidth || "-"} x ${img.naturalHeight || "-"}`;
           els.exportBtn.disabled = false;
           els.exportStatus.textContent = "";
           updatePreview();
+          setupAvatarCropper(reader.result);
         };
         img.onerror = () => {
           els.fileMeta.textContent = "图片读取失败，请换一个文件试试";
@@ -989,14 +1016,11 @@
 
     function resetControls() {
       Object.assign(state, {
-        scale: 100,
-        offsetX: 0,
-        offsetY: 0,
         radius: 18,
-        padding: 0,
-        safeGuide: true,
         bg: "#ffffff"
       });
+      resetCropToImage();
+      syncCropperToTrim();
       updateControls();
       renderSwatches();
       renderMiniStrips();
@@ -1005,39 +1029,25 @@
     }
 
     function updateControls() {
-      els.scale.value = state.scale;
-      els.offsetX.value = state.offsetX;
-      els.offsetY.value = state.offsetY;
       els.radius.value = state.radius;
-      els.padding.value = state.padding;
-      els.safeGuide.checked = state.safeGuide;
       els.customBg.value = state.bg;
 
-      els.scaleValue.textContent = state.scale + "%";
-      els.offsetXValue.textContent = state.offsetX + "px";
-      els.offsetYValue.textContent = state.offsetY + "px";
       els.radiusValue.textContent = state.radius + "%";
-      els.paddingValue.textContent = state.padding + "%";
     }
 
     function updatePreview() {
       const hasImage = Boolean(state.imageSrc);
       els.emptyState.hidden = hasImage;
       els.previewGrid.hidden = !hasImage;
+      els.cropPanel.hidden = !hasImage;
 
-      document.documentElement.style.setProperty("--logo-scale", state.scale / 100);
-      document.documentElement.style.setProperty("--offset-x", state.offsetX + "px");
-      document.documentElement.style.setProperty("--offset-y", state.offsetY + "px");
       document.documentElement.style.setProperty("--avatar-radius", state.radius + "%");
-      document.documentElement.style.setProperty("--padding-safe", state.padding + "%");
-      document.documentElement.style.setProperty("--safe-inset", state.padding + "%");
 
       document.querySelectorAll(".stage").forEach(stage => {
         if (!stage.classList.contains("checker")) {
           const explicitBg = stage.dataset.bg && stage.dataset.bg.startsWith("#") ? stage.dataset.bg : state.bg;
           stage.style.setProperty("--stage-bg", explicitBg);
         }
-        stage.classList.toggle("safe-line", state.safeGuide);
       });
 
       renderMiniStrips();
@@ -1045,33 +1055,115 @@
     }
 
     function applyLogoImages() {
-      const metrics = getAutoFitMetrics();
       document.querySelectorAll(".logo-img").forEach(img => {
-        if (!state.imageSrc) return;
-        img.src = state.imageSrc;
-        img.style.setProperty("--auto-logo-width", metrics.widthPct + "%");
-        img.style.setProperty("--auto-logo-height", metrics.heightPct + "%");
-        img.style.setProperty("--auto-logo-x", metrics.shiftXPct + "%");
-        img.style.setProperty("--auto-logo-y", metrics.shiftYPct + "%");
+        if (!state.croppedSrc && !state.imageSrc) return;
+        img.src = state.croppedSrc || state.imageSrc;
       });
     }
 
-    function getAutoFitMetrics() {
-      const img = state.image;
-      const naturalW = img ? (img.naturalWidth || img.width || 1) : 1;
-      const naturalH = img ? (img.naturalHeight || img.height || 1) : 1;
-      const trim = state.trim || { x: 0, y: 0, width: naturalW, height: naturalH };
-      const targetPct = Math.max(1, 100 - state.padding * 2);
-      const fit = targetPct / Math.max(trim.width, trim.height, 1);
-      const widthPct = naturalW * fit;
-      const heightPct = naturalH * fit;
-      const trimCenterX = trim.x + trim.width / 2;
-      const trimCenterY = trim.y + trim.height / 2;
-      const shiftXPct = (naturalW / 2 - trimCenterX) * fit;
-      const shiftYPct = (naturalH / 2 - trimCenterY) * fit;
-      return { widthPct, heightPct, shiftXPct, shiftYPct };
+
+    function setupAvatarCropper(src) {
+      if (!els.cropImage || typeof Cropper === "undefined") return;
+      if (state.cropper) state.cropper.destroy();
+      els.cropImage.src = src;
+      requestAnimationFrame(() => {
+        state.cropper = new Cropper(els.cropImage, {
+          aspectRatio: 1,
+          viewMode: 1,
+          dragMode: "move",
+          autoCropArea: 0.88,
+          background: false,
+          responsive: true,
+          restore: false,
+          guides: true,
+          center: true,
+          highlight: false,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          toggleDragModeOnDblclick: false,
+          ready() {
+            syncCropperToTrim();
+          },
+          crop() {
+            updateAvatarCropFromCropper();
+          }
+        });
+      });
     }
 
+    function syncCropperToTrim() {
+      if (!state.cropper || !state.trim) return;
+      state.cropper.setData({
+        x: state.trim.x,
+        y: state.trim.y,
+        width: state.trim.width,
+        height: state.trim.height
+      });
+    }
+
+    function updateAvatarCropFromCropper() {
+      if (!state.cropper || !state.image) return;
+      const data = state.cropper.getData(true);
+      const size = Math.max(1, Math.min(data.width, data.height));
+      state.trim = {
+        x: clamp(data.x, 0, (state.image.naturalWidth || state.image.width || 1) - size),
+        y: clamp(data.y, 0, (state.image.naturalHeight || state.image.height || 1) - size),
+        width: size,
+        height: size
+      };
+      updateCroppedAvatar();
+      updatePreview();
+    }
+
+    function updateCroppedAvatar() {
+      if (!state.image || !state.trim) return;
+      if (state.cropper) {
+        const cropped = state.cropper.getCroppedCanvas({
+          width: 1024,
+          height: 1024,
+          imageSmoothingEnabled: true,
+          imageSmoothingQuality: "high"
+        });
+        if (cropped) {
+          state.croppedCanvas = cropped;
+          state.croppedSrc = cropped.toDataURL("image/png");
+          return;
+        }
+      }
+
+      const fallback = document.createElement("canvas");
+      fallback.width = 1024;
+      fallback.height = 1024;
+      const fallbackCtx = fallback.getContext("2d");
+      fallbackCtx.drawImage(state.image, state.trim.x, state.trim.y, state.trim.width, state.trim.height, 0, 0, 1024, 1024);
+      state.croppedCanvas = fallback;
+      state.croppedSrc = fallback.toDataURL("image/png");
+    }
+
+    function resetCropToImage() {
+      if (!state.image) return;
+      const bounds = getVisiblePixelBounds(state.image);
+      state.trim = squareCropFromBounds(bounds);
+      updateCroppedAvatar();
+    }
+
+    function squareCropFromBounds(bounds) {
+      const naturalW = state.image.naturalWidth || state.image.width || 1;
+      const naturalH = state.image.naturalHeight || state.image.height || 1;
+      const contentSize = Math.min(Math.max(bounds.width, bounds.height, 1), naturalW, naturalH);
+      const fullSize = Math.min(naturalW, naturalH);
+      const mostlyFullImage = bounds.width > naturalW * 0.92 && bounds.height > naturalH * 0.92;
+      const size = mostlyFullImage ? fullSize : contentSize;
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+      const x = clamp(centerX - size / 2, 0, naturalW - size);
+      const y = clamp(centerY - size / 2, 0, naturalH - size);
+      return { x, y, width: size, height: size };
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
     function getVisiblePixelBounds(img) {
       const naturalW = img.naturalWidth || img.width || 1;
       const naturalH = img.naturalHeight || img.height || 1;
@@ -1275,34 +1367,19 @@
         ctx.fillRect(x, y, size, size);
       }
 
-      drawContainedImage(ctx, state.image, x, y, size, size);
+      drawContainedImage(ctx, state.croppedCanvas || state.image, x, y, size, size);
       ctx.restore();
-
-      if (state.safeGuide) {
-        ctx.save();
-        const inset = size * state.padding / 100;
-        roundedRect(ctx, x + inset, y + inset, size - inset * 2, size - inset * 2, Math.max(0, radius - inset));
-        ctx.strokeStyle = "rgba(180, 35, 24, 0.62)";
-        ctx.setLineDash([5, 4]);
-        ctx.stroke();
-        ctx.restore();
-      }
     }
 
     function drawContainedImage(ctx, img, x, y, w, h) {
-      const safe = Math.min(w, h) * state.padding / 100;
-      const boxW = Math.max(1, w - safe * 2);
-      const boxH = Math.max(1, h - safe * 2);
+      if (!img) return;
       const naturalW = img.naturalWidth || img.width || 1;
       const naturalH = img.naturalHeight || img.height || 1;
-      const trim = state.trim || { x: 0, y: 0, width: naturalW, height: naturalH };
-      const fit = Math.min(boxW / trim.width, boxH / trim.height) * state.scale / 100;
+      const fit = Math.min(w / naturalW, h / naturalH);
       const drawW = naturalW * fit;
       const drawH = naturalH * fit;
-      const trimCenterX = trim.x + trim.width / 2;
-      const trimCenterY = trim.y + trim.height / 2;
-      const dx = x + w / 2 - trimCenterX * fit + state.offsetX;
-      const dy = y + h / 2 - trimCenterY * fit + state.offsetY;
+      const dx = x + w / 2 - drawW / 2;
+      const dy = y + h / 2 - drawH / 2;
       ctx.drawImage(img, dx, dy, drawW, drawH);
     }
 

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 收款码合并图工具：导入微信和支付宝收款码，裁切二维码区域后生成横版或竖版合并图。">
+  <title>收款码合并图｜Only-box</title>
+  <link rel="stylesheet" href="./only-box.css">
+  <link rel="stylesheet" href="./payment-merge.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+</head>
+<body>
+  <nav class="site-nav" aria-label="主导航">
+    <div class="nav-inner">
+      <a class="brand-link" href="./index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a>
+      <div class="nav-links"><a href="./index.html">首页</a><a href="./grid-cutter.html">九宫格</a><a href="./avatar-preview.html">头像预览</a><a href="./payment-merge.html" aria-current="page">收款码</a></div>
+    </div>
+  </nav>
+  <main class="pay-page">
+    <section class="workbench">
+      <aside class="panel control-panel">
+        <div class="tool-head">
+          <h1>收款码合并图</h1>
+          <p>导入微信和支付宝收款码，裁切二维码本体后合成一张摊位用付款图。</p>
+        </div>
+
+        <div class="upload-list">
+          <div class="mini-upload wechat" data-platform="wechat">
+            <strong>微信收款码</strong>
+            <label class="mini-button" for="wechatInput">上传<input id="wechatInput" type="file" accept="image/*" hidden></label>
+            <span id="wechatMeta">未选择</span>
+          </div>
+          <div class="mini-upload alipay" data-platform="alipay">
+            <strong>支付宝收款码</strong>
+            <label class="mini-button" for="alipayInput">上传<input id="alipayInput" type="file" accept="image/*" hidden></label>
+            <span id="alipayMeta">未选择</span>
+          </div>
+        </div>
+
+        <div class="crop-list">
+          <div class="pay-crop" id="wechatCropPanel" hidden>
+            <div class="crop-head"><strong>微信二维码裁切</strong><button class="mini-reset" id="wechatCropReset" type="button">自动框选</button></div>
+            <div class="pay-crop-frame"><img id="wechatCropImage" alt="微信二维码裁切预览"></div>
+          </div>
+          <div class="pay-crop" id="alipayCropPanel" hidden>
+            <div class="crop-head"><strong>支付宝二维码裁切</strong><button class="mini-reset" id="alipayCropReset" type="button">自动框选</button></div>
+            <div class="pay-crop-frame"><img id="alipayCropImage" alt="支付宝二维码裁切预览"></div>
+          </div>
+        </div>
+
+        <div class="field"><label>合并版式 <output id="layoutValue">横版 4:3</output></label><div class="segmented"><button class="active" id="landscapeBtn" type="button">横版 4:3</button><button id="portraitBtn" type="button">竖版 9:16</button></div></div>
+        <div class="field"><label>平台色样式 <output id="frameModeValue">边框</output></label><div class="segmented three"><button id="frameNoneBtn" type="button">无</button><button class="active" id="frameBorderBtn" type="button">边框</button><button id="frameFillBtn" type="button">填充</button></div></div>
+
+        <div class="copy-stack field wide">
+          <div class="copy-row"><label for="titleInput">主标题</label><input id="titleColorInput" type="color" value="#17231d" aria-label="主标题颜色"><input id="titleInput" class="text-input" value="扫码付款"></div>
+          <div class="copy-row"><label for="subtitleInput">副标题</label><input id="subtitleColorInput" type="color" value="#69736d" aria-label="副标题颜色"><input id="subtitleInput" class="text-input" value="微信 / 支付宝均可使用"></div>
+          <div class="copy-row"><label for="footerInput">底部</label><input id="footerColorInput" type="color" value="#17231d" aria-label="底部提示颜色"><input id="footerInput" class="text-input" value="请确认金额后再付款，感谢支持"></div>
+        </div>
+
+        <div class="bg-section field wide">
+          <div class="section-top"><label for="bgColorInput">背景色</label></div>
+          <div class="bg-row"><label class="color-picker" for="bgColorInput"><span class="swatch" id="bgColorSwatch"></span><span>点这里选背景色</span><input id="bgColorInput" type="color" value="#fbfaf5"></label><input id="bgColorHexInput" class="text-input hex-input" value="#fbfaf5" spellcheck="false"></div>
+          <div class="range-line"><span>覆盖</span><input id="bgColorOpacityRange" type="range" min="0" max="100" value="100"><output id="bgColorOpacityValue">100%</output></div>
+        </div>
+
+        <div class="bg-section field wide">
+          <div class="section-top"><label for="bgInput">背景图</label></div>
+          <div class="bg-row"><label class="btn secondary bg-file" for="bgInput">选择图片<input id="bgInput" type="file" accept="image/*" hidden></label><button class="btn secondary" id="clearBgBtn" type="button">清除</button></div>
+          <div class="bg-crop-panel" id="bgCropPanel" hidden><div class="crop-head"><strong>背景图裁切</strong><span id="bgCropRatio">横版 4:3</span></div><div class="bg-crop-frame"><img id="bgCropImage" alt="背景图裁切预览"></div></div>
+          <div class="range-line"><span>覆盖</span><input id="bgImageOpacityRange" type="range" min="0" max="100" value="22"><output id="bgImageOpacityValue">22%</output></div>
+          <div class="range-line"><span>缩放</span><input id="bgImageScaleRange" type="range" min="80" max="220" value="100"><output id="bgImageScaleValue">100%</output></div>
+        </div>
+
+        <p class="status" id="status">请先导入两张收款码图片。</p>
+      </aside>
+
+      <section class="panel preview-panel">
+        <div class="preview-head"><div><h2>合并图预览</h2><p>两个二维码按相同尺寸居中绘制，横版和竖版使用独立排版。</p></div><button class="btn primary download" id="downloadBtn" type="button" disabled>下载 PNG</button></div>
+        <div class="canvas-wrap"><canvas id="posterCanvas" width="2400" height="1800" aria-label="收款码合并图预览"></canvas></div>
+      </section>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 收款码合并图</span><a href="./index.html">返回工具箱首页 →</a></div></footer>
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script src="./payment-merge.js"></script>
+</body>
+</html>
