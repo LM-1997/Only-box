@@ -16,6 +16,9 @@
     backgroundImageScale: 100,
     backgroundCropper: null,
     backgroundCrop: null,
+    backgroundRelease: null,
+    backgroundLoadToken: 0,
+    paymentLoadTokens: { wechat: 0, alipay: 0 },
     wechat: null,
     alipay: null
   };
@@ -60,22 +63,6 @@
     downloadBtn: $("downloadBtn")
   };
 
-  function readFile(file) {
-    return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(file);
-    });
-  }
-
-  function loadImage(src) {
-    return new Promise(resolve => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.src = src;
-    });
-  }
-
   function normalizeHex(value) {
     const raw = String(value).trim();
     const full = raw.startsWith("#") ? raw : `#${raw}`;
@@ -102,34 +89,40 @@
   }
 
   async function loadPaymentImage(file, platform) {
-    if (!file || !file.type.startsWith("image/")) {
-      controls.status.textContent = "请选择图片文件。";
-      return;
-    }
+    const token = ++state.paymentLoadTokens[platform];
     controls.status.textContent = "正在识别二维码区域……";
-    const src = await readFile(file);
-    const image = await loadImage(src);
-    const qr = await findQrRegion(file, image, platform);
-    state[platform] = { image, src, qr, autoQr: { ...qr }, cropper: null, name: file.name, width: image.naturalWidth, height: image.naturalHeight };
-    setupPaymentCropper(platform);
-    updateMeta(platform);
-    render();
+    try {
+      const opened = await MobileImageUpload.open(file);
+      if (token !== state.paymentLoadTokens[platform]) {
+        opened.release();
+        return;
+      }
+      const qr = await findQrRegion(opened.image, platform);
+      const previous = state[platform];
+      if (previous && previous.cropper) previous.cropper.destroy();
+      if (previous && previous.release) previous.release();
+      state[platform] = { image: opened.image, src: opened.src, qr, autoQr: { ...qr }, cropper: null, release: opened.release, name: file.name, width: opened.image.naturalWidth, height: opened.image.naturalHeight };
+      setupPaymentCropper(platform);
+      updateMeta(platform);
+      controls.status.textContent = opened.converted ? "HEIC 照片已转换，可继续调整。" : "图片已载入，可继续调整。";
+      render();
+    } catch (error) {
+      controls.status.textContent = MobileImageUpload.errorMessage(error);
+    }
   }
 
-  async function findQrRegion(file, image, platform) {
-    const detected = await detectByBarcode(file);
+  async function findQrRegion(image, platform) {
+    const detected = await detectByBarcode(image);
     const estimated = detected || estimateByFinderPatterns(image) || estimateByDensity(image);
     const refined = refineDarkRegion(image, estimated) || estimated;
     return squareRegion(refined, image.naturalWidth, image.naturalHeight, platform === "alipay" ? 0.006 : 0.008, Boolean(detected || estimated.detected));
   }
 
-  async function detectByBarcode(file) {
+  async function detectByBarcode(image) {
     if (!("BarcodeDetector" in window)) return null;
     try {
       const detector = new BarcodeDetector({ formats: ["qr_code"] });
-      const bitmap = await createImageBitmap(file);
-      const results = await detector.detect(bitmap);
-      if (bitmap.close) bitmap.close();
+      const results = await detector.detect(image);
       if (!results.length) return null;
       const box = results.sort((a, b) => b.boundingBox.width * b.boundingBox.height - a.boundingBox.width * a.boundingBox.height)[0].boundingBox;
       return { x: box.x, y: box.y, width: box.width, height: box.height, detected: true };
@@ -739,8 +732,8 @@
     });
   }
 
-  controls.wechatInput.addEventListener("change", event => loadPaymentImage(event.target.files[0], "wechat"));
-  controls.alipayInput.addEventListener("change", event => loadPaymentImage(event.target.files[0], "alipay"));
+  controls.wechatInput.addEventListener("change", event => { const file = event.target.files[0]; event.target.value = ""; if (file) loadPaymentImage(file, "wechat"); });
+  controls.alipayInput.addEventListener("change", event => { const file = event.target.files[0]; event.target.value = ""; if (file) loadPaymentImage(file, "alipay"); });
   controls.landscapeBtn.addEventListener("click", () => setLayout("landscape"));
   controls.portraitBtn.addEventListener("click", () => setLayout("portrait"));
   controls.frameNoneBtn.addEventListener("click", () => setFrameMode("none"));
@@ -772,14 +765,31 @@
   });
   controls.bgInput.addEventListener("change", async event => {
     const file = event.target.files[0];
-    if (!file || !file.type.startsWith("image/")) return;
-    state.backgroundImageSrc = await readFile(file);
-    state.backgroundImage = await loadImage(state.backgroundImageSrc);
-    state.backgroundColorOpacity = 0;
-    controls.bgColorOpacityRange.value = "0";
-    controls.bgColorOpacityValue.textContent = "0%";
-    setupBackgroundCropper();
-    render();
+    event.target.value = "";
+    if (!file) return;
+    const token = ++state.backgroundLoadToken;
+    controls.status.textContent = "正在读取背景图片……";
+    try {
+      const opened = await MobileImageUpload.open(file);
+      if (token !== state.backgroundLoadToken) {
+        opened.release();
+        return;
+      }
+      if (state.backgroundCropper) state.backgroundCropper.destroy();
+      state.backgroundCropper = null;
+      if (state.backgroundRelease) state.backgroundRelease();
+      state.backgroundRelease = opened.release;
+      state.backgroundImageSrc = opened.src;
+      state.backgroundImage = opened.image;
+      state.backgroundColorOpacity = 0;
+      controls.bgColorOpacityRange.value = "0";
+      controls.bgColorOpacityValue.textContent = "0%";
+      setupBackgroundCropper();
+      controls.status.textContent = opened.converted ? "HEIC 背景已转换。" : "背景图片已载入。";
+      render();
+    } catch (error) {
+      controls.status.textContent = MobileImageUpload.errorMessage(error);
+    }
   });
   controls.clearBgBtn.addEventListener("click", () => {
     if (state.backgroundCropper) state.backgroundCropper.destroy();
@@ -787,6 +797,8 @@
     state.backgroundCrop = null;
     state.backgroundImage = null;
     state.backgroundImageSrc = "";
+    if (state.backgroundRelease) state.backgroundRelease();
+    state.backgroundRelease = null;
     controls.bgCropPanel.hidden = true;
     controls.bgInput.value = "";
     state.backgroundColorOpacity = 100;
@@ -801,6 +813,10 @@
   ["wechat", "alipay"].forEach(platform => {
     const reset = $(`${platform}CropReset`);
     if (reset) reset.addEventListener("click", () => resetPaymentCropper(platform));
+  });
+  window.addEventListener("beforeunload", () => {
+    [state.wechat, state.alipay].forEach(item => { if (item && item.release) item.release(); });
+    if (state.backgroundRelease) state.backgroundRelease();
   });
   render();
 })();

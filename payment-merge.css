@@ -16,7 +16,7 @@
 .mini-button{display:inline-flex;width:58px;min-height:30px;align-items:center;justify-content:center;border-radius:10px;color:#fff;background:#237a56;font-size:12px;font-weight:850;cursor:pointer}
 .alipay .mini-button{background:#1677ff}
 .field{display:grid;gap:7px;min-width:0}
-.field label{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:780}
+.field label{display:flex;min-width:0;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:13px;font-weight:780}
 .field output{color:var(--ob-primary-dark);font-weight:850}
 .segmented{display:grid;grid-template-columns:1fr 1fr;padding:4px;border:1px solid var(--ob-line);border-radius:13px;background:#eef2ee}
 .segmented.three{grid-template-columns:repeat(3,1fr)}
@@ -59,7 +59,7 @@ input[type=range]{width:100%;accent-color:var(--ob-primary)}
 .pay-crop-frame .cropper-container,.pay-crop-frame .cropper-canvas,.pay-crop-frame .cropper-drag-box,.pay-crop-frame .cropper-crop-box,.bg-crop-frame .cropper-container,.bg-crop-frame .cropper-canvas,.bg-crop-frame .cropper-drag-box,.bg-crop-frame .cropper-crop-box{touch-action:none}
 .bg-crop-panel{display:grid;gap:8px}
 .preview-panel{position:sticky;top:78px;display:grid;gap:10px}
-.preview-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.preview-head{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.preview-head>*{min-width:0}
 .preview-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
 .preview-head p{margin:4px 0 0;color:var(--ob-muted);font-size:12px;line-height:1.5}
 .canvas-wrap{display:grid;min-height:430px;place-items:center;padding:14px;border:1px solid var(--ob-line);border-radius:18px;background:linear-gradient(135deg,#eef4ef,#fff)}
@@ -67,3 +67,4 @@ canvas{display:block;width:auto;height:auto;max-width:100%;max-height:700px;bord
 .status{min-height:18px;margin:0;color:var(--ob-muted);font-size:13px;line-height:1.55}
 @media(max-width:960px){.workbench,.control-panel{grid-template-columns:1fr}.preview-panel{position:static}.canvas-wrap{min-height:320px}.btn.download{width:100%}}
 @media(max-width:560px){.pay-page{width:calc(100% - 24px);margin-top:12px}.panel{padding:12px}.segmented,.segmented.three,.bg-row{grid-template-columns:1fr}.mini-upload{grid-template-columns:1fr;justify-items:start}.mini-upload span{grid-column:1/-1}.mini-button{width:72px}.copy-row{grid-template-columns:46px 34px minmax(0,1fr)}.range-line{grid-template-columns:58px minmax(0,1fr) 48px}.canvas-wrap{padding:10px;min-height:240px}.tool-head h1{font-size:24px}.pay-crop-frame{height:168px}.bg-crop-frame{height:150px}.pay-crop-frame .cropper-container{max-height:168px!important}.bg-crop-frame .cropper-container{max-height:150px!important}}
+@media(pointer:coarse){.mini-button,.btn,.segmented button,.mini-reset{min-height:44px}.mini-button{width:72px}.color-picker{height:44px}}

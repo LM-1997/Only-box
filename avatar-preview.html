@@ -640,10 +640,10 @@
         <label class="dropzone" id="dropzone" for="fileInput">
           <span>
             <strong>点击或拖拽图片到这里</strong>
-            <span class="hint">支持 PNG、SVG、WebP、JPG、GIF</span>
+            <span class="hint">支持 PNG、SVG、WebP、JPG、GIF、HEIC/HEIF</span>
           </span>
         </label>
-        <input class="hidden-input" id="fileInput" type="file" accept="image/*,.svg,.webp">
+        <input class="hidden-input" id="fileInput" type="file" accept="image/*,.svg,.webp,.heic,.heif">
         <p class="file-meta" id="fileMeta">当前未选择文件</p>
         <div class="crop-panel" id="cropPanel" hidden>
           <div class="section-title compact-title">头像裁切 <span>拖动图片或用滑杆微调</span></div>
@@ -770,6 +770,8 @@
   <footer class="site-footer"><div class="footer-inner"><span>Only-box · 头像 Logo 预览</span><a href="./grid-cutter.html">还需要制作活动九宫格？前往九宫格裁切 →</a></div></footer>
 
   <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+  <script src="./mobile-image-upload.js"></script>
   <script>
     const state = {
       fileName: "",
@@ -780,7 +782,9 @@
       croppedCanvas: null,
       cropper: null,
       radius: 18,
-      bg: "#ffffff"
+      bg: "#ffffff",
+      releaseImage: null,
+      loadToken: 0
     };
 
     const swatchList = [
@@ -833,6 +837,7 @@
     function bindEvents() {
       els.fileInput.addEventListener("change", event => {
         const file = event.target.files[0];
+        event.target.value = "";
         if (file) loadFile(file);
       });
 
@@ -863,7 +868,6 @@
       });
       els.exportBtn.addEventListener("click", exportPreview);
       // Cropper.js 在固定裁切容器内处理拖拽和缩放，页面其余区域保持正常滚动。
-      els.exportBtn.addEventListener("click", exportPreview);
       els.customBg.addEventListener("input", event => {
         state.bg = event.target.value;
         updatePreview();
@@ -986,32 +990,31 @@
       return item;
     }
 
-    function loadFile(file) {
-      if (!file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".svg")) {
-        els.fileMeta.textContent = "请选择图片文件";
-        return;
+    async function loadFile(file) {
+      const token = ++state.loadToken;
+      els.fileMeta.textContent = "正在读取图片…";
+      try {
+        const opened = await MobileImageUpload.open(file);
+        if (token !== state.loadToken) {
+          opened.release();
+          return;
+        }
+        if (state.cropper) state.cropper.destroy();
+        state.cropper = null;
+        if (state.releaseImage) state.releaseImage();
+        state.releaseImage = opened.release;
+        state.fileName = file.name;
+        state.imageSrc = opened.src;
+        state.image = opened.image;
+        resetCropToImage();
+        els.fileMeta.textContent = `${file.name} · ${opened.image.naturalWidth || "-"} x ${opened.image.naturalHeight || "-"}${opened.converted ? " · 已转换 HEIC" : ""}`;
+        els.exportBtn.disabled = false;
+        els.exportStatus.textContent = "";
+        updatePreview();
+        setupAvatarCropper(opened.src);
+      } catch (error) {
+        els.fileMeta.textContent = MobileImageUpload.errorMessage(error);
       }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          state.fileName = file.name;
-          state.imageSrc = reader.result;
-          state.image = img;
-          resetCropToImage();
-          els.fileMeta.textContent = `${file.name} · ${img.naturalWidth || "-"} x ${img.naturalHeight || "-"}`;
-          els.exportBtn.disabled = false;
-          els.exportStatus.textContent = "";
-          updatePreview();
-          setupAvatarCropper(reader.result);
-        };
-        img.onerror = () => {
-          els.fileMeta.textContent = "图片读取失败，请换一个文件试试";
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
     }
 
     function resetControls() {
@@ -1411,6 +1414,9 @@
       ctx.closePath();
     }
 
+    window.addEventListener("beforeunload", () => {
+      if (state.releaseImage) state.releaseImage();
+    });
     init();
   </script>
 </body>
