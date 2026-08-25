@@ -1,0 +1,70 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 价目表生成器：填写品名和价格，自动排版生成可直接打印的摊位价目表图片。">
+  <title>价目表生成器｜Only-box</title>
+  <link rel="stylesheet" href="../css/only-box.css">
+  <style>
+    :root{--tool-panel:rgba(255,255,255,.84);--tool-line:#dce4dd}
+    [hidden]{display:none!important}
+    .tool-area{width:min(1080px,calc(100% - 40px));margin:34px auto 0}
+    .panel{margin-top:16px;padding:24px;border:1px solid var(--tool-line);border-radius:var(--ob-radius);background:var(--tool-panel);box-shadow:var(--ob-shadow)}
+    .work-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.9fr);gap:24px;align-items:start}
+    .field{display:grid;gap:8px;margin-bottom:18px}
+    .field label{font-size:13px;font-weight:750}
+    .text-input{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--tool-line);border-radius:12px;color:var(--ob-ink);background:#fff;font-weight:650}
+    .text-input:focus-visible{outline:3px solid rgba(35,107,79,.18);border-color:var(--ob-primary)}
+    .items-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+    .items-head strong{font-size:13px}
+    .item-row{display:grid;grid-template-columns:minmax(0,1fr) 120px auto;gap:8px;align-items:center;margin-bottom:8px}
+    .item-row .text-input{min-height:42px}
+    .move-btn,.remove-btn{display:inline-grid;width:42px;height:42px;place-items:center;border:1px solid var(--tool-line);border-radius:11px;color:var(--ob-muted);background:#fff;font-size:15px;font-weight:800;cursor:pointer;transition:.14s}
+    .move-btn:hover{color:var(--ob-primary-dark);border-color:var(--ob-primary)}
+    .remove-btn{color:#b54a35}
+    .remove-btn:hover{border-color:#b54a35;background:var(--ob-accent-soft)}
+    .row-btns{display:flex;gap:6px}
+    .btn{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:10px 16px;border:0;border-radius:12px;font-weight:800;cursor:pointer;transition:.16s}
+    .btn.primary{color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.18)}
+    .btn.primary:hover{background:var(--ob-primary-dark)}
+    .btn.secondary{color:var(--ob-ink);background:#e8eee9}
+    .btn.block{width:100%}
+    .hint{margin:0;color:var(--ob-muted);font-size:12px;line-height:1.65}
+    .preview-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .preview-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
+    .canvas-wrap{overflow:auto;border:1px solid var(--tool-line);border-radius:14px;background:#e5e9e5}
+    .canvas-wrap canvas{display:block;width:100%;height:auto;background:#fff}
+    .status{min-height:20px;margin:12px 0 0;color:var(--ob-muted);font-size:12px}
+    @media(max-width:860px){.work-layout{grid-template-columns:1fr}}
+    @media(max-width:560px){.tool-area{width:calc(100% - 24px);margin-top:22px}.panel{padding:16px}.item-row{grid-template-columns:1fr 92px auto}.move-btn,.remove-btn{width:40px;height:40px}}
+  </style>
+</head>
+<body>
+  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
+  <main>
+    <div class="tool-area">
+      <section class="panel">
+        <div class="work-layout">
+          <div>
+            <div class="field"><label for="titleInput">价目表标题</label><input id="titleInput" class="text-input" value="价目表" maxlength="30"></div>
+            <div class="items-head"><strong>商品条目</strong><button class="btn secondary" id="addRowBtn" type="button">＋ 添加条目</button></div>
+            <div id="itemRows" role="group" aria-label="商品条目列表"></div>
+            <p class="hint">条目右侧用"↑ / ↓"调整顺序，手机上也能轻松点按。品名过长会自动换行，最多两行并以省略号收尾。</p>
+            <div class="field" style="margin-top:18px"><label for="noteInput">底部备注（可选）</label><input id="noteInput" class="text-input" value="" maxlength="60" placeholder="例如：全场满 100 减 10"></div>
+          </div>
+          <div>
+            <div class="preview-head"><h2>预览</h2><button class="btn primary" id="downloadBtn" type="button">下载 PNG</button></div>
+            <div class="canvas-wrap"><canvas id="previewCanvas" width="1000" height="800" aria-label="价目表预览"></canvas></div>
+            <p class="status" id="status" aria-live="polite">修改内容会自动更新预览。图片只在当前浏览器中生成，不会上传到服务器。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 价目表生成器</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
+  <script src="../js/mobile-image-upload.js"></script>
+  <script src="../js/canvas-utils.js"></script>
+  <script src="../js/price-list.js"></script>
+</body>
+</html>

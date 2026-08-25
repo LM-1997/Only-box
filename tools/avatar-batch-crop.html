@@ -1,0 +1,105 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 场刊头像批量裁切：批量导入照片，自动中心裁成方形，可逐张精调并导出圆形或方形头像。">
+  <title>场刊头像批量裁切｜Only-box</title>
+  <link rel="stylesheet" href="../css/only-box.css">
+  <style>
+    :root{--tool-panel:rgba(255,255,255,.84);--tool-line:#dce4dd}
+    [hidden]{display:none!important}
+    .tool-area{width:min(1080px,calc(100% - 40px));margin:34px auto 0}
+    .panel{margin-top:16px;padding:24px;border:1px solid var(--tool-line);border-radius:var(--ob-radius);background:var(--tool-panel);box-shadow:var(--ob-shadow)}
+    .settings-row{display:flex;align-items:end;gap:24px;flex-wrap:wrap;margin-bottom:18px}
+    .field{display:grid;gap:8px}
+    .field label{font-size:13px;font-weight:750}
+    .field-help,.hint{color:var(--ob-muted);font-size:12px;line-height:1.65}
+    .segmented{display:inline-grid;grid-template-columns:1fr 1fr;padding:4px;border:1px solid var(--tool-line);border-radius:13px;background:#eef2ee}
+    .segmented button{min-height:40px;padding:8px 16px;border:0;border-radius:9px;color:var(--ob-muted);background:transparent;font-size:13px;font-weight:800;cursor:pointer}
+    .segmented button.active{color:#fff;background:var(--ob-primary)}
+    .dropzone{display:grid;min-height:170px;padding:26px;place-items:center;text-align:center;border:1.5px dashed #9bbcab;border-radius:16px;background:linear-gradient(135deg,rgba(223,240,230,.66),rgba(255,255,255,.78));cursor:pointer;transition:.16s}
+    .dropzone:hover,.dropzone.drag{border-color:var(--ob-primary);background:var(--ob-primary-soft)}
+    .dropzone strong{display:block;margin-bottom:4px;font-size:16px}
+    .dropzone p{margin:0;color:var(--ob-muted);font-size:13px}
+    .avatar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
+    .avatar-card{overflow:hidden;border:1px solid var(--tool-line);border-radius:14px;background:#fff}
+    .avatar-card .thumb-wrap{position:relative;aspect-ratio:1;background:#edf0ed}
+    .avatar-card .thumb-wrap img,.avatar-card .thumb-wrap canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+    .avatar-card .a-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px}
+    .avatar-card .a-meta span{min-width:0;font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .avatar-card .a-meta button{flex:0 0 auto;min-height:32px;padding:6px 10px;border:0;border-radius:9px;color:var(--ob-primary-dark);background:var(--ob-primary-soft);font-size:12px;font-weight:800;cursor:pointer}
+    .avatar-card.done .a-meta button{color:#fff;background:var(--ob-primary)}
+    .btn{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:10px 16px;border:0;border-radius:12px;font-weight:800;cursor:pointer;transition:.16s}
+    .btn.primary{color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.18)}
+    .btn.primary:hover{background:var(--ob-primary-dark)}
+    .btn.secondary{color:var(--ob-ink);background:#e8eee9}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .result-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .result-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
+    .status{min-height:20px;margin:12px 0 0;color:var(--ob-muted);font-size:12px}
+    /* 精调弹层：单实例 Cropper 只在弹层内存在。 */
+    .modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(23,35,29,.6);backdrop-filter:blur(6px)}
+    .modal-panel{width:min(680px,100%);max-height:calc(100dvh - 40px);overflow:auto;padding:22px;border-radius:20px;background:#fff;box-shadow:var(--ob-shadow-hover)}
+    .modal-panel h3{margin:0 0 14px;font-size:18px;letter-spacing:-.03em}
+    .modal-stage{overflow:hidden;width:100%;max-width:620px;max-height:440px;border:1px solid var(--tool-line);border-radius:14px;background:#17231d}
+    .modal-stage img{display:block;max-width:100%}
+    .modal-stage .cropper-container{max-width:100%!important;max-height:440px!important}
+    .modal-stage .cropper-container,.modal-stage .cropper-canvas,.modal-stage .cropper-drag-box,.modal-stage .cropper-crop-box{touch-action:none}
+    .modal-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .modal-actions .btn{flex:1 1 120px}
+    @media(max-width:560px){.tool-area{width:calc(100% - 24px);margin-top:22px}.panel{padding:16px}.segmented{width:100%}}
+  </style>
+</head>
+<body>
+  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
+  <main>
+    <div class="tool-area">
+      <section class="panel">
+        <div class="settings-row">
+          <div class="field">
+            <label for="sizeInput">输出尺寸（px）</label>
+            <input id="sizeInput" type="number" min="100" max="1000" step="50" value="400" inputmode="numeric" style="width:112px;height:44px;padding:8px 12px;border:1px solid var(--tool-line);border-radius:12px;background:#fff;font-weight:750">
+            <span class="field-help">场刊印刷建议 ≥ 300px。</span>
+          </div>
+          <div class="field">
+            <label id="shapeLabel">输出形状</label>
+            <div class="segmented" role="group" aria-labelledby="shapeLabel">
+              <button type="button" class="active" data-shape="circle" aria-pressed="true">圆形</button>
+              <button type="button" data-shape="square" aria-pressed="false">方形</button>
+            </div>
+            <span class="field-help">圆形输出为带透明背景的 PNG。</span>
+          </div>
+          <div class="field">
+            <button class="btn primary" id="zipBtn" type="button" disabled>打包下载全部头像</button>
+            <span class="field-help">未精调的照片按“中心最大正方形”自动裁切。</span>
+          </div>
+        </div>
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <input type="file" id="fileInput" accept="image/*" multiple hidden>
+          <span><strong>点击选择或拖拽多张照片</strong><p>最多 30 张 · 图片仅在本地处理，不会上传到服务器</p></span>
+        </label>
+        <p class="status" id="status" aria-live="polite"></p>
+      </section>
+      <section class="panel" id="gridPanel" hidden>
+        <div class="result-head"><h2>头像列表</h2><span class="field-help">点击“精调”逐张确认裁切范围。</span></div>
+        <div class="avatar-grid" id="avatarGrid"></div>
+      </section>
+    </div>
+  </main>
+  <div class="modal" id="cropModal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h3 id="modalTitle">精调裁切</h3>
+      <div class="modal-stage"><img id="modalImg" alt="精调裁切预览"></div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="modalCancelBtn" type="button">取消</button>
+        <button class="btn primary" id="modalConfirmBtn" type="button">确认裁切</button>
+      </div>
+    </div>
+  </div>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 场刊头像批量裁切</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
+  <script src="../js/mobile-image-upload.js"></script>
+  <script src="../js/canvas-utils.js"></script>
+  <script src="../js/avatar-batch-crop.js"></script>
+</body>
+</html>

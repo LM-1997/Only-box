@@ -1,0 +1,104 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 摊位号牌生成器：粘贴摊位清单，批量生成号牌与指引牌图片，支持打包下载。">
+  <title>摊位号牌生成｜Only-box</title>
+  <link rel="stylesheet" href="../css/only-box.css">
+  <style>
+    :root{--tool-panel:rgba(255,255,255,.84);--tool-line:#dce4dd}
+    [hidden]{display:none!important}
+    .tool-area{width:min(1080px,calc(100% - 40px));margin:34px auto 0}
+    .panel{margin-top:16px;padding:24px;border:1px solid var(--tool-line);border-radius:var(--ob-radius);background:var(--tool-panel);box-shadow:var(--ob-shadow)}
+    .work-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.9fr);gap:24px;align-items:start}
+    .field{display:grid;gap:8px;margin-bottom:18px}
+    .field label{font-size:13px;font-weight:750}
+    .hint{margin:0;color:var(--ob-muted);font-size:12px;line-height:1.65}
+    textarea.text-input{width:100%;min-height:180px;padding:12px;border:1px solid var(--tool-line);border-radius:12px;color:var(--ob-ink);background:#fff;font-weight:650;line-height:1.8;resize:vertical}
+    .segmented{display:inline-grid;grid-template-columns:1fr 1fr;padding:4px;border:1px solid var(--tool-line);border-radius:13px;background:#eef2ee}
+    .segmented button{min-height:40px;padding:8px 14px;border:0;border-radius:9px;color:var(--ob-muted);background:transparent;font-size:13px;font-weight:800;cursor:pointer}
+    .segmented button.active{color:#fff;background:var(--ob-primary);box-shadow:0 5px 14px rgba(35,107,79,.2)}
+    .color-row{display:flex;align-items:center;gap:10px}
+    .color-row input[type=color]{width:52px;height:44px;padding:4px;border:1px solid var(--tool-line);border-radius:11px;background:#fff;cursor:pointer}
+    .btn{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:10px 16px;border:0;border-radius:12px;font-weight:800;cursor:pointer;transition:.16s}
+    .btn.primary{color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.18)}
+    .btn.primary:hover{background:var(--ob-primary-dark)}
+    .btn.secondary{color:var(--ob-ink);background:#e8eee9}
+    .btn.block{width:100%}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .preview-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .preview-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
+    .canvas-wrap{overflow:auto;max-height:520px;border:1px solid var(--tool-line);border-radius:14px;background:#e5e9e5}
+    .canvas-wrap canvas{display:block;width:100%;height:auto;background:#fff}
+    .status{min-height:20px;margin:12px 0 0;color:var(--ob-muted);font-size:12px}
+    @media(max-width:860px){.work-layout{grid-template-columns:1fr}}
+    @media(max-width:560px){.tool-area{width:calc(100% - 24px);margin-top:22px}.panel{padding:16px}.segmented{width:100%}}
+  </style>
+</head>
+<body>
+  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
+  <main>
+    <div class="tool-area">
+      <section class="panel">
+        <div class="work-layout">
+          <div>
+            <div class="field">
+              <label for="signList">摊位清单（每行一个：摊位号,名称）</label>
+              <textarea id="signList" class="text-input" spellcheck="false" placeholder="A01,古董与收藏&#10;A02,手作饰品&#10;B01">A01,古董与收藏
+A02,手作饰品
+B01,版画与周边</textarea>
+              <p class="hint">名称可以留空，只写摊位号也可以。逗号支持中英文。生成过程在本地完成，不会上传到服务器。</p>
+            </div>
+            <div class="field">
+              <label id="themeLabel">配色</label>
+              <div class="segmented" role="group" aria-labelledby="themeLabel">
+                <button type="button" class="active" data-theme="green" aria-pressed="true">品牌绿</button>
+                <button type="button" data-theme="dark" aria-pressed="false">深色</button>
+                <button type="button" data-theme="light" aria-pressed="false">浅色</button>
+              </div>
+              <p class="hint">使用主视觉背景图时，文字自动切换为白色并叠加遮罩，保证任何画面上都能读清。</p>
+            </div>
+            <div class="field">
+              <label for="headerInput">牌面顶部文字（可选）</label>
+              <input id="headerInput" class="text-input" style="width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--tool-line);border-radius:12px;background:#fff;font-weight:650" value="" maxlength="20" placeholder="例如：XX Only 活动">
+            </div>
+            <div class="field">
+              <label for="logoInput">活动 Logo（可选）</label>
+              <div class="file-row" style="display:flex;gap:10px;flex-wrap:wrap">
+                <label class="btn secondary" for="logoInput">选择 Logo<input id="logoInput" type="file" accept="image/*" hidden></label>
+                <button class="btn secondary" id="clearLogoBtn" type="button">清除</button>
+              </div>
+              <p class="hint">显示在牌面顶部居中，等比缩放不裁切，透明底 PNG 效果最好。</p>
+            </div>
+            <div class="field">
+              <label for="bgInput">主视觉背景图（可选）</label>
+              <div class="file-row" style="display:flex;gap:10px;flex-wrap:wrap">
+                <label class="btn secondary" for="bgInput">选择背景图<input id="bgInput" type="file" accept="image/*" hidden></label>
+                <button class="btn secondary" id="clearBgBtn" type="button">清除</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                <span class="hint" style="flex:0 0 auto">遮罩浓度</span>
+                <input id="overlayRange" type="range" min="0" max="70" value="35" style="flex:1;accent-color:var(--ob-primary)" aria-label="背景遮罩浓度">
+                <output id="overlayValue" style="flex:0 0 auto;font-size:12px;font-weight:750;color:var(--ob-primary-dark)">35%</output>
+              </div>
+              <p class="hint">背景图铺满牌面（居中裁切），默认 35% 深色遮罩压住画面让号牌醒目，可按画面明暗调整。图片只在本地处理，不会上传到服务器。</p>
+            </div>
+            <button class="btn primary block" id="generateBtn" type="button">生成号牌</button>
+            <p class="status" id="genStatus" aria-live="polite"></p>
+          </div>
+          <div>
+            <div class="preview-head"><h2>预览与导出</h2><button class="btn primary" id="zipBtn" type="button" disabled>打包下载 ZIP</button></div>
+            <div class="canvas-wrap"><canvas id="previewCanvas" width="1000" height="1400" aria-label="号牌预览"></canvas></div>
+            <p class="status" id="status" aria-live="polite">预览显示第一张号牌；下载 ZIP 包含全部号牌。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 摊位号牌生成</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
+  <script src="../js/mobile-image-upload.js"></script>
+  <script src="../js/canvas-utils.js"></script>
+  <script src="../js/booth-sign.js"></script>
+</body>
+</html>

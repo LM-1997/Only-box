@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -619,15 +619,10 @@
       }
     }
 </style>
-  <link rel="stylesheet" href="./only-box.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+  <link rel="stylesheet" href="../css/only-box.css">
 </head>
 <body class="avatar-tool">
-  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="./index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="./about.html">关于本项目</a></div></div></nav>
-  <div class="page-shell">
-    <header class="tool-hero"><div><div class="eyebrow-pill">Avatar preview</div><h1>头像 Logo 预览</h1><p class="lead">在正式发布前，一次检查活动 Logo 在圆形、方形、圆角头像、透明通道、深浅背景和小尺寸中的实际表现。</p></div><aside class="hero-note"><strong>推荐先看圆形与 40px 小尺寸</strong><p>社交平台最常见的问题不是原图不清晰，而是圆形裁切切掉文字、主体太贴边，或缩小后细节糊成一团。</p></aside></header>
-    <section class="guide-section" aria-labelledby="avatar-guide-title"><p class="section-kicker">How to use</p><h2 class="section-heading" id="avatar-guide-title">三步完成头像检查</h2><p class="section-copy">工具不会修改原文件。上传后先用裁切框确定 1:1 头像范围，再检查不同形状、背景和小尺寸表现。</p><div class="guide-grid"><article class="guide-card"><span class="guide-number">01</span><h3>上传原始 Logo</h3><p>优先使用透明背景的 PNG、WebP 或 SVG。横图、竖图和非正方形图片都可以先裁切再预览。</p></article><article class="guide-card"><span class="guide-number">02</span><h3>裁切头像范围</h3><p>用 Cropper.js 拖动和缩放图片，确认最终头像只显示裁切框里的内容。</p></article><article class="guide-card"><span class="guide-number">03</span><h3>检查并导出</h3><p>切换黑、白、灰和品牌色背景，重点检查透明边缘与反差；最后确认 40px 和 28px 下是否仍能辨认。</p></article></div><div class="guide-callout"><span class="callout-icon">✓</span><div><strong>什么状态算通过？</strong><p>圆形裁切不丢主体、浅色和深色底都能看清边缘、40px 下仍能识别核心图形。若小尺寸过于复杂，建议另做一版简化头像。</p></div></div></section>
-  </div>
+  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
   <main class="app">
     <aside class="sidebar">
       <div class="brand">
@@ -643,7 +638,7 @@
             <span class="hint">支持 PNG、SVG、WebP、JPG、GIF、HEIC/HEIF</span>
           </span>
         </label>
-        <input class="hidden-input" id="fileInput" type="file" accept="image/*,.svg,.webp,.heic,.heif">
+        <input class="hidden-input" id="fileInput" type="file" accept="image/*">
         <p class="file-meta" id="fileMeta">当前未选择文件</p>
         <div class="crop-panel" id="cropPanel" hidden>
           <div class="section-title compact-title">头像裁切 <span>拖动图片或用滑杆微调</span></div>
@@ -769,9 +764,7 @@
 
   <footer class="site-footer"><div class="footer-inner"><span>Only-box · 头像 Logo 预览</span><a href="./grid-cutter.html">还需要制作活动九宫格？前往九宫格裁切 →</a></div></footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-  <script src="./mobile-image-upload.js"></script>
+  <script src="../js/mobile-image-upload.js"></script>
   <script>
     const state = {
       fileName: "",
@@ -784,7 +777,8 @@
       radius: 18,
       bg: "#ffffff",
       releaseImage: null,
-      loadToken: 0
+      loadToken: 0,
+      cropUpdateTimer: 0
     };
 
     const swatchList = [
@@ -992,9 +986,15 @@
 
     async function loadFile(file) {
       const token = ++state.loadToken;
+      let opened = null;
       els.fileMeta.textContent = "正在读取图片…";
       try {
-        const opened = await MobileImageUpload.open(file);
+        opened = await MobileImageUpload.open(file);
+        if (token !== state.loadToken) {
+          opened.release();
+          return;
+        }
+        await MobileImageUpload.ensureCropper();
         if (token !== state.loadToken) {
           opened.release();
           return;
@@ -1012,7 +1012,9 @@
         els.exportStatus.textContent = "";
         updatePreview();
         setupAvatarCropper(opened.src);
+        opened = null;
       } catch (error) {
+        if (opened) opened.release();
         els.fileMeta.textContent = MobileImageUpload.errorMessage(error);
       }
     }
@@ -1088,7 +1090,7 @@
             syncCropperToTrim();
           },
           crop() {
-            updateAvatarCropFromCropper();
+            scheduleAvatarCropUpdate();
           }
         });
       });
@@ -1118,12 +1120,17 @@
       updatePreview();
     }
 
+    function scheduleAvatarCropUpdate() {
+      window.clearTimeout(state.cropUpdateTimer);
+      state.cropUpdateTimer = window.setTimeout(updateAvatarCropFromCropper, 90);
+    }
+
     function updateCroppedAvatar() {
       if (!state.image || !state.trim) return;
       if (state.cropper) {
         const cropped = state.cropper.getCroppedCanvas({
-          width: 1024,
-          height: 1024,
+          width: 512,
+          height: 512,
           imageSmoothingEnabled: true,
           imageSmoothingQuality: "high"
         });
@@ -1135,10 +1142,10 @@
       }
 
       const fallback = document.createElement("canvas");
-      fallback.width = 1024;
-      fallback.height = 1024;
+      fallback.width = 512;
+      fallback.height = 512;
       const fallbackCtx = fallback.getContext("2d");
-      fallbackCtx.drawImage(state.image, state.trim.x, state.trim.y, state.trim.width, state.trim.height, 0, 0, 1024, 1024);
+      fallbackCtx.drawImage(state.image, state.trim.x, state.trim.y, state.trim.width, state.trim.height, 0, 0, 512, 512);
       state.croppedCanvas = fallback;
       state.croppedSrc = fallback.toDataURL("image/png");
     }
@@ -1170,7 +1177,7 @@
     function getVisiblePixelBounds(img) {
       const naturalW = img.naturalWidth || img.width || 1;
       const naturalH = img.naturalHeight || img.height || 1;
-      const maxScan = 1200;
+      const maxScan = 800;
       const ratio = Math.min(1, maxScan / Math.max(naturalW, naturalH));
       const scanW = Math.max(1, Math.round(naturalW * ratio));
       const scanH = Math.max(1, Math.round(naturalH * ratio));
@@ -1196,16 +1203,15 @@
         return { x: 0, y: 0, width: naturalW, height: naturalH };
       }
 
-      for (let y = 0; y < scanH; y++) {
-        for (let x = 0; x < scanW; x++) {
-          const alpha = data[(y * scanW + x) * 4 + 3];
-          if (alpha > 12) {
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-          }
-        }
+      for (let pixel = 3; pixel < data.length; pixel += 4) {
+        if (data[pixel] <= 12) continue;
+        const position = (pixel - 3) / 4;
+        const x = position % scanW;
+        const y = Math.floor(position / scanW);
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
       }
 
       if (maxX < 0 || maxY < 0) {
@@ -1222,6 +1228,8 @@
 
     function exportPreview() {
       if (!state.image) return;
+      els.exportBtn.disabled = true;
+      els.exportStatus.textContent = "正在导出…";
 
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
@@ -1269,11 +1277,21 @@
 
       drawNotes(ctx, 740, 592, 528);
 
-      const link = document.createElement("a");
-      link.download = "only-box-avatar-preview.png";
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      els.exportStatus.textContent = "已导出 only-box-avatar-preview.png";
+      canvas.toBlob(blob => {
+        if (!blob) {
+          els.exportBtn.disabled = false;
+          els.exportStatus.textContent = "导出失败，请重试。";
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = "only-box-avatar-preview.png";
+        link.href = url;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        els.exportBtn.disabled = false;
+        els.exportStatus.textContent = "已导出 only-box-avatar-preview.png";
+      }, "image/png");
     }
 
     function drawCard(ctx, card) {
@@ -1415,6 +1433,7 @@
     }
 
     window.addEventListener("beforeunload", () => {
+      window.clearTimeout(state.cropUpdateTimer);
       if (state.releaseImage) state.releaseImage();
     });
     init();

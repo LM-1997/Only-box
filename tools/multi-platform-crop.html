@@ -1,0 +1,86 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Only-box 多平台尺寸裁切：一张图分别裁出小红书、公众号、微博等平台比例，每个比例独立记忆裁切位置，打包导出。">
+  <title>多平台尺寸裁切｜Only-box</title>
+  <link rel="stylesheet" href="../css/only-box.css">
+  <style>
+    :root{--tool-panel:rgba(255,255,255,.84);--tool-line:#dce4dd}
+    [hidden]{display:none!important}
+    .tool-area{width:min(1080px,calc(100% - 40px));margin:34px auto 0}
+    .panel{margin-top:16px;padding:24px;border:1px solid var(--tool-line);border-radius:var(--ob-radius);background:var(--tool-panel);box-shadow:var(--ob-shadow)}
+    .work-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:24px;align-items:start}
+    .dropzone{display:grid;min-height:220px;padding:28px;place-items:center;text-align:center;border:1.5px dashed #9bbcab;border-radius:16px;background:linear-gradient(135deg,rgba(223,240,230,.66),rgba(255,255,255,.78));cursor:pointer;transition:.16s}
+    .dropzone:hover,.dropzone.drag{border-color:var(--ob-primary);background:var(--ob-primary-soft)}
+    .dropzone strong{display:block;margin-bottom:6px;font-size:16px}
+    .dropzone p{margin:0;color:var(--ob-muted);font-size:13px;line-height:1.6}
+    .stage{overflow:hidden;width:100%;max-width:560px;max-height:520px;border:1px solid var(--tool-line);border-radius:16px;background:#17231d}
+    .stage img{display:block;max-width:100%}
+    .stage .cropper-container{max-width:100%!important;max-height:520px!important}
+    .stage .cropper-container,.stage .cropper-canvas,.stage .cropper-drag-box,.stage .cropper-crop-box{touch-action:none}
+    .platform-list{display:grid;gap:10px}
+    .platform-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--tool-line);border-radius:13px;background:#fff;cursor:pointer;transition:.14s}
+    .platform-item:hover{border-color:var(--ob-primary)}
+    .platform-item.active{border-color:var(--ob-primary);background:var(--ob-primary-soft)}
+    .platform-item input{width:20px;height:20px;accent-color:var(--ob-primary);flex:0 0 auto}
+    .platform-item .p-body{min-width:0;flex:1}
+    .platform-item strong{display:block;font-size:14px}
+    .platform-item span{display:block;color:var(--ob-muted);font-size:12px}
+    .platform-item .ratio-badge{flex:0 0 auto;padding:5px 9px;border-radius:999px;color:var(--ob-primary-dark);background:var(--ob-primary-soft);font-size:11px;font-weight:800}
+    .thumb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+    .thumb-card{overflow:hidden;border:1px solid var(--tool-line);border-radius:13px;background:#fff}
+    .thumb-card canvas{display:block;width:100%;height:auto}
+    .thumb-card .t-meta{padding:8px 10px;font-size:12px;font-weight:750;color:var(--ob-muted)}
+    .btn{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:10px 16px;border:0;border-radius:12px;font-weight:800;cursor:pointer;transition:.16s}
+    .btn.primary{color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.18)}
+    .btn.primary:hover{background:var(--ob-primary-dark)}
+    .btn.secondary{color:var(--ob-ink);background:#e8eee9}
+    .btn.block{width:100%}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .hint{margin:0;color:var(--ob-muted);font-size:12px;line-height:1.65}
+    .status{min-height:20px;margin:10px 0 0;color:var(--ob-muted);font-size:12px}
+    h2{margin:0 0 14px;font-size:18px;letter-spacing:-.03em}
+    @media(max-width:860px){.work-layout{grid-template-columns:1fr}}
+    @media(max-width:560px){.tool-area{width:calc(100% - 24px);margin-top:22px}.panel{padding:16px}}
+  </style>
+</head>
+<body>
+  <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
+  <main>
+    <div class="tool-area">
+      <section class="panel">
+        <label class="dropzone" id="dropzone" for="fileInput">
+          <input type="file" id="fileInput" accept="image/*" hidden>
+          <span><strong>点击选择或拖拽一张图片</strong><p>每个平台比例独立记忆裁切位置 · 图片仅在本地处理，不会上传到服务器</p></span>
+        </label>
+      </section>
+      <section class="panel" id="workPanel" hidden>
+        <div class="work-layout">
+          <div>
+            <h2>裁切区域（当前编辑比例会高亮）</h2>
+            <div class="stage" id="stage"><img id="stageImg" alt="待裁切图片"></div>
+            <p class="status" id="cropStatus" aria-live="polite"></p>
+          </div>
+          <div>
+            <h2>平台比例</h2>
+            <div class="platform-list" id="platformList" role="group" aria-label="平台比例选择"></div>
+            <p class="hint" style="margin-top:12px">比例参考 2025 年各平台公开推荐值；平台可能随时调整，导出前请以实际发布要求为准。勾选后点击某一行可单独调整该比例的裁切位置。</p>
+            <div style="margin-top:16px"><button class="btn primary block" id="zipBtn" type="button">导出全部勾选比例（ZIP）</button></div>
+          </div>
+        </div>
+      </section>
+      <section class="panel" id="thumbPanel" hidden>
+        <h2>各比例预览</h2>
+        <div class="thumb-grid" id="thumbGrid"></div>
+        <p class="status" id="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 多平台尺寸裁切</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
+  <script src="../js/mobile-image-upload.js"></script>
+  <script src="../js/canvas-utils.js"></script>
+  <script src="../js/multi-platform-crop.js"></script>
+</body>
+</html>

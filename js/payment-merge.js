@@ -19,6 +19,8 @@
     backgroundRelease: null,
     backgroundLoadToken: 0,
     paymentLoadTokens: { wechat: 0, alipay: 0 },
+    watermark: "",
+    watermarkPosition: "bottom",
     wechat: null,
     alipay: null
   };
@@ -59,6 +61,9 @@
     bgImageOpacityValue: $("bgImageOpacityValue"),
     bgImageScaleRange: $("bgImageScaleRange"),
     bgImageScaleValue: $("bgImageScaleValue"),
+    watermarkInput: $("watermarkInput"),
+    wmBottomBtn: $("wmBottomBtn"),
+    wmTopBtn: $("wmTopBtn"),
     status: $("status"),
     downloadBtn: $("downloadBtn")
   };
@@ -90,32 +95,56 @@
 
   async function loadPaymentImage(file, platform) {
     const token = ++state.paymentLoadTokens[platform];
+    let opened = null;
     controls.status.textContent = "正在识别二维码区域……";
     try {
-      const opened = await MobileImageUpload.open(file);
+      opened = await MobileImageUpload.open(file);
+      if (token !== state.paymentLoadTokens[platform]) {
+        opened.release();
+        return;
+      }
+      await MobileImageUpload.ensureCropper();
       if (token !== state.paymentLoadTokens[platform]) {
         opened.release();
         return;
       }
       const qr = await findQrRegion(opened.image, platform);
+      if (token !== state.paymentLoadTokens[platform]) {
+        opened.release();
+        return;
+      }
       const previous = state[platform];
       if (previous && previous.cropper) previous.cropper.destroy();
       if (previous && previous.release) previous.release();
       state[platform] = { image: opened.image, src: opened.src, qr, autoQr: { ...qr }, cropper: null, release: opened.release, name: file.name, width: opened.image.naturalWidth, height: opened.image.naturalHeight };
+      opened = null;
       setupPaymentCropper(platform);
       updateMeta(platform);
       controls.status.textContent = opened.converted ? "HEIC 照片已转换，可继续调整。" : "图片已载入，可继续调整。";
       render();
     } catch (error) {
+      if (opened) opened.release();
       controls.status.textContent = MobileImageUpload.errorMessage(error);
     }
   }
 
   async function findQrRegion(image, platform) {
-    const detected = await detectByBarcode(image);
-    const estimated = detected || estimateByFinderPatterns(image) || estimateByDensity(image);
+    let estimated = await detectByBarcode(image);
+    if (!estimated) {
+      await nextFrame();
+      estimated = estimateByFinderPatterns(image);
+    }
+    if (!estimated) {
+      await nextFrame();
+      estimated = estimateByDensity(image);
+    }
+    await nextFrame();
     const refined = refineDarkRegion(image, estimated) || estimated;
-    return squareRegion(refined, image.naturalWidth, image.naturalHeight, platform === "alipay" ? 0.006 : 0.008, Boolean(detected || estimated.detected));
+    return squareRegion(refined, image.naturalWidth, image.naturalHeight, platform === "alipay" ? 0.006 : 0.008, Boolean(estimated.detected));
+  }
+
+  function nextFrame() {
+    return new Promise(resolve => requestAnimationFrame(resolve));
   }
 
   async function detectByBarcode(image) {
@@ -132,8 +161,9 @@
   }
 
   function createDarkSample(image, sampleWidth) {
-    const width = sampleWidth;
-    const height = Math.max(320, Math.round(width * image.naturalHeight / image.naturalWidth));
+    const scale = Math.min(1, sampleWidth / image.naturalWidth, 1200 / image.naturalHeight);
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
     const work = document.createElement("canvas");
     const workCtx = work.getContext("2d", { willReadFrequently: true });
     work.width = width;
@@ -269,8 +299,8 @@
     const minSize = Math.max(120, Math.round(minSide * 0.34));
     const maxSize = Math.round(minSide * 0.74);
     let best = null;
-    for (let size = minSize; size <= maxSize; size += 6) {
-      const step = Math.max(4, Math.round(size / 48));
+    for (let size = minSize; size <= maxSize; size += 12) {
+      const step = Math.max(5, Math.round(size / 36));
       const xMin = Math.round(width * 0.04);
       const xMax = Math.round(width - size - width * 0.04);
       const yMin = Math.round(height * 0.08);
@@ -345,7 +375,7 @@
     const cropSize = Math.min(base * 1.08, image.naturalWidth, image.naturalHeight);
     const cropX = clamp(centerX - cropSize / 2, 0, image.naturalWidth - cropSize);
     const cropY = clamp(centerY - cropSize / 2, 0, image.naturalHeight - cropSize);
-    const size = Math.max(160, Math.round(Math.min(520, cropSize)));
+    const size = Math.max(160, Math.round(Math.min(420, cropSize)));
     const scale = size / cropSize;
     const work = document.createElement("canvas");
     const workCtx = work.getContext("2d", { willReadFrequently: true });
@@ -516,6 +546,13 @@
     render();
   }
 
+  function setWatermarkPosition(position) {
+    state.watermarkPosition = position;
+    controls.wmBottomBtn.classList.toggle("active", position === "bottom");
+    controls.wmTopBtn.classList.toggle("active", position === "top");
+    render();
+  }
+
   function getBackgroundAspectRatio() {
     return state.layout === "landscape" ? 4 / 3 : 9 / 16;
   }
@@ -671,34 +708,71 @@
     drawText(platform === "wechat" ? "微信扫码付款" : "支付宝扫码付款", x + width / 2, y + height - 62, 34, "850", textColor);
   }
 
-  function renderLandscape() {
-    canvas.width = 2400;
-    canvas.height = 1800;
+  const PREVIEW_SCALE = 0.5;
+  let renderFrame = 0;
+  let exporting = false;
+
+  /* 水印/摊位号叠加：空文本时完全跳过，未启用此功能的导出结果保持不变。 */
+  function drawWatermark(width, height) {
+    const text = state.watermark.trim();
+    if (!text) return;
+    const size = CanvasUtils.fitFontSize(ctx, text, width * 0.8, { maxFontSize: 56, minFontSize: 24, fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif", weight: "800" });
+    ctx.font = "800 " + size + "px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+    const textWidth = ctx.measureText(text).width;
+    const centerX = width / 2;
+    const centerY = state.watermarkPosition === "top" ? 120 : height - 120;
+    const barHeight = size * 2;
+    const barWidth = Math.min(width - 80, textWidth + size * 1.8);
+    roundedRect(centerX - barWidth / 2, centerY - barHeight / 2, barWidth, barHeight, barHeight / 2);
+    ctx.fillStyle = "rgba(23,35,29,.55)";
+    ctx.fill();
+    drawText(text, centerX, centerY, size, "800", "#ffffff");
+  }
+
+  function prepareCanvas(width, height, scale) {
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  }
+
+  function renderLandscape(scale) {
+    prepareCanvas(2400, 1800, scale);
     drawBackground(2400, 1800);
     drawText(state.title, 1200, 165, 86, "900", state.titleColor);
     drawText(state.subtitle, 1200, 245, 34, "650", state.subtitleColor);
     drawCard("wechat", "微信", 150, 360, 1000, 1160, 760);
     drawCard("alipay", "支付宝", 1250, 360, 1000, 1160, 760);
     drawText(state.footer, 1200, 1650, 38, "750", state.footerColor);
+    drawWatermark(2400, 1800);
   }
 
-  function renderPortrait() {
-    canvas.width = 1440;
-    canvas.height = 2560;
+  function renderPortrait(scale) {
+    prepareCanvas(1440, 2560, scale);
     drawBackground(1440, 2560);
     drawText(state.title, 720, 145, 76, "900", state.titleColor);
     drawText(state.subtitle, 720, 215, 30, "650", state.subtitleColor);
     drawCard("wechat", "微信", 220, 310, 1000, 1000, 650);
     drawCard("alipay", "支付宝", 220, 1370, 1000, 1000, 650);
     drawText(state.footer, 720, 2430, 34, "750", state.footerColor);
+    drawWatermark(1440, 2560);
   }
 
-  function render() {
-    if (state.layout === "landscape") renderLandscape();
-    else renderPortrait();
+  function drawPoster(scale) {
+    if (state.layout === "landscape") renderLandscape(scale);
+    else renderPortrait(scale);
+  }
+
+  function renderNow() {
+    renderFrame = 0;
+    drawPoster(PREVIEW_SCALE);
     const ready = Boolean(state.wechat && state.alipay);
     controls.downloadBtn.disabled = !ready;
     controls.status.textContent = ready ? "已更新预览，可以下载 PNG。" : "请先导入两张收款码图片。";
+  }
+
+  function render() {
+    if (renderFrame || exporting) return;
+    renderFrame = requestAnimationFrame(renderNow);
   }
 
   function clamp(value, min, max) {
@@ -707,10 +781,31 @@
 
   function download() {
     if (controls.downloadBtn.disabled) return;
-    const link = document.createElement("a");
-    link.href = canvas.toDataURL("image/png");
-    link.download = state.layout === "landscape" ? "only-box-payment-landscape.png" : "only-box-payment-portrait.png";
-    link.click();
+    if (renderFrame) {
+      cancelAnimationFrame(renderFrame);
+      renderFrame = 0;
+    }
+    exporting = true;
+    controls.downloadBtn.disabled = true;
+    controls.status.textContent = "正在生成高清 PNG……";
+    drawPoster(1);
+    canvas.toBlob(blob => {
+      if (!blob) {
+        exporting = false;
+        controls.status.textContent = "生成失败，请重试。";
+        render();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = state.layout === "landscape" ? "only-box-payment-landscape.png" : "only-box-payment-portrait.png";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      exporting = false;
+      controls.status.textContent = "高清 PNG 已下载。";
+      render();
+    }, "image/png");
   }
 
   function bindDropUpload() {
@@ -768,9 +863,15 @@
     event.target.value = "";
     if (!file) return;
     const token = ++state.backgroundLoadToken;
+    let opened = null;
     controls.status.textContent = "正在读取背景图片……";
     try {
-      const opened = await MobileImageUpload.open(file);
+      opened = await MobileImageUpload.open(file);
+      if (token !== state.backgroundLoadToken) {
+        opened.release();
+        return;
+      }
+      await MobileImageUpload.ensureCropper();
       if (token !== state.backgroundLoadToken) {
         opened.release();
         return;
@@ -781,6 +882,7 @@
       state.backgroundRelease = opened.release;
       state.backgroundImageSrc = opened.src;
       state.backgroundImage = opened.image;
+      opened = null;
       state.backgroundColorOpacity = 0;
       controls.bgColorOpacityRange.value = "0";
       controls.bgColorOpacityValue.textContent = "0%";
@@ -788,6 +890,7 @@
       controls.status.textContent = opened.converted ? "HEIC 背景已转换。" : "背景图片已载入。";
       render();
     } catch (error) {
+      if (opened) opened.release();
       controls.status.textContent = MobileImageUpload.errorMessage(error);
     }
   });
@@ -806,6 +909,9 @@
     controls.bgColorOpacityValue.textContent = "100%";
     render();
   });
+  controls.watermarkInput.addEventListener("input", event => { state.watermark = event.target.value; render(); });
+  controls.wmBottomBtn.addEventListener("click", () => setWatermarkPosition("bottom"));
+  controls.wmTopBtn.addEventListener("click", () => setWatermarkPosition("top"));
   controls.downloadBtn.addEventListener("click", download);
   controls.bgColorSwatch.style.backgroundColor = state.backgroundColor;
   controls.bgColorHexInput.value = state.backgroundColor;
