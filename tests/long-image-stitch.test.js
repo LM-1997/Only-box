@@ -31,6 +31,25 @@ assert.ok(huge.width <= api.MAX_OUTPUT_EDGE && huge.height <= api.MAX_OUTPUT_EDG
 assert.ok(huge.width * huge.height <= api.MAX_OUTPUT_PIXELS, "超长图不得超过手机安全像素面积");
 assert.equal(huge.wasReduced, true);
 
+const customVertical = api.calculate([first, second], "vertical", 2000);
+assert.equal(customVertical.width, 2000, "竖向拼接应使用用户设置的输出宽度");
+assert.equal(customVertical.height, 6000);
+assert.deepEqual(customVertical.placements.map(item => [item.item.id, item.width, item.height]), [
+  ["first", 2000, 4000],
+  ["second", 2000, 2000]
+], "用户指定宽度后每张图应按比例放大到该宽度");
+assert.equal(customVertical.enlarged, true, "超过自动基准宽度时应标记为放大输出");
+
+const customHorizontal = api.calculate([first, second], "horizontal", 1000);
+assert.equal(customHorizontal.width, 1500, "横向拼接应使用用户设置的输出高度");
+assert.equal(customHorizontal.height, 1000);
+
+const customLimited = api.calculate(Array.from({ length: 30 }, (_, index) => ({ id: index, width: 4000, height: 4000 })), "vertical", 4000);
+assert.equal(customLimited.width, 4000, "手动设置宽度时必须强制按用户值输出，不自动缩小");
+assert.equal(customLimited.height, 120000);
+assert.equal(customLimited.userCross, 4000);
+assert.equal(customLimited.wasReduced, false, "手动设置时不触发自动缩小兜底");
+
 assert.equal(api.calculate([first], "vertical"), null, "至少需要两张图片");
 
 let tapOrder = api.toggleOrder([], "second");
@@ -52,7 +71,6 @@ assert.match(html, /id="fitWidthBtn"/, "结果区必须提供适应宽度按钮"
 assert.ok(html.indexOf("mobile-image-upload.js") < html.indexOf("long-image-stitch.js"), "统一图片兼容层必须先加载");
 assert.match(js, /toggleOrder\(state\.order, id\)/, "点按图片必须调用经过测试的排序逻辑");
 assert.match(js, /MAX_IMAGES = 30/, "应限制手机端同时保留的图片数量");
-assert.match(js, /MAX_TOTAL_PIXELS = 80 \* 1000 \* 1000/, "应限制多图累计解码内存");
 assert.doesNotMatch(js, /FormData|XMLHttpRequest|fetch\(/, "图片不得上传服务器");
 assert.match(index, /href="\.\/tools\/long-image-stitch\.html"/, "首页必须提供长图拼接入口");
 
@@ -109,15 +127,23 @@ class MockCanvas extends MockElement {
     };
   }
   getContext() { return this.context; }
-  toBlob(callback, type) { queueMicrotask(() => callback(new Blob(["png"], { type }))); }
+  toBlob(callback, type) {
+    this.snapshot = { width: this.width, height: this.height };
+    queueMicrotask(() => callback(new Blob(["png"], { type })));
+  }
 }
 
 async function runIntegration() {
-  const ids = ["fileInput", "dropzone", "loadStatus", "verticalBtn", "horizontalBtn", "dimensionReadout", "generateBtn", "generateStatus", "sequencePanel", "sortHelp", "sortBtn", "resetOrderBtn", "clearAllBtn", "imageGrid", "resultPanel", "resultMeta", "resultViewport", "resultImage", "downloadLink", "zoomOutBtn", "zoomRange", "zoomInBtn", "zoomValue", "fitWidthBtn"];
+  const ids = ["fileInput", "dropzone", "loadStatus", "verticalBtn", "horizontalBtn", "crossSizeInput", "crossSizeLabel", "sizeClearBtn", "sizeHint", "dimensionReadout", "generateBtn", "generateStatus", "sequencePanel", "sortHelp", "sortBtn", "resetOrderBtn", "clearAllBtn", "imageGrid", "resultPanel", "resultMeta", "resultViewport", "resultImage", "downloadLink", "zoomOutBtn", "zoomRange", "zoomInBtn", "zoomValue", "fitWidthBtn"];
   const elements = Object.fromEntries(ids.map(id => [id, new MockElement(id === "fileInput" ? "input" : "div", id)]));
+  const createdCanvases = [];
   const document = {
     getElementById(id) { return elements[id]; },
-    createElement(tagName) { return tagName === "canvas" ? new MockCanvas() : new MockElement(tagName); }
+    createElement(tagName) {
+      const element = tagName === "canvas" ? new MockCanvas() : new MockElement(tagName);
+      if (tagName === "canvas") createdCanvases.push(element);
+      return element;
+    }
   };
   let nextUrl = 1;
   const mockUrl = {
@@ -166,8 +192,14 @@ async function runIntegration() {
 
   await elements.horizontalBtn.dispatch("click");
   assert.equal(elements.horizontalBtn.attributes.get("aria-pressed"), "true", "横向拼接按钮必须切换成功");
+  assert.equal(elements.crossSizeLabel.textContent, "输出高度", "横向拼接时尺寸输入框应切换为输出高度");
+  elements.crossSizeInput.value = "1200";
+  await elements.crossSizeInput.dispatch("input");
   await elements.generateBtn.dispatch("click");
   assert.equal(integrationDrawCalls.length, 3, "生成时必须按顺序绘制全部图片");
+  const lastCanvas = createdCanvases[createdCanvases.length - 1];
+  assert.equal(lastCanvas.snapshot.width, 4200, "横向拼接应按用户设置的高度 1200px 输出");
+  assert.equal(lastCanvas.snapshot.height, 1200, "横向拼接的输出高度应等于用户设置值");
   assert.equal(elements.resultPanel.hidden, false, "生成完成后必须显示结果区");
   assert.match(elements.downloadLink.href, /^blob:integration-/, "下载按钮必须指向本地生成的 Blob");
   assert.match(elements.downloadLink.download, /horizontal\.png$/, "横向结果应使用对应文件名");

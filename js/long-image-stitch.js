@@ -2,11 +2,11 @@
   "use strict";
 
   const MAX_IMAGES = 30;
-  const MAX_TOTAL_PIXELS = 80 * 1000 * 1000;
   const state = {
     items: [],
     order: [],
     direction: "vertical",
+    crossSize: { vertical: "", horizontal: "" },
     sorting: false,
     loading: false,
     generating: false,
@@ -23,6 +23,10 @@
     loadStatus: $("loadStatus"),
     verticalBtn: $("verticalBtn"),
     horizontalBtn: $("horizontalBtn"),
+    crossSizeInput: $("crossSizeInput"),
+    crossSizeLabel: $("crossSizeLabel"),
+    sizeClearBtn: $("sizeClearBtn"),
+    sizeHint: $("sizeHint"),
     dimensionReadout: $("dimensionReadout"),
     generateBtn: $("generateBtn"),
     generateStatus: $("generateStatus"),
@@ -78,15 +82,34 @@
 
   function setDirection(direction) {
     if (state.direction === direction || state.generating) return;
+    state.crossSize[state.direction] = els.crossSizeInput.value;
     state.direction = direction;
+    els.crossSizeInput.value = state.crossSize[direction];
+    updateCrossSizeLabel();
     invalidateResult();
     updateUI();
+  }
+
+  function readCrossSize() {
+    const value = Number(els.crossSizeInput.value);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.round(value);
+  }
+
+  function updateCrossSizeLabel() {
+    const vertical = state.direction === "vertical";
+    els.crossSizeLabel.textContent = vertical ? "输出宽度" : "输出高度";
+    els.crossSizeInput.placeholder = vertical ? "自动（取最小宽度）" : "自动（取最小高度）";
+    els.sizeHint.textContent = vertical
+      ? "留空时自动取所有图片的最小宽度；手动设置后强制按该宽度输出，不会自动缩小。"
+      : "留空时自动取所有图片的最小高度；手动设置后强制按该高度输出，不会自动缩小。";
+    els.sizeClearBtn.hidden = els.crossSizeInput.value.trim() === "";
   }
 
   function calculateLayout() {
     const items = orderedItems();
     if (items.length < 2 || items.length !== state.items.length) return null;
-    return LongImageLayout.calculate(items, state.direction);
+    return LongImageLayout.calculate(items, state.direction, readCrossSize());
   }
 
   function renderDimensionReadout() {
@@ -103,6 +126,9 @@
       if (layout.wasReduced) {
         detail.className = "scale-warning";
         detail.textContent += ` · 已为手机稳定性缩小至 ${Math.round(layout.scale * 100)}%`;
+      } else if (layout.enlarged) {
+        detail.className = "scale-warning";
+        detail.textContent += ` · 已按设置放大至 ${Math.round(layout.scale * 100)}%，原图分辨率不足时可能发虚`;
       }
     }
     els.dimensionReadout.append(title, detail);
@@ -178,6 +204,7 @@
     els.dropzone.classList.toggle("is-disabled", els.fileInput.disabled);
     els.verticalBtn.disabled = busy;
     els.horizontalBtn.disabled = busy;
+    els.crossSizeInput.disabled = busy;
     els.verticalBtn.classList.toggle("active", state.direction === "vertical");
     els.horizontalBtn.classList.toggle("active", state.direction === "horizontal");
     els.verticalBtn.setAttribute("aria-pressed", String(state.direction === "vertical"));
@@ -195,6 +222,7 @@
     renderSequence();
     renderDimensionReadout();
     updateControls();
+    updateCrossSizeLabel();
   }
 
   function handleOrderTap(id) {
@@ -278,10 +306,6 @@
       let opened = null;
       try {
         opened = await MobileImageUpload.open(file);
-        const currentPixels = state.items.reduce((sum, item) => sum + item.width * item.height, 0);
-        if (currentPixels + opened.image.naturalWidth * opened.image.naturalHeight > MAX_TOTAL_PIXELS) {
-          throw new Error("TOTAL_PIXELS_EXCEEDED");
-        }
         const item = {
           id: state.nextId++,
           name: file.name || `图片 ${state.nextId - 1}`,
@@ -306,9 +330,7 @@
     state.loading = false;
     const notes = [`已添加 ${added} 张`];
     if (failed) {
-      const message = firstError && firstError.message === "TOTAL_PIXELS_EXCEEDED"
-        ? "图片总像素过高，请减少大图数量"
-        : MobileImageUpload.errorMessage(firstError);
+      const message = MobileImageUpload.errorMessage(firstError);
       notes.push(`${failed} 张未添加：${message}`);
     }
     if (omitted) notes.push(`超出上限的 ${omitted} 张未添加`);
@@ -396,6 +418,19 @@
   });
   els.verticalBtn.addEventListener("click", () => setDirection("vertical"));
   els.horizontalBtn.addEventListener("click", () => setDirection("horizontal"));
+  els.crossSizeInput.addEventListener("input", () => {
+    state.crossSize[state.direction] = els.crossSizeInput.value;
+    updateCrossSizeLabel();
+    invalidateResult();
+    updateUI();
+  });
+  els.sizeClearBtn.addEventListener("click", () => {
+    els.crossSizeInput.value = "";
+    state.crossSize[state.direction] = "";
+    updateCrossSizeLabel();
+    invalidateResult();
+    updateUI();
+  });
   els.sortBtn.addEventListener("click", startSorting);
   els.resetOrderBtn.addEventListener("click", resetOrder);
   els.clearAllBtn.addEventListener("click", clearAll);

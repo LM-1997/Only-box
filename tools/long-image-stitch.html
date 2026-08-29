@@ -35,6 +35,14 @@
             <button class="direction-btn active" id="verticalBtn" type="button" aria-pressed="true"><span aria-hidden="true">↕</span>竖向拼接</button>
             <button class="direction-btn" id="horizontalBtn" type="button" aria-pressed="false"><span aria-hidden="true">↔</span>横向拼接</button>
           </div>
+          <div class="size-setting">
+            <div class="size-setting-head">
+              <label class="size-label" for="crossSizeInput"><span id="crossSizeLabel">输出宽度</span><em>px</em></label>
+              <button class="size-clear" id="sizeClearBtn" type="button" hidden>恢复自动</button>
+            </div>
+            <input id="crossSizeInput" type="number" min="1" max="100000" step="100" placeholder="自动（取最小宽度）" inputmode="numeric">
+            <p class="size-hint" id="sizeHint">留空时自动取所有图片的最小宽度；手动设置后强制按该宽度输出，不会自动缩小。</p>
+          </div>
           <div class="dimension-readout" id="dimensionReadout"><strong>等待图片</strong><span>添加两张或更多图片后可生成</span></div>
           <button class="primary-action" id="generateBtn" type="button" disabled>至少需要 2 张图片</button>
           <p class="status-line" id="generateStatus" aria-live="polite"></p>
