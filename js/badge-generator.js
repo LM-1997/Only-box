@@ -132,7 +132,7 @@
     state.template.backgroundWidth = opened.image.naturalWidth; state.template.backgroundHeight = opened.image.naturalHeight;
     if (previousImage) { migrateBackgroundCoordinates(oldWidth, oldHeight, state.template.backgroundWidth, state.template.backgroundHeight); previousImage.release(); }
     else { constrainBox(state.template.avatarBox, state.template.avatarBox.cropAspectRatio); state.template.avatarBox.x = Math.round((state.template.backgroundWidth - state.template.avatarBox.width) / 2); state.template.avatarBox.y = Math.round(state.template.backgroundHeight * .18); constrainBox(state.template.avatarBox, state.template.avatarBox.cropAspectRatio); state.template.nameBlock.x = Math.round((state.template.backgroundWidth - state.template.nameBlock.width) / 2); state.template.nameBlock.y = Math.round(state.template.backgroundHeight * .62); constrainBox(state.template.nameBlock, 0); }
-    els.templateStage.style.setProperty("--badge-stage-ratio", state.template.backgroundWidth + " / " + state.template.backgroundHeight); els.editorStage.style.setProperty("--badge-stage-ratio", state.template.backgroundWidth + " / " + state.template.backgroundHeight);
+    const stageAr = (state.template.backgroundWidth / Math.max(1, state.template.backgroundHeight)).toFixed(4); els.templateStage.style.setProperty("--badge-stage-ratio", state.template.backgroundWidth + " / " + state.template.backgroundHeight); els.editorStage.style.setProperty("--badge-stage-ratio", state.template.backgroundWidth + " / " + state.template.backgroundHeight); els.templateStage.style.setProperty("--badge-stage-ar", stageAr); els.editorStage.style.setProperty("--badge-stage-ar", stageAr);
     els.templateStage.classList.add("has-background"); els.editorStage.classList.add("has-background");
     els.templateImage.hidden = false; els.templateEmpty.hidden = true;
     updateTemplateInputs(); if (state.items.length) refreshThumbnails();
@@ -330,6 +330,37 @@
   [els.templateAvatarZone, els.templateNameZone, els.editorAvatarZone, els.editorNameZone].forEach(zone => zone.addEventListener("click", () => selectZone(zone.classList.contains("zone-name") ? "name" : "avatar")));
   startDrag(els.templateAvatarZone, () => state.template.avatarBox, next => { state.template.avatarBox = next; updateTemplateInputs(); }, els.templateStage, "avatar"); startDrag(els.templateNameZone, () => state.template.nameBlock, next => { state.template.nameBlock = next; updateTemplateInputs(); }, els.templateStage, "name");
   startDrag(els.editorAvatarZone, () => editorBox(currentItem()), next => { const item = currentItem(); item.avatarOverride = Object.assign({}, item.avatarOverride || {}, next); updateEditorZones(); updateEditorPreview(); }, els.editorStage, "avatar"); startDrag(els.editorNameZone, () => editorName(currentItem()), next => { const item = currentItem(); item.nameOverride = Object.assign({}, item.nameOverride || {}, next); updateEditorZones(); updateEditorPreview(); }, els.editorStage, "name");
+  // 滚轮缩放钩子：由 badge-wizard.js 的画布 wheel 事件调用；行为与拖拽/缩放手势一致
+  window.__badgeWheelScale = function (mode, target, factor, relX, relY) {
+    const keepRatio = box => (Number(box.cropAspectRatio) > 0 ? Number(box.cropAspectRatio) : 0);
+    const applyTo = (getBox, setBox, ratio) => {
+      const box = getBox();
+      const anchorX = box.x + box.width * relX;
+      const anchorY = box.y + box.height * relY;
+      const next = Object.assign({}, box, { width: Math.max(20, Math.round(box.width * factor)), height: Math.max(20, Math.round(box.height * factor)) });
+      next.x = Math.round(anchorX - next.width * relX);
+      next.y = Math.round(anchorY - next.height * relY);
+      constrainBox(next, ratio);
+      setBox(next);
+    };
+    if (mode === "template") {
+      if (target === "avatar") applyTo(() => state.template.avatarBox, next => { state.template.avatarBox = next; updateTemplateInputs(); }, keepRatio(state.template.avatarBox));
+      else applyTo(() => state.template.nameBlock, next => { state.template.nameBlock = next; updateTemplateInputs(); }, 0);
+    } else {
+      const item = currentItem();
+      if (!item) return;
+      if (target === "avatar") applyTo(() => editorBox(item), next => { item.avatarOverride = Object.assign({}, item.avatarOverride || {}, next); updateEditorZones(); updateEditorPreview(); }, keepRatio(editorBox(item)));
+      else applyTo(() => editorName(item), next => { item.nameOverride = Object.assign({}, item.nameOverride || {}, next); updateEditorZones(); updateEditorPreview(); }, 0);
+    }
+  };
+  // 在线字体就绪后的全量重绘钩子：模板预览 + 当前编辑器 + 缩略图
+  window.__badgeRerenderAll = async function () {
+    try {
+      if (typeof scheduleTemplatePreview === "function") scheduleTemplatePreview();
+      if (state.items.length) refreshThumbnails();
+      if (!els.editorView.hidden) { await updateEditorPreview(); }
+    } catch (e) { }
+  };
   const leaveMessage = "当前证件、头像、表格和字体只在浏览器中处理，不会保存。确认要离开吗？";
   window.addEventListener("beforeunload", event => { if (!els.editorView.hidden || state.template.backgroundImage || state.items.length) { event.preventDefault(); event.returnValue = leaveMessage; return leaveMessage; } });
   document.querySelectorAll("a[href]").forEach(link => link.addEventListener("click", event => { const href = link.getAttribute("href") || ""; if (href.startsWith("#") || href.startsWith("javascript:")) return; if (!window.confirm(leaveMessage)) event.preventDefault(); }));

@@ -7,64 +7,727 @@
   <title>批量证件生成｜Only-box</title>
   <link rel="stylesheet" href="../css/only-box.css">
   <style>
-    @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans:wght@400;700&display=swap");
-    :root{--badge-line:#dce4dd;--badge-panel:rgba(255,255,255,.86);--badge-soft:#f0f4f0}
-    [hidden]{display:none!important}
-    .sub-label{display:block;margin-bottom:5px;color:var(--ob-muted);font-size:11px!important;font-weight:700!important}.badge-tool{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:52px 0 20px}
-    .badge-hero{display:flex;align-items:end;justify-content:space-between;gap:28px;margin-bottom:28px}
-    .badge-hero h1{margin:0;font-size:clamp(34px,5vw,58px);line-height:1.05;letter-spacing:-.06em}
-    .badge-hero p{max-width:650px;margin:14px 0 0;color:var(--ob-muted);line-height:1.75}
-    .privacy-note{max-width:290px;padding:16px;border:1px solid var(--badge-line);border-radius:16px;background:rgba(255,255,255,.68);color:var(--ob-muted);font-size:12px;line-height:1.65}
-    .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
-    .step{display:flex;align-items:center;gap:12px;min-width:0;padding:14px 16px;border:1px solid var(--badge-line);border-radius:15px;background:rgba(255,255,255,.72)}
-    .step-number{display:grid;flex:0 0 auto;width:28px;height:28px;place-items:center;border-radius:9px;color:#fff;background:var(--ob-primary);font-size:12px;font-weight:800}
-    .step strong{font-size:13px}.step span{display:block;margin-top:3px;color:var(--ob-muted);font-size:11px}
-    .panel{min-width:0;margin-top:16px;padding:22px;border:1px solid var(--badge-line);border-radius:20px;background:var(--badge-panel);box-shadow:var(--ob-shadow)}
-    .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.panel-head h2{margin:0;font-size:21px;letter-spacing:-.035em}.panel-head p{margin:5px 0 0;color:var(--ob-muted);font-size:12px;line-height:1.6}.step.done{border-color:#9bcdb4;background:#f3fbf6}.step.current{border-color:var(--ob-primary);background:#edf7f1}.step.locked{opacity:.48}.step.done .step-number{background:#467e5c}.step.current .step-number{background:var(--ob-primary)}.disabled-panel{position:relative;opacity:.58}.disabled-panel>*:not(.panel-lock-note){pointer-events:none}.panel-lock-note{display:none;margin:0 0 14px;padding:10px 12px;border:1px dashed var(--badge-line);border-radius:10px;color:var(--ob-muted);background:var(--badge-soft);font-size:12px;line-height:1.5}.disabled-panel .panel-lock-note{display:block}
-    .template-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(480px,520px);gap:20px;align-items:start}.template-panel>.panel-head{grid-column:1/-1;margin-bottom:0}.template-panel>.template-layout{display:contents}.template-stage{width:min(100%,440px);justify-self:end}.template-panel>.template-layout>.template-stage{grid-column:1;grid-row:2}.template-panel>.template-layout>div:last-child{grid-column:2;grid-row:2}.template-settings{min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:5px 8px}.template-settings>.field,.template-settings>.canvas-help,.template-settings>#nameControls{min-width:0}.template-settings>.canvas-help,.template-settings>.field:nth-child(1),.template-settings>.field:nth-child(6),.template-settings>.field:nth-child(7),.template-settings>#nameControls{grid-column:1/-1}.template-settings>.field:nth-child(3),.template-settings>.field:nth-child(4),.template-settings>.field:nth-child(5){grid-column:span 2}.template-settings>.field-row:nth-child(9),.template-settings>.field-row:nth-child(10){grid-column:span 2}.template-settings .field{min-width:0;margin-bottom:0}.template-settings .field-row{gap:6px}.template-settings .canvas-help{margin-bottom:0;padding:6px 8px}.template-settings .hint{font-size:9px;line-height:1.25}.template-settings .field input[type=text],.template-settings .field input[type=number],.template-settings .field input[type=color],.template-settings .field select{min-height:30px;padding:4px 6px;font-size:11px}.template-settings .geometry-grid{gap:4px}.template-settings .geometry-grid input{padding:3px!important}.template-settings .btn{min-height:30px;padding:4px 6px;font-size:11px}.template-settings .button-row{gap:4px}.template-settings #nameControls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.template-settings #nameControls[hidden]{display:none}.template-settings #nameControls>.field:nth-child(1){grid-column:span 1}.template-settings #nameControls>.field:nth-child(2){grid-column:span 2}.template-settings #nameControls>.field:nth-child(3){grid-column:span 1}.template-settings #nameControls>.field:nth-child(2) .hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.template-settings #nameControls>.field:nth-child(2)>div{gap:4px}.template-stage.has-background{width:min(100%,440px)}
-    .template-stage{position:relative;overflow:hidden;width:min(100%,520px);justify-self:end;min-height:350px;border:1px solid var(--badge-line);border-radius:16px;background:#e8ece8}.template-stage #templateImage{width:100%;margin-left:auto}
-    .template-stage img{display:block;width:100%;height:auto;max-height:650px;object-fit:contain;background:#fff}.template-stage.has-background,.editor-stage.has-background{min-height:0;aspect-ratio:var(--badge-stage-ratio)}.template-stage.has-background img,.editor-stage.has-background img{width:100%;height:100%;max-height:none;object-fit:fill}.template-stage.has-background .stage-empty{display:none}
-    .zone{box-sizing:border-box}
-    .stage-empty{display:grid;min-height:350px;place-items:center;padding:30px;color:var(--ob-muted);font-size:13px;text-align:center}
-    .zone{position:absolute;z-index:2;display:none;min-width:0;min-height:0;border:2px solid var(--ob-primary);background:rgba(35,107,79,.12);cursor:move;touch-action:none}
-    .zone.active{display:block}.zone.selected{box-shadow:0 0 0 3px rgba(35,107,79,.28),0 0 0 1px #fff}.zone-name{border-style:dashed;border-color:var(--ob-accent);background:rgba(255,118,93,.12)}.zone-name.selected{box-shadow:0 0 0 3px rgba(255,118,93,.28),0 0 0 1px #fff}.canvas-help{display:grid;gap:4px;margin-bottom:15px;padding:12px;border:1px solid var(--badge-line);border-radius:12px;background:var(--badge-soft);font-size:12px;line-height:1.6}.canvas-help span{color:var(--ob-muted);font-size:11px}.align-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.align-button{min-height:36px}.leave-note{margin:0 0 12px;padding:11px 13px;border:1px solid #f0d9a7;border-radius:11px;color:#714713;background:var(--ob-warning-soft);font-size:11px;line-height:1.6}.back-button{min-height:48px;padding:12px 18px;color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.2);font-size:14px}
-    .zone-label{position:absolute;top:0;left:0;padding:3px 6px;color:#fff;background:var(--ob-primary);font-size:10px;font-weight:800;pointer-events:none}.zone-name .zone-label{background:var(--ob-accent)}
-    .resize-handle{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border:2px solid #fff;border-radius:50%;background:var(--ob-primary);cursor:nwse-resize}.zone-name .resize-handle{background:var(--ob-accent)}
-    .field{display:grid;gap:7px;margin-bottom:15px}.field label{font-size:12px;font-weight:800}.geometry-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.geometry-grid label{display:grid;gap:4px;color:var(--ob-muted);font-size:10px!important}.geometry-grid input{min-width:0!important;padding:7px!important}.sub-label{display:block;margin-bottom:5px;color:var(--ob-muted);font-size:11px!important;font-weight:700!important}.field input[type=text],.field input[type=number],.field input[type=color],.field select{width:100%;min-height:40px;padding:8px 10px;border:1px solid var(--badge-line);border-radius:10px;background:#fff;color:var(--ob-ink);font-size:13px}.field input[type=color]{padding:3px;cursor:pointer}.field-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.hint{margin:0;color:var(--ob-muted);font-size:11px;line-height:1.6}.button-row{display:flex;flex-wrap:wrap;gap:8px}.btn{display:inline-flex;min-height:40px;align-items:center;justify-content:center;padding:8px 13px;border:0;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer}.btn.primary{color:#fff;background:var(--ob-primary)}.btn.secondary{color:var(--ob-ink);background:#e8eee9}.btn.danger{color:#8d3524;background:#ffe8e2}.btn:disabled{opacity:.5;cursor:not-allowed}.file-button{position:relative;overflow:hidden}.file-button input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
-    .segmented{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:4px;border:1px solid var(--badge-line);border-radius:12px;background:var(--badge-soft)}.segmented button{min-height:38px;border:0;border-radius:8px;color:var(--ob-muted);background:transparent;font-size:12px;font-weight:800;cursor:pointer}.segmented button.active{color:#fff;background:var(--ob-primary)}
-    .import-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:22px;align-items:start}.mode-copy{margin:12px 0;color:var(--ob-muted);font-size:12px;line-height:1.7}.mode-panel{padding:15px;border:1px solid var(--badge-line);border-radius:14px;background:rgba(240,244,240,.65)}
-    .export-bar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap}.prefix-field{min-width:220px;flex:1}.prefix-field label{display:block;margin-bottom:7px;font-size:12px;font-weight:800}.prefix-field input{width:100%;min-height:42px;padding:8px 10px;border:1px solid var(--badge-line);border-radius:10px;background:#fff}.status{min-height:20px;margin:12px 0 0;color:var(--ob-muted);font-size:12px;line-height:1.6}.progress-wrap{height:7px;margin-top:10px;overflow:hidden;border-radius:99px;background:#e8eee9}.progress-wrap span{display:block;width:0;height:100%;background:var(--ob-primary);transition:width .15s}
-    .items-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:30px}.items-head h2{margin:0;font-size:22px}.items-count{color:var(--ob-muted);font-size:12px}.items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-top:16px}.empty-items{padding:35px;border:1px dashed var(--badge-line);border-radius:15px;color:var(--ob-muted);font-size:13px;text-align:center}.item-card{position:relative;overflow:hidden;border:1px solid var(--badge-line);border-radius:15px;background:#fff;box-shadow:0 8px 20px rgba(38,65,51,.06)}.item-card.missing{border-color:#e6a18f;background:#fff8f5}.item-card button.card-open{display:block;width:100%;padding:0;border:0;background:#fff;cursor:pointer;text-align:left}.thumb-wrap{position:relative;aspect-ratio:4/3;overflow:hidden;background:#edf1ed}.thumb-wrap img{display:block;width:100%;height:100%;object-fit:contain}.thumb-wrap .missing-mark{position:absolute;top:8px;right:8px;padding:4px 6px;border-radius:6px;color:#8d3524;background:#ffe8e2;font-size:10px;font-weight:800}.item-info{padding:11px 12px 13px}.item-info strong{display:block;overflow:hidden;color:var(--ob-ink);font-size:13px;text-overflow:ellipsis;white-space:nowrap}.item-info span{display:block;margin-top:4px;overflow:hidden;color:var(--ob-muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}.item-actions{display:flex;gap:6px;padding:0 10px 10px}.item-actions .btn{flex:1;min-height:34px;padding:6px 7px;font-size:11px}
-    .editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}.editor-toolbar h2{margin:0;font-size:22px}.editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:24px;align-items:start}.editor-stage{position:relative;overflow:hidden;border:1px solid var(--badge-line);border-radius:16px;background:#e8ece8}.editor-stage img{display:block;width:100%;height:auto}.editor-side{padding:17px;border:1px solid var(--badge-line);border-radius:15px;background:rgba(240,244,240,.62)}.editor-side h3{margin:0 0 14px;font-size:15px}.editor-side .field:last-of-type{margin-bottom:6px}.editor-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.editor-actions .btn{flex:1 1 125px}
-    .crop-dialog{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(24,34,29,.58)}.crop-dialog[hidden]{display:none}.crop-box{width:min(720px,100%);padding:18px;border-radius:18px;background:#fff;box-shadow:0 25px 80px rgba(0,0,0,.25)}.crop-box h2{margin:0 0 12px;font-size:19px}.crop-image-wrap{max-height:58vh;overflow:hidden;background:#edf1ed}.crop-image-wrap img{display:block;max-width:100%}.crop-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-    @media(max-width:1040px){.template-panel{grid-template-columns:minmax(0,1fr) minmax(300px,340px)}.template-stage,.template-stage.has-background{width:min(100%,520px)}}
-    @media(max-width:900px){.badge-hero{display:block}.privacy-note{max-width:none;margin-top:18px}.template-panel{display:grid;grid-template-columns:1fr}.template-panel>.panel-head,.template-panel>.sample-avatar-field,.template-panel>.template-layout>.template-stage,.template-panel>.template-layout>div:last-child{grid-column:1;grid-row:auto}.template-panel>.sample-avatar-field{order:2}.template-panel>.template-layout>.template-stage{order:3;justify-self:end;width:min(100%,560px)}.template-panel>.template-layout>div:last-child{order:4}.import-layout,.editor-layout{grid-template-columns:1fr}.editor-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}.editor-side h3,.editor-actions{grid-column:1/-1}.editor-side .field{min-width:0}}
-    @media(max-width:640px){.badge-tool{width:calc(100% - 24px);padding-top:34px}.steps{grid-template-columns:1fr}.panel{padding:16px}.panel-head{display:grid}.panel-head .button-row{width:100%}.panel-head .button-row>*{flex:1}.template-stage,.template-stage.has-background{width:100%;min-height:240px}.stage-empty{min-height:240px}.template-settings{grid-template-columns:1fr;gap:10px}.template-settings>.field,.template-settings>.canvas-help,.template-settings>#nameControls{grid-column:1!important}.template-settings .field-row{grid-template-columns:repeat(2,minmax(0,1fr))}.template-settings #nameControls{grid-template-columns:1fr}.template-settings #nameControls>.field{grid-column:1!important;grid-row:auto!important}.template-settings .field input[type=color],.template-settings .field select,.template-settings .field input[type=number],.template-settings .field input[type=text]{min-height:36px}.template-settings .btn{min-height:36px}.template-settings .button-row .btn{flex:1 1 140px}.items-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.item-info{padding:9px}.item-actions{display:grid;grid-template-columns:1fr}.editor-side{display:block}.export-bar{align-items:stretch}.export-bar .btn{width:100%}.prefix-field{min-width:100%}}
-  </style>
+/* ================= 基础 ================= */
+[hidden]{display:none!important}
+.bg-main{padding-bottom:36px}
+.bg-hero-ticket{margin-top:44px;display:flex;border-radius:26px;background:linear-gradient(128deg,var(--ob-primary-dark) 0%,var(--ob-primary) 58%,#35846a 100%);color:#fff;box-shadow:0 24px 50px rgba(23,76,56,.28)}
+.bht-body{flex:1;min-width:0;padding:32px 36px 28px}
+.bht-stub{position:relative;flex:0 0 220px;margin:14px;padding:20px 22px;border-left:2px dashed rgba(255,255,255,.35);border-radius:16px;background:rgba(255,255,255,.08)}
+.bht-stub:before,.bht-stub:after{content:"";position:absolute;left:-21px;width:20px;height:20px;border-radius:50%;background:var(--ob-bg)}
+.bht-stub:before{top:-24px}.bht-stub:after{bottom:-24px}
+.bht-pill{display:inline-flex;width:fit-content;align-items:center;gap:8px;margin-bottom:14px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.14);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.bht-pill:before{content:"";width:7px;height:7px;border-radius:50%;background:#ffb4a2}
+.bg-hero-ticket h1{margin:0;font-size:clamp(26px,4vw,40px)!important;line-height:1.15;letter-spacing:-.03em!important;color:#fff!important;text-wrap:balance}
+.bht-sub{margin:12px 0 0;max-width:600px;color:rgba(255,255,255,.82);font-size:13.5px;line-height:1.75}
+.bht-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.bht-meta span{padding:5px 12px;border-radius:99px;background:rgba(255,255,255,.12);font-size:11px;font-weight:700}
+.stub-strong{display:block;margin:2px 0 6px;font-size:14px;font-weight:800}
+.stub-text{color:rgba(255,255,255,.78);font-size:11.5px;line-height:1.65}
+.stub-row{display:flex;gap:10px;margin-top:14px}
+.stub-chip{flex:1;min-width:0;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.1);font-size:10.5px;line-height:1.45}
+.stub-chip strong{display:block;margin-bottom:2px;font-size:12px}
+
+/* ================= 步骤导航 ================= */
+.steps-rail{counter-reset:brk;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:26px 0 22px;list-style:none;padding:0}
+.step-card{--sc-accent:var(--ob-line);position:relative;display:block;padding:16px 16px 14px;border:1px solid var(--ob-line);border-radius:18px;background:rgba(255,255,255,.72)}
+.step-card:not(:last-child)::after{content:"";position:absolute;top:34px;right:-14px;z-index:1;width:12px;height:2px;background:var(--ob-line)}
+.step-num{display:inline-grid;width:33px;height:33px;place-items:center;border-radius:11px;color:#fff;background:var(--sc-accent);font-size:13px;font-weight:800;transition:.2s}
+.step-title{display:block;margin-top:10px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
+.step-desc{display:block;margin-top:4px;color:var(--ob-muted);font-size:11px;line-height:1.55}
+.step-current{--sc-accent:var(--ob-primary);border-color:#bcd9c9;background:linear-gradient(180deg,#fff,rgba(223,240,230,.55));box-shadow:0 0 0 3px var(--bdg-ring),0 10px 24px rgba(35,107,79,.08)}
+.step-done{--sc-accent:#467e5c;border-color:#b9d6c5;background:linear-gradient(180deg,#f4fbf7,rgba(223,240,230,.45))}
+.step-done .step-num{background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12.5 9.5 18 20 6.5'/%3E%3C/svg%3E");background-size:17px;background-position:center;background-repeat:no-repeat;background-color:#467e5c}
+.step-done .step-title{color:#2e6b49}
+.step-locked{opacity:.55}
+.step-locked:hover{opacity:.8}
+
+/* ================= 面板 ================= */
+.tool-panel{margin-top:22px;padding:22px 24px 24px;border:1px solid var(--bdg-line);border-radius:22px;background:var(--bdg-panel);box-shadow:var(--ob-shadow)}
+.tool-panel>*{min-width:0}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid rgba(220,228,221,.65)}
+.panel-titles{min-width:0}
+.panel-titles h2{margin:0;font-size:19px;letter-spacing:-.03em}
+.panel-sub{margin:5px 0 0;color:var(--ob-muted);font-size:12px;line-height:1.6}
+.step-chip{flex:0 0 auto;padding:6px 13px;border-radius:99px;background:var(--bdg-soft);color:var(--ob-primary-dark);font-size:11px;font-weight:800;letter-spacing:.02em}
+.head-actions{display:flex;gap:8px;flex-wrap:wrap}
+.disabled-panel{position:relative;opacity:.62}
+.disabled-panel>*:not(.lock-note){pointer-events:none}
+.lock-note{position:relative;display:none;margin:0 0 16px;padding:11px 14px 11px 40px;border:1px dashed #9bcdb4;border-radius:12px;color:#2e6b49;background:linear-gradient(180deg,#f3fbf6,rgba(223,240,230,.6));font-size:12px;line-height:1.5}
+.lock-note::before{content:"";position:absolute;left:14px;top:50%;width:16px;height:16px;transform:translateY(-50%);border-radius:50%;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12.5 9.5 18 20 6.5'/%3E%3C/svg%3E") center/10px no-repeat,var(--ob-primary)}
+.disabled-panel .lock-note{display:block}
+
+/* ================= 工作区布局 ================= */
+.ws{display:grid;grid-template-columns:minmax(0,1fr) minmax(600px,1.5fr);gap:26px;align-items:start;margin-top:18px}
+.stage-col{position:sticky;top:88px;min-width:0}
+.set-col{min-width:0}
+.canvas-stage{position:relative;overflow:hidden;aspect-ratio:3/4;width:min(100%,420px);margin:0 auto;border:1px solid #c9d4cc;border-radius:18px;background:var(--bdg-stage-bg);box-shadow:inset 0 2px 12px rgba(38,65,51,.07)}
+.canvas-stage.has-background,.editor-stage.has-background{--stage-ar:var(--badge-stage-ar,.75);width:min(100%,calc(min(80vh,740px)*var(--stage-ar)));min-height:0;aspect-ratio:var(--badge-stage-ratio)}
+.canvas-stage img{display:block;width:100%;height:auto;max-height:700px;object-fit:contain;background:#fff}
+.canvas-stage.has-background img,.editor-stage.has-background img{width:100%;height:100%;max-height:none;object-fit:fill;background:#fff}
+.stage-side-hint{text-align:center;margin-top:10px;color:var(--ob-muted);font-size:11px}
+.group-stack{display:grid;gap:14px}
+.fgroup{padding:15px 17px 17px;border:1px solid rgba(214,226,217,.9);border-radius:17px;background:linear-gradient(180deg,rgba(252,254,252,.95),rgba(245,249,245,.85))}
+.fgroup>.ghead{display:flex;justify-content:space-between;gap:10px;margin-bottom:13px}
+.gtitle{margin:0;font-size:13px;font-weight:800;letter-spacing:-.01em}
+.gnote{color:var(--ob-muted);font-size:11px;line-height:1.6;margin:4px 0 0}
+.ghead-note{max-width:210px;text-align:right;color:var(--ob-muted);font-size:10.5px;line-height:1.55}
+.mini-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px}
+.sub-block{min-width:0}
+.sub-label{display:block;margin-bottom:6px;color:var(--ob-muted);font-size:10.5px;font-weight:700;letter-spacing:.02em}
+.quad-grid{display:grid;grid-template-columns:1fr 1fr;border:1px dashed rgba(155,205,180,.8);border-radius:13px;overflow:hidden;background:rgba(255,255,255,.5)}
+.quad{min-width:0;padding:11px 13px 13px;border-top:1px dashed rgba(155,205,180,.6)}
+.quad:nth-child(odd){border-right:1px dashed rgba(155,205,180,.6)}
+.quad:first-child,.quad:nth-child(2){border-top:none}
+.quad p{margin:0 0 7px;color:var(--ob-muted);font-size:10.5px;font-weight:700}
+.quad .hint{margin-top:6px}
+.setting-row{display:flex;align-items:center;gap:9px}
+.select-flex1{display:flex;min-width:0;flex:1}
+.stack-gaps{display:grid;gap:11px}
+.checkline{display:flex;align-items:center;gap:8px;cursor:pointer}
+.slot-note{margin:8px 0 0;color:var(--ob-muted);font-size:10.5px;line-height:1.55}
+.field{display:grid;gap:7px;min-width:0;margin:0}
+.hint{margin:0;color:var(--ob-muted);font-size:10.5px;line-height:1.6}
+input[type=text],input[type=number],select{width:100%;min-width:0;min-height:34px;padding:6px 9px;border:1px solid var(--bdg-line);border-radius:9px;background:#fff;color:var(--ob-ink);font-size:12px;transition:border-color .16s,box-shadow .16s}
+input[type=color]{width:42px;min-width:42px;height:34px;padding:3px;border:1px solid var(--bdg-line);border-radius:9px;background:#fff;cursor:pointer}
+input:focus,select:focus{border-color:var(--ob-primary);outline:0;box-shadow:0 0 0 3px var(--bdg-ring)}
+input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--ob-primary);cursor:pointer}
+
+/* ================= 按钮 ================= */
+.btn{display:inline-flex;min-height:34px;align-items:center;justify-content:center;gap:7px;padding:6px 13px;border:0;border-radius:9px;font-size:12px;font-weight:750;line-height:1.2;cursor:pointer;transition:background .16s,transform .12s,box-shadow .16s,color .16s}
+.btn:hover{text-decoration:none}
+.btn:active{transform:scale(.97)}
+.btn.primary{color:#fff;background:var(--ob-primary)}
+.btn.primary:hover{background:var(--ob-primary-dark);box-shadow:0 6px 16px rgba(35,107,79,.24)}
+.btn.ghost{border:1px solid var(--bdg-line);background:#fff;color:var(--ob-ink)}
+.btn.ghost:hover{border-color:#bdd6c6;background:#f4f8f4}
+.btn.soft-danger{color:#8d3524;background:#ffe8e2}
+.btn.soft-danger:hover{background:#ffd9d1}
+.btn.lg{min-height:42px;border-radius:11px;font-size:13px}
+.btn.wide{width:100%}
+.btn-sm-solid{flex:1 1 130px;min-height:31px;padding:4px 10px;border:1px solid var(--bdg-line);border-radius:8px;background:#fff;color:var(--ob-ink);font-size:11px;font-weight:650;cursor:pointer;transition:.15s;text-align:center}
+.btn-sm-solid:hover{border-color:#bdd6c6;background:#f4f8f4}
+.file-button{position:relative;overflow:hidden}
+.file-button input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.pick-file{display:flex;gap:12px;align-items:center;padding:13px 15px;border:1.5px dashed #a8c7b6;border-radius:13px;background:#fbfdfa;cursor:pointer;transition:border-color .16s,background .16s,box-shadow .16s}
+.pick-file:hover,.pick-file:focus-within{border-color:var(--ob-primary);background:var(--ob-primary-soft);box-shadow:0 0 0 3px var(--bdg-ring)}
+.pf-icon{display:grid;flex:0 0 auto;width:38px;height:38px;place-items:center;border-radius:11px;color:var(--ob-primary);background:var(--ob-primary-soft)}
+.pf-icon svg{width:19px;height:19px}
+.pf-copy{min-width:0}
+.pf-copy strong{display:block;margin-bottom:3px;font-size:12.5px;font-weight:800}
+.pf-copy .hint{margin:0}
+
+/* ================= 字体选择组 ================= */
+.font-seg{display:inline-grid;grid-auto-flow:column;gap:4px;padding:4px;border-radius:11px;background:var(--bdg-soft)}
+.font-seg button{min-height:27px;padding:4px 13px;border:0;border-radius:8px;color:var(--ob-muted);background:transparent;font-size:11px;font-weight:750;cursor:pointer;transition:.15s}
+.font-seg button:hover{color:var(--ob-primary-dark);background:rgba(255,255,255,.8)}
+.font-seg button.active{color:#fff;background:var(--ob-primary);box-shadow:0 3px 9px rgba(35,107,79,.22)}
+.lang-placeholders{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.lang-pair{display:grid;grid-template-columns:66px minmax(0,1fr);gap:9px;align-items:center}
+.lang-tag{padding:5px 0;border-radius:8px;background:var(--bdg-soft);color:var(--ob-primary-dark);font-size:10.5px;font-weight:800;text-align:center}
+.editor-side .field-row{gap:8px}
+.upload-slot{position:relative;display:inline-flex;min-height:31px;align-items:center;padding:4px 10px;border:1px solid var(--bdg-line);border-radius:8px;background:#fff;font-size:11px;font-weight:650;cursor:pointer;transition:.15s}
+.upload-slot:hover{border-color:#bdd6c6;background:#f4f8f4}
+.chip-radio{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.chip-radio label{position:relative;display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1.5px solid var(--bdg-line);border-radius:11px;background:#fff;font-size:11.5px;font-weight:700;cursor:pointer;transition:.15s}
+.chip-radio label:has(input:checked){border-color:var(--ob-primary);background:var(--ob-primary-soft);color:var(--ob-primary-dark)}
+.chip-radio input{position:absolute;opacity:0;pointer-events:none}
+.stage-input{flex:1;min-width:0}
+
+/* ================= 画布区域 ================= */
+.zone{position:absolute;z-index:2;display:none;box-sizing:border-box;min-width:0;min-height:0;border:2px solid var(--ob-primary);background:rgba(35,107,79,.12);cursor:grab;touch-action:none;transition:box-shadow .15s}
+.zone:active{cursor:grabbing}
+.zone.active{display:block}
+.zone.selected{box-shadow:0 0 0 3px rgba(35,107,79,.28),0 0 0 1px #fff}
+.zone-name{border-style:dashed;border-color:var(--ob-accent);background:rgba(255,118,93,.12)}
+.zone-name.selected{box-shadow:0 0 0 3px rgba(255,118,93,.28),0 0 0 1px #fff}
+.zone-label{position:absolute;top:0;left:0;padding:3px 6px;color:#fff;background:var(--ob-primary);font-size:10px;font-weight:800;pointer-events:none}
+.zone-name .zone-label{background:var(--ob-accent)}
+.resize-handle{position:absolute;right:-9px;bottom:-9px;width:20px;height:20px;background:transparent;cursor:nwse-resize}
+.resize-handle::before{content:"";position:absolute;inset:3px;border:2px solid #fff;border-radius:50%;background:var(--ob-primary);box-shadow:0 2px 6px rgba(24,34,29,.25)}
+.zone-name .resize-handle::before{background:var(--ob-accent)}
+.zone-click-note{margin:10px 0 0;color:var(--ob-muted);font-size:10.5px;text-align:center}
+.stage-empty{display:grid;min-height:0;aspect-ratio:3/4;place-items:center;padding:30px;color:var(--ob-primary-dark);font-size:13px;text-align:center;background-image:linear-gradient(rgba(35,107,79,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(35,107,79,.045) 1px,transparent 1px);background-size:22px 22px}
+.se-inner{display:grid;justify-items:center;gap:10px;max-width:300px}
+.se-inner svg{width:42px;height:42px;color:#7ba78f;opacity:.85}
+.se-inner strong{font-size:13.5px}
+.se-inner span{color:var(--ob-muted);font-size:11.5px;line-height:1.65}
+
+/* ================= 导入面板 ================= */
+.import-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:20px;align-items:start}
+.mode-tabs{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin-bottom:12px;border-radius:13px;background:var(--bdg-soft)}
+.mode-tabs button{min-height:37px;border:0;border-radius:10px;color:var(--ob-muted);background:transparent;font-size:12px;font-weight:800;cursor:pointer;transition:.18s}
+.mode-tabs button:hover{color:var(--ob-primary-dark)}
+.mode-tabs button.active{color:#fff;background:var(--ob-primary);box-shadow:0 4px 12px rgba(35,107,79,.24)}
+.mode-intro-line{position:relative;display:flex;gap:9px;align-items:flex-start;margin:0 0 14px;padding:10px 13px 10px 36px;border-radius:11px;background:rgba(223,240,230,.5);color:#4c5b52;font-size:11.5px;line-height:1.65}
+.mode-intro-line::before{content:"i";position:absolute;left:13px;top:11px;display:grid;width:15px;height:15px;place-items:center;border-radius:50%;background:var(--ob-primary);color:#fff;font-size:10px;font-weight:900;font-style:normal}
+.mode-card{padding:16px;border:1px solid var(--bdg-line);border-radius:15px;background:linear-gradient(180deg,rgba(252,254,252,.9),rgba(245,249,245,.7))}
+.mode-card .stack-gaps{gap:13px}
+.tips-card{position:relative;padding:16px;border:1px solid rgba(184,213,196,.65);border-radius:15px;background:linear-gradient(180deg,rgba(240,250,243,.8),rgba(223,240,230,.4))}
+.tc-title{display:flex;gap:8px;align-items:center;margin:0 0 10px;font-size:13px;font-weight:800}
+.tc-title svg{width:16px;height:16px;color:var(--ob-primary)}
+.tips-card ul{margin:0;padding-left:17px;color:var(--ob-muted);font-size:11.5px;line-height:1.9}
+.tips-card li+li{margin-top:6px}
+.tips-card b{color:var(--ob-ink)}
+
+/* ================= 导出 ================= */
+.export-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-top:16px}
+.prefix-field{flex:1;min-width:230px;display:grid;gap:7px}
+.progress-wrap{height:8px;margin-top:12px;overflow:hidden;border-radius:99px;background:#e8eee9}
+.progress-wrap span{display:block;width:0;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--ob-primary),#4e9677);transition:width .15s}
+
+/* ================= 缩略图画廊 ================= */
+.items-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:34px}
+.items-head h2{margin:0;font-size:20px;letter-spacing:-.03em}
+.items-count{flex:0 0 auto;display:inline-flex;align-items:center;min-height:26px;padding:4px 12px;border-radius:99px;color:var(--ob-primary-dark);background:var(--ob-primary-soft);font-size:12px;font-weight:700}
+.items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-top:16px}
+.empty-items{display:grid;place-items:center;gap:8px;grid-column:1/-1;min-height:150px;padding:34px;border:1px dashed #9bcdb4;border-radius:16px;color:var(--ob-muted);font-size:12.5px;text-align:center;background:linear-gradient(180deg,rgba(255,255,255,.6),rgba(223,240,230,.35))}
+.item-card{position:relative;overflow:hidden;border:1px solid var(--bdg-line);border-radius:16px;background:#fff;box-shadow:0 8px 20px rgba(38,65,51,.06);transition:transform .16s,box-shadow .16s,border-color .16s}
+.item-card:hover{transform:translateY(-3px);border-color:#bdd6c6;box-shadow:0 14px 30px rgba(38,65,51,.1)}
+.item-card.missing{border-color:#e6a18f;background:#fff8f5}
+.item-card button.card-open{display:block;width:100%;padding:0;border:0;background:#fff;cursor:pointer;text-align:left}
+.item-card button.card-open:focus-visible{outline:3px solid var(--badge-ring);outline-offset:-3px}
+.thumb-wrap{position:relative;aspect-ratio:4/3;overflow:hidden;background-image:linear-gradient(rgba(35,107,79,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(35,107,79,.04) 1px,transparent 1px);background-size:18px 18px;background-color:#edf1ed}
+.thumb-wrap img{display:block;width:100%;height:100%;object-fit:contain}
+.thumb-wrap .missing-mark{position:absolute;top:8px;right:8px;padding:4px 8px;border-radius:99px;color:#8d3524;background:#ffe8e2;font-size:10px;font-weight:800;box-shadow:0 2px 8px rgba(141,53,36,.15)}
+.item-info{padding:11px 12px 13px}
+.item-info strong{display:block;overflow:hidden;color:var(--ob-ink);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.item-info span{display:block;margin-top:4px;overflow:hidden;color:var(--ob-muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.item-actions{display:flex;gap:6px;padding:0 10px 10px}
+.item-actions .btn{flex:1;min-height:34px;padding:6px 7px;font-size:11px}
+@media(max-width:520px){
+.items-grid{grid-template-columns:minmax(0,1fr)}
+.thumb-wrap{aspect-ratio:auto;height:130px}
+.thumb-wrap img{object-position:left top}
+.item-actions{flex-direction:row}
+.item-actions .btn-sm-solid{flex:1;min-height:34px}
+}
+
+/* ================= 编辑视图 ================= */
+.editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.editor-toolbar h2{margin:0;font-size:22px;letter-spacing:-.03em}
+.back-button{min-height:48px;padding:12px 18px;color:#fff;background:var(--ob-primary);box-shadow:0 9px 22px rgba(35,107,79,.2);font-size:14px}
+.leave-note{position:relative;display:flex;gap:9px;align-items:flex-start;margin:0 0 14px;padding:11px 14px 11px 40px;border:1px solid #f0d9a7;border-radius:12px;color:#714713;background:var(--ob-warning-soft);font-size:11.5px;line-height:1.65}
+.leave-note::before{content:"!";position:absolute;left:14px;top:12px;display:grid;width:16px;height:16px;place-items:center;border-radius:50%;background:#eab63f;color:#fff;font-size:11px;font-weight:900}
+.editor-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(400px,520px);gap:26px;align-items:start}
+.editor-stage{position:relative;overflow:hidden;border:1px solid #c9d4cc;border-radius:18px;background:var(--bdg-stage-bg);box-shadow:inset 0 2px 12px rgba(38,65,51,.07)}
+.editor-stage img{display:block;width:100%;height:auto}
+.editor-side{padding:18px;border:1px solid var(--bdg-line);border-radius:17px;background:linear-gradient(180deg,#f8faf7,rgba(240,244,240,.65))}
+.editor-side h3{margin:0 0 14px;padding-bottom:11px;border-bottom:1px solid rgba(220,228,221,.7);font-size:15px}
+.align-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.align-actions .btn{min-height:36px}
+.avatar-status-card{padding:11px 13px;border-radius:11px;background:#fff;border:1px solid var(--bdg-line)}
+.avatar-status-card strong{display:block;margin-bottom:3px;font-size:12px}
+.avatar-status-card span{color:var(--ob-muted);font-size:11px;line-height:1.6}
+.stack-gap-8{display:grid;gap:8px;margin-top:9px}
+.editor-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.editor-actions .btn{flex:1 1 125px}
+.editor-actions .hint{flex-basis:100%;margin:0}
+.js-status-note{margin:8px 0 0;color:var(--ob-muted);font-size:10.5px}
+
+/* ================= 裁剪弹窗 ================= */
+.crop-dialog{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(24,34,29,.6);backdrop-filter:blur(4px)}
+.crop-box{width:min(720px,100%);padding:20px;border-radius:18px;background:#fff;box-shadow:0 25px 80px rgba(0,0,0,.28)}
+.crop-box h2{margin:0 0 12px;padding-bottom:12px;border-bottom:1px solid var(--bdg-line);font-size:19px}
+.crop-image-wrap{max-height:58vh;overflow:hidden;background-image:linear-gradient(rgba(35,107,79,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(35,107,79,.04) 1px,transparent 1px);background-size:18px 18px;background-color:#edf1ed}
+.crop-image-wrap img{display:block;max-width:100%}
+.crop-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+/* ================= 状态反馈动效 ================= */
+@keyframes flashOk{0%,100%{background-color:transparent}30%{background-color:rgba(70,126,92,.14)}}
+.flash-once{animation:flashOk 1.4s ease-out 1}
+@keyframes rise-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.rise-in{animation:rise-in .5s cubic-bezier(.16,1,.3,1) backwards}
+button:focus-visible,input:focus-visible,select:focus-visible,label:focus-within{outline:3px solid var(--badge-ring);outline-offset:2px}
+
+/* ================= 响应式 ================= */
+@media(max-width:1040px){.ws{grid-template-columns:minmax(0,1fr) minmax(440px,540px)}.bht-stub{flex-basis:190px}}
+@media(max-width:900px){
+.steps-rail{grid-template-columns:1fr}
+.step-card:not(:last-child)::after{display:none}
+.ws{grid-template-columns:1fr}
+.stage-col{position:static;order:2}
+.set-col{order:1}
+.canvas-stage{width:min(100%,420px)}
+.import-grid,.editor-layout{grid-template-columns:1fr}
+.editor-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
+.editor-side h3,.editor-actions{grid-column:1/-1}
+.bg-hero-ticket{flex-direction:column}
+.bht-stub{margin:0 14px 14px;border-left:0;border-top:2px dashed rgba(255,255,255,.35)}
+.bht-stub:before{top:-11px;left:auto;right:-24px}
+.bht-stub:after{bottom:auto;top:-11px;left:-24px}
+}
+@media(max-width:640px){
+.bg-hero-ticket{margin-top:26px}
+.bht-body{padding:24px 20px 22px}
+.tool-panel{padding:16px}
+.panel-head{display:grid}
+.head-actions{width:100%}
+.head-actions>*{flex:1}
+.mini-grid2{grid-template-columns:1fr}
+.quad-grid{grid-template-columns:1fr}
+.quad{border-right:none!important;border-top:1px dashed rgba(155,205,180,.6)!important}
+.quad:first-child{border-top:none!important}
+.export-bar{align-items:stretch}
+.export-bar .btn{width:100%}
+.prefix-field{min-width:100%}
+.editor-side{display:block}
+.canvas-stage,.canvas-stage.has-background{width:min(100%,420px)}
+.stage-empty{aspect-ratio:3/4}
+}
+@media(prefers-reduced-motion:reduce){.rise-in,.flash-once{animation:none!important}*{transition-duration:.01ms!important}}
+/* 第 1 步单屏模式：收紧头部为单行横幅，隐藏次要说明 */
+.compact-hero .bht-sub,.compact-hero .bht-stub{display:none}
+.compact-hero .bht-body{padding:11px 22px 10px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.compact-hero .bht-pill{margin:0}
+.compact-hero .bg-hero-ticket h1{font-size:20px!important;margin:0}
+.compact-hero .bht-meta{margin:0 0 0 auto}
+.compact-hero{margin-top:10px;box-shadow:0 10px 24px rgba(23,76,56,.18)}
+
+/* ================= 向导式分步（仅显示控制，不动原逻辑） ================= */
+.badge-tool{--bdg-line:#dce4dd;--bdg-ring:rgba(35,107,79,.35);--bdg-panel:#fff;--bdg-soft:#edf4ee;--bdg-stage-bg:#e8ece8;--badge-ring:var(--bdg-ring)}
+.tool-panel{border:1px solid var(--bdg-line);background:var(--bdg-panel)}
+.wizard-chip{display:none}.wizard-active .wizard-chip{display:inline-flex}
+.wizard-active{animation:wpnl .55s cubic-bezier(.16,1,.3,1) backwards;opacity:1}
+@keyframes wpnl{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes wpnl-end{to{opacity:1;transform:none}}
+.wizard-active{animation:wpnl .55s cubic-bezier(.16,1,.3,1) backwards, wpnl-end 0s .55s forwards}
+.wizard-nav-current{border-color:#bcd9c9;background:linear-gradient(180deg,#fff,rgba(223,240,230,.55));box-shadow:0 0 0 3px var(--bdg-ring),0 10px 24px rgba(35,107,79,.08)}
+.wizard-nav-current .step-num{background:var(--ob-primary)}
+#stepTemplate,#stepImport,#stepExport{cursor:pointer}
+.wizard-next-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:15px 17px;margin:20px 17px 0;border-top:1px solid rgba(220,228,221,.65);background:linear-gradient(180deg,rgba(252,254,252,.95),rgba(245,249,245,.85));border-radius:0 0 20px 20px}
+.tool-panel>.wizard-next-row:only-child,.mode-card~.wizard-next-row{margin:18px 0 0;padding:15px 0 0;border-top:none;border-radius:0;background:none}
+.wizard-next-hint{color:var(--ob-muted);font-size:12px;line-height:1.6;flex:1;min-width:200px}
+.wizard-next-row .btn.lg{min-width:210px}
+.wizard-next-row .btn.ghost.lg{min-width:170px}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
+.btn.primary:disabled{background:#e3ece5;color:#8fa298}
+@keyframes wz-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}55%{transform:translateX(6px)}80%{transform:translateX(-3px)}}
+.wizard-shake{animation:wz-shake .5s ease-in-out 1}
+@media(prefers-reduced-motion:reduce){.wizard-active,.wizard-shake{animation:none!important}}
+
+/* ================= 紧凑化：第 1 步控制栏单屏显示 ================= */
+.bg-main{padding-bottom:18px}
+.bg-hero-ticket{margin-top:14px;border-radius:20px;box-shadow:0 16px 36px rgba(23,76,56,.22)}
+.bht-body{padding:16px 26px 14px}
+.bht-pill{margin-bottom:8px;padding:4px 10px;font-size:10px}
+.bg-hero-ticket h1{font-size:clamp(22px,3vw,30px)!important}
+.bht-sub{margin:6px 0 0;font-size:12.5px}
+.bht-meta{margin-top:10px;gap:6px}
+.bht-meta span{padding:3px 10px;font-size:10.5px}
+.bht-stub{flex:0 0 200px;margin:10px;padding:12px 15px}
+.stub-strong{font-size:12.5px;margin:0 0 4px}
+.stub-text{font-size:10.5px}
+.stub-row{margin-top:9px;gap:7px}
+.stub-chip{padding:7px 8px;font-size:10px}
+.steps-rail{gap:10px;margin:12px 0 10px}
+.step-card{padding:9px 12px 8px;border-radius:14px}
+.step-card:not(:last-child)::after{top:26px}
+.step-num{width:24px;height:24px;border-radius:8px;font-size:11px}
+.step-title{margin-top:6px;font-size:12.5px}
+.step-desc{margin-top:2px;font-size:10.5px}
+.tool-panel{margin-top:12px;padding:14px 16px 16px;border-radius:18px}
+.panel-head{margin-bottom:10px;padding-bottom:10px}
+.panel-titles h2{font-size:17px}
+.panel-sub{margin:3px 0 0;font-size:11.5px}
+.step-chip{padding:4px 10px;font-size:10.5px}
+.ws{margin-top:10px;gap:18px}
+.stage-col{top:66px}
+.canvas-stage{width:min(100%,420px,calc((100vh - 380px)*.75));border-radius:14px}
+.canvas-stage.has-background,.editor-stage.has-background{width:min(100%,calc(min(80vh,740px)*var(--stage-ar)),calc((100vh - 380px)*var(--stage-ar)))}
+.stage-empty{padding:16px}
+.se-inner{gap:7px;max-width:240px}
+.se-inner svg{width:34px;height:34px}
+.se-inner strong{font-size:12.5px}
+.se-inner span{font-size:10.5px}
+.stage-side-hint{margin-top:7px;font-size:10.5px}
+.group-stack{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+.fgroup{padding:10px 12px 12px;border-radius:14px}
+.fgroup-2col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;align-items:start}
+.fgroup-2col>.sub-block{min-width:0}
+.fgroup>.ghead{margin-bottom:8px}
+.gtitle{font-size:12px}
+.ghead-note{font-size:10px;max-width:170px}
+.mini-grid2{gap:8px 10px}
+.pick-file{padding:8px 10px;gap:9px;border-radius:11px}
+.pf-icon{width:30px;height:30px;border-radius:9px}
+.pf-icon svg{width:15px;height:15px}
+.pf-copy strong{font-size:12px;margin-bottom:2px}
+input[type=text],input[type=number],select{min-height:29px;padding:4px 8px;border-radius:8px}
+input[type=color]{width:36px;min-width:36px;height:29px}
+.align-actions{gap:6px}
+.align-actions .btn{min-height:29px}
+.btn{min-height:29px;padding:4px 11px;font-size:11.5px;border-radius:8px}
+.btn.lg{min-height:34px;border-radius:9px;font-size:12.5px}
+.btn-sm-solid{min-height:28px;padding:3px 9px;font-size:10.5px}
+.upload-slot{min-height:28px;padding:3px 9px;font-size:10.5px}
+.slot-note{margin:5px 0 0;font-size:10px;line-height:1.5}
+.quad-grid{border-radius:11px}
+.quad{padding:8px 10px 9px}
+.quad p{margin:0 0 5px;font-size:10px}
+.lang-placeholders{gap:6px;margin-top:8px}
+.lang-pair{grid-template-columns:50px minmax(0,1fr);gap:7px}
+.lang-tag{padding:3px 0;font-size:10px}
+.setting-row{gap:6px;flex-wrap:wrap}
+.upload-slot.stage-input{flex:1 1 100%;justify-content:center;white-space:nowrap}
+.setting-row .btn-sm-solid{flex:1 1 40%;white-space:nowrap}
+.checkline{gap:6px}
+.wizard-next-row{margin:12px 0 0;padding:10px 12px;border-radius:0 0 16px 16px}
+.mode-card~.wizard-next-row{margin:10px 0 0;padding:10px 0 0}
+.wizard-next-row .btn.lg{min-width:180px}
+.wizard-next-row .btn.ghost.lg{min-width:150px}
+.wizard-next-hint{font-size:11px;min-width:160px}
+/* 姓名字体与文字层合并双列：窄化字体选择器标签 */
+#gnameRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}
+#gnameRow>.fgroup{min-width:0}
+@media(max-width:900px){#gnameRow{grid-template-columns:1fr}}
+@media(max-width:640px){.group-stack{grid-template-columns:1fr}.compact-hero .bht-meta{display:none}.compact-hero .bht-body{padding:10px 16px 9px}.head-actions{flex-wrap:wrap;width:100%}.head-actions .btn{flex:1 1 100%}.compact-mode .panel-head{display:flex;flex-wrap:wrap}.compact-mode .panel-titles{min-width:100%;display:block}.compact-mode .panel-sub{white-space:normal;overflow-wrap:anywhere;word-break:break-word;max-width:100%}.compact-mode .panel-head h2{font-size:16px}.compact-mode .step-chip{display:none}.panel-sub,.ghead-note,.wizard-next-hint{overflow-wrap:anywhere;min-width:0}.compact-mode .ghead{flex-wrap:wrap}.compact-mode .tool-panel,.compact-mode .panel-titles,.compact-mode .panel-sub{max-width:100%;overflow-x:hidden}.compact-mode .panel-sub{white-space:normal!important}}
+
+/* ================= 视觉对齐全站：卡片质感 + ob 阴影体系 =================
+   全站语言：rgba 白卡 + --ob-shadow 软投影 + 大圆角 + 悬停浮起 */
+.compact-mode .tool-panel{border-radius:var(--ob-radius);border-color:rgba(220,228,221,.86);background:rgba(255,255,255,.82);box-shadow:var(--ob-shadow)}
+.compact-mode .tool-panel:hover{box-shadow:var(--ob-shadow-hover)}
+.compact-mode .fgroup{background:rgba(255,255,255,.8);border:1px solid var(--ob-line);border-radius:var(--ob-radius);box-shadow:0 8px 20px rgba(38,65,51,.06);transition:transform .18s,box-shadow .18s,border-color .18s}
+.compact-mode .fgroup:hover{transform:translateY(-3px);border-color:#bdd6c6;box-shadow:0 14px 30px rgba(38,65,51,.1)}
+.compact-mode .step-card{background:rgba(255,255,255,.8);box-shadow:0 8px 20px rgba(38,65,51,.06);transition:.18s}
+.compact-mode .step-card:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(38,65,51,.09)}
+.compact-mode .wizard-nav-current{background:linear-gradient(180deg,#fff,rgba(223,240,230,.65));box-shadow:0 0 0 3px var(--bdg-ring),0 14px 30px rgba(35,107,79,.1)}
+.compact-mode .pick-file{border-radius:14px;background:rgba(255,255,255,.72)}
+.compact-mode .quad-grid{background:rgba(255,255,255,.55);border-radius:15px}
+.compact-mode .mode-card,.compact-mode .tips-card{background:rgba(255,255,255,.8);border-color:rgba(220,228,221,.86);border-radius:var(--ob-radius);box-shadow:0 8px 20px rgba(38,65,51,.06)}
+.compact-mode .item-card{box-shadow:0 8px 20px rgba(38,65,51,.06)}
+.compact-mode .editor-side{border-radius:var(--ob-radius);background:rgba(255,255,255,.8);box-shadow:0 8px 20px rgba(38,65,51,.06)}
+.compact-mode .bg-hero-ticket{border:1px solid rgba(255,255,255,.74);box-shadow:0 18px 45px rgba(23,76,56,.26)}
+
+/* ================= 九宫格工具风格对齐（grid-cutter DNA，布局/单屏不变） ================= */
+.compact-mode .badge-tool{width:min(1180px,calc(100% - 40px))}
+.compact-hero{display:none!important}
+.bg-pagehead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:24px 0 0}
+.bg-pagehead h1{margin:0;font-size:23px;letter-spacing:-.03em}
+.bg-pagehead .pagehead-tag{display:inline-flex;align-items:center;min-height:24px;padding:4px 10px;border-radius:999px;color:var(--ob-primary-dark);background:var(--ob-primary-soft);font-size:11px;font-weight:800}
+.bg-pagehead .pagehead-help{color:var(--ob-muted);font-size:12px}
+/* 步骤条 → 九宫格式分段开关 */
+.compact-mode .steps-rail{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border:1px solid #dce4dd;border-radius:13px;background:#eef2ee;margin:14px 0 0;box-shadow:none}
+.compact-mode .step-card{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:6px 10px;border-radius:9px;background:transparent;border:0;box-shadow:none}
+.compact-mode .step-card:not(:last-child)::after{display:none}
+.compact-mode .step-num{width:24px;height:24px;border-radius:7px;background:rgba(23,35,29,.07);color:var(--ob-muted);font-size:11px}
+.compact-mode .step-title{margin:0;font-size:13px;font-weight:800;color:var(--ob-ink)}
+.compact-mode .step-desc{display:none}
+.compact-mode .step-current{background:transparent;box-shadow:none}
+.compact-mode .step-current .step-title{color:var(--ob-primary-dark)}
+.compact-mode .step-current .step-num{background:var(--ob-primary);color:#fff}
+.compact-mode .step-locked{opacity:.5}
+.compact-mode .step-done .step-num{background:var(--ob-primary-soft);color:var(--ob-primary-dark)}
+.compact-mode .step-done .step-title{color:var(--ob-primary-dark)}
+.compact-mode .wizard-nav-current{background:#fff;box-shadow:0 2px 10px rgba(23,35,29,.1)}
+.compact-mode .wizard-nav-current .step-num{background:var(--ob-primary);color:#fff}
+.compact-mode .wizard-nav-current .step-title{color:var(--ob-primary-dark)}
+/* 面板与控件对齐九宫格 */
+.compact-mode .tool-panel{padding:16px 18px 18px;background:rgba(255,255,255,.84)}
+.compact-mode .btn.primary{box-shadow:0 9px 22px rgba(35,107,79,.18)}
+.compact-mode .btn.ghost{border:0;background:#e8eee9;color:var(--ob-ink)}
+.compact-mode .btn.ghost:hover{background:#dde5de;box-shadow:none}
+.compact-mode input[type=text],.compact-mode input[type=number],.compact-mode select{border-radius:11px;border-color:#dce4dd;font-weight:650}
+.compact-mode .mode-tabs,.compact-mode .font-seg{background:#eef2ee;border-radius:13px}
+.compact-mode .mode-tabs button,.compact-mode .font-seg button{border-radius:9px}
+.compact-mode .mode-tabs button.active,.compact-mode .font-seg button.active{box-shadow:0 5px 14px rgba(35,107,79,.2)}
+/* 画布深色舞台 + 玻璃徽章 */
+.compact-mode .canvas-stage,.compact-mode .editor-stage{background:#17231d;border-color:#dce4dd;border-radius:16px}
+.compact-mode .canvas-stage:not(.has-background) .stage-empty{color:#e8efe9;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px)}
+.compact-mode .stage-empty .se-inner strong{color:#fff}
+.compact-mode .stage-empty .se-inner span{color:rgba(232,239,233,.62)}
+.compact-mode .stage-empty .se-inner svg{color:rgba(232,239,233,.5)}
+.stage-badge{position:absolute;z-index:6;left:12px;bottom:12px;padding:6px 10px;border-radius:999px;color:#fff;background:rgba(23,35,29,.78);font-size:10.5px;font-weight:750;backdrop-filter:blur(8px);pointer-events:none}
+.canvas-stage:not(.has-background) .stage-badge{display:none}
+/* 上传位 dropzone 化 */
+.compact-mode .pick-file{border:1.5px dashed #9bbcab;border-radius:16px;background:linear-gradient(135deg,rgba(223,240,230,.66),rgba(255,255,255,.78))}
+.compact-mode .pick-file:hover,.compact-mode .pick-file:focus-within{border-color:var(--ob-primary);background:var(--ob-primary-soft);box-shadow:none}
+.compact-mode .pf-icon{color:#fff;background:var(--ob-primary);box-shadow:0 5px 14px rgba(35,107,79,.18)}
+.compact-mode .pf-icon svg{color:#fff}
+/* 锁定提示 → 九宫格 warning 琥珀语言 */
+.compact-mode .lock-note{border-color:#f0d9a7;color:#7c4c12;background:var(--ob-warning-soft)}
+.compact-mode .lock-note::before{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12.5 9.5 18 20 6.5'/%3E%3C/svg%3E") center/10px no-repeat,#eab63f}
+
+/* 紧凑第二档：控制栏三列化，砍掉说明行，控件再瘦身一档 */
+.compact-mode .badge-tool{width:min(1360px,calc(100% - 28px))}
+.compact-mode .set-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;align-items:start}
+/* 竖向浏览双竖条：左列背景+头像链路，右列姓名设置 */
+.compact-mode .set-col>.fgroup{grid-column:1;min-width:0}
+.compact-mode #gnameRow{display:grid;grid-column:2;grid-row:1 / span 4;grid-template-columns:1fr;gap:9px;align-content:start;min-width:0}
+.compact-mode .fg-font,.compact-mode .fg-layer{min-width:0}
+.compact-mode .ghead-note,.compact-mode .slot-note,.compact-mode .gnote{display:none}
+.compact-mode .quad .hint{display:none}
+.compact-mode .quad{padding:7px 9px 8px}
+.compact-mode .quad p{margin:0 0 4px;font-size:10px}
+.compact-mode .pick-file{padding:7px 9px}
+.compact-mode .pick-file .hint:not([id]){display:none}
+.compact-mode .quad:nth-child(4){display:none}
+.compact-mode .rise-in{animation:none!important}
+.compact-mode .wizard-active{animation:none!important}
+/* 三组单行化：pick-row 与外观三联行 */
+.compact-mode .pick-row{display:flex;gap:8px;align-items:stretch}
+.compact-mode .pick-row .pick-file{flex:1;min-width:0}
+.compact-mode .pick-row .btn{flex:0 0 auto;min-width:64px}
+.compact-mode .quad-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:1px dashed rgba(155,205,180,.8);border-radius:13px;overflow:hidden;background:rgba(255,255,255,.5)}
+.compact-mode .quad{border-top:none!important;border-right:1px dashed rgba(155,205,180,.6)!important;padding:8px 10px}
+.compact-mode .quad:last-child{border-right:none!important}
+.compact-mode .quad p{margin:0 0 5px;font-size:10px}
+/* body 容器与站点导航同宽居中（同元素复合选择器，与多宫格 .tool-area 同款写法） */
+.badge-tool.compact-mode{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:0}
+@media(max-width:640px){.badge-tool.compact-mode{width:calc(100% - 24px)}}
+/* 画布滚轮缩放选中框（悬停画布时生效） */
+.canvas-stage.has-background,.editor-stage{touch-action:none}
+@media(max-width:900px){.compact-mode .badge-tool{width:calc(100% - 24px)}}
+
+/* ================= 字体统一：全站字阶 22/20/17/14/13/12/11 =================
+   控件与正文 13px · 辅助说明 12px · 徽章 11px；字体统一继承全站栈 */
+.compact-mode .badge-tool,.compact-mode .badge-tool button,.compact-mode .badge-tool input,.compact-mode .badge-tool select{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.compact-mode .badge-tool{font-size:13px}
+.compact-mode .bg-pagehead h1{font-size:22px!important}
+.compact-mode .items-head h2,.compact-mode .editor-toolbar h2{font-size:20px}
+.compact-mode .panel-titles h2,.compact-mode .crop-box h2{font-size:17px}
+.compact-mode .editor-side h3{font-size:14px}
+.compact-mode .btn,.compact-mode .btn.lg,.compact-mode .back-button{font-size:13px}
+.compact-mode input[type=text],.compact-mode input[type=number],.compact-mode select{font-size:13px}
+.compact-mode .field>label,.compact-mode .checkline,.compact-mode .gtitle,.compact-mode .step-title,.compact-mode .pf-copy strong,.compact-mode .tc-title,.compact-mode .avatar-status-card strong,.compact-mode .item-info strong,.compact-mode .mode-tabs button,.compact-mode .font-seg button,.compact-mode .upload-slot,.compact-mode .btn-sm-solid,.compact-mode .control-label{font-size:13px}
+.compact-mode .sub-label,.compact-mode .quad p,.compact-mode .hint,.compact-mode .slot-note,.compact-mode .gnote,.compact-mode .ghead-note,.compact-mode .js-status-note,.compact-mode .zone-click-note,.compact-mode .stage-side-hint,.compact-mode .step-desc,.compact-mode .panel-sub,.compact-mode .tips-card ul,.compact-mode .mode-copy,.compact-mode .mode-intro-line,.compact-mode .leave-note,.compact-mode .lock-note,.compact-mode .wizard-next-hint,.compact-mode .avatar-status-card span,.compact-mode .item-info span,.compact-mode .status-slot,.compact-mode .warning,.compact-mode .download-status{font-size:12px}
+.compact-mode .zone-label,.compact-mode .missing-mark,.compact-mode .lang-tag,.compact-mode .items-count,.compact-mode .step-chip,.compact-mode .wizard-chip,.compact-mode .stage-badge{font-size:11px}
+/* 示例头像组：三控件同行 */
+.compact-mode .setting-row{flex-wrap:nowrap}
+.compact-mode .setting-row .upload-slot.stage-input{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact-mode .setting-row .btn-sm-solid{flex:0 0 auto;min-width:56px;padding:3px 10px}
+/* 头像框外观：单行内联字段，无容器装饰 */
+.compact-mode .inline-fields{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.compact-mode .inline-field{display:flex;align-items:center;gap:7px;min-width:0}
+.compact-mode .inline-field label{color:var(--ob-muted);font-size:12px;white-space:nowrap;cursor:pointer}
+.compact-mode .inline-field input[type=number]{width:64px;flex:0 0 auto}
+.compact-mode .inline-field input[type=color]{width:36px;min-width:36px}
+/* 上传字体槽：遮盖原生 file 控件，整槽可点 */
+.upload-slot{position:relative;overflow:hidden}
+.upload-slot input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.compact-mode #fontUploadPane .setting-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.compact-mode #fontUploadPane .upload-slot{justify-content:center;min-width:0}
+.compact-mode .lang-pair{grid-template-columns:42px minmax(0,1fr)}
+.compact-mode .font-seg button{min-height:24px;padding:2px 9px;font-size:10.5px}
+.compact-mode .wizard-next-row{grid-column:1/-1;margin-top:2px;padding:9px 12px}
+.compact-mode .wizard-next-row .btn.lg{min-height:32px}
+.compact-mode .canvas-stage{width:min(100%,360px,calc((100vh - 330px)*.75))}
+.compact-mode .canvas-stage.has-background{width:min(100%,calc(min(80vh,740px)*var(--stage-ar)),calc((100vh - 330px)*var(--stage-ar)))}
+@media(max-width:900px){.compact-mode .set-col{grid-template-columns:1fr}.compact-mode .ghead-note,.compact-mode .slot-note,.compact-mode .gnote{display:block}.compact-mode .canvas-stage,.compact-mode .canvas-stage.has-background{width:min(100%,420px)}}
+/* 单屏收尾：压导航高度与各段间距 */
+body:has(.compact-mode) .nav-inner{min-height:54px}
+.compact-mode .bg-hero-ticket{margin-top:6px}
+.compact-mode .bht-body{padding:9px 20px 8px}
+.compact-mode .steps-rail{margin:8px 0 8px}
+.compact-mode .tool-panel{margin-top:10px;padding:12px 14px 14px}
+.compact-mode .panel-head{margin-bottom:8px;padding-bottom:8px}
+.compact-mode .ws{margin-top:8px;gap:16px}
+.compact-mode .group-stack{gap:9px}
+.compact-mode .lang-placeholders{gap:5px;margin-top:6px}
+.compact-mode .mini-grid2{gap:7px 10px}
+.compact-mode .stack-gaps{gap:8px}
+.compact-mode .fg-layer #nameControls .mini-grid2{gap:6px 10px}
+.compact-mode .sub-label{margin-bottom:4px;font-size:10px}
+.compact-mode .field{gap:5px}
+.compact-mode .fg-layer .stack-gaps{gap:6px}
+.compact-mode .align-actions{gap:5px}
+.compact-mode .align-actions .btn{min-height:27px;padding:3px 9px}
+.compact-mode .canvas-stage{width:min(100%,360px,calc((100vh - 315px)*.75))}
+.compact-mode .canvas-stage.has-background{width:min(100%,calc(min(80vh,740px)*var(--stage-ar)),calc((100vh - 315px)*var(--stage-ar)))}
+</style>
 </head>
 <body>
   <nav class="site-nav home-nav" aria-label="网站导航"><div class="nav-inner"><a class="brand-link" href="../index.html"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8"/></svg></span>Only-box</a><div class="nav-links"><a href="../about.html">关于本项目</a></div></div></nav>
-  <main>
-    <div class="badge-tool">
-      <section class="badge-hero"><div><div class="eyebrow-pill">Batch badge maker</div><h1>批量证件生成</h1><p>一套背景与头像框模板，配合姓名和头像数据表，快速生成摊位证、舞台证、嘉宾证等证件图片。</p></div><div class="privacy-note"><strong>本地处理</strong><br>图片、表格和字体只在当前浏览器内存中处理，不会上传服务器。条目超过 200 条时建议不要刷新页面。</div></section>
+  <main class="bg-main">
+    <div class="badge-tool compact-mode">
+      <div class="bg-pagehead"><h1>批量证件生成</h1><span class="pagehead-help">图片仅在本地处理，不会上传</span></div>
+
+      <ol class="steps-rail" id="stepsRail">
+        <li class="step-card step-current" id="stepTemplate"><span class="step-num">1</span><strong class="step-title">设置模板</strong><span class="step-desc">选背景图，框出头像与姓名区域</span></li>
+        <li class="step-card step-locked" id="stepImport"><span class="step-num">2</span><strong class="step-title">导入数据</strong><span class="step-desc">表格匹配或内嵌头像，生成记录</span></li>
+        <li class="step-card step-locked" id="stepExport"><span class="step-num">3</span><strong class="step-title">导出证件</strong><span class="step-desc">检查缩略图后下载 PNG 或 ZIP</span></li>
+      </ol>
+
       <section id="listView">
-        <div class="steps" aria-label="使用步骤"><div class="step current" id="stepTemplate"><span class="step-number">1</span><div><strong>步骤 1 · 设置模板</strong><span>先选择背景，再确认头像与姓名区域</span></div></div><div class="step locked" id="stepImport"><span class="step-number">2</span><div><strong>步骤 2 · 导入数据</strong><span>选择表格并匹配或读取头像</span></div></div><div class="step locked" id="stepExport"><span class="step-number">3</span><div><strong>步骤 3 · 导出证件</strong><span>检查缩略图后下载 PNG 或 ZIP</span></div></div></div>
-        <section class="panel template-panel"><div class="panel-head"><div><h2>模板设置</h2><p>请直接在画布上选中头像框或姓名框进行拖动、缩放和定位。这里的文件只保存在当前浏览器内存中。</p></div><div class="button-row"><label class="btn secondary file-button">选择背景图<input id="backgroundInput" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif"></label><button id="clearBackgroundBtn" class="btn secondary" type="button">清除背景</button></div></div>
-          <div class="template-layout"><div class="template-stage" id="templateStage"><div class="stage-empty" id="templateEmpty">请先选择一张背景图。建议使用最终证件尺寸的原图。</div><img id="templateImage" alt="模板背景预览" hidden><div class="zone zone-avatar" id="templateAvatarZone"><span class="zone-label">头像</span><span class="resize-handle" aria-hidden="true"></span></div><div class="zone zone-name zone-name-template" id="templateNameZone"><span class="zone-label">姓名</span><span class="resize-handle" aria-hidden="true"></span></div></div>
-            <div class="template-settings"><div class="field sample-avatar-field"><label>示例头像预览</label><div class="button-row"><label class="btn secondary file-button">上传示例头像（仅用于预览）<input id="sampleAvatarInput" type="file" accept="image/*"></label></div><p class="hint">先上传示例头像，再确认头像框位置、尺寸、圆角和描边效果。</p></div><div class="canvas-help"><strong>画布编辑</strong><span>点击头像框或姓名框选中后，直接拖动位置；拖动右下角圆点调整大小。</span></div><div class="field"><label>头像框外观</label><div class="field-row"><div><label for="avatarRadius" class="sub-label">头像框圆角（默认 24 px）</label><input id="avatarRadius" type="number" min="0" step="1" aria-label="头像框圆角半径" placeholder="24"></div><div><label for="avatarBorder" class="sub-label">头像框描边（默认 0 px）</label><input id="avatarBorder" type="number" min="0" step="1" aria-label="头像框描边宽度" placeholder="0"></div></div><p class="hint">圆角控制头像框四角的弧度；描边控制头像框边缘线的宽度。单位均为背景原图像素，设置为 0 即不显示描边。</p></div><div class="field"><label>头像框快速对齐</label><div class="align-actions"><button class="btn secondary align-button" data-align-target="avatar" data-align-axis="centerX" type="button">水平居中</button><button class="btn secondary align-button" data-align-target="avatar" data-align-axis="centerY" type="button">垂直居中</button></div></div><div class="field"><label for="avatarAspect">裁剪比例</label><select id="avatarAspect"><option value="1">1:1</option><option value="0.75">3:4</option><option value="1.333333">4:3</option><option value="0">自由比例</option></select><p class="hint">选择预设比例后，头像框高度会随宽度自动计算；选择自由比例才允许独立修改宽高。</p></div><div class="field"><label>上传字体（可选）</label><div class="button-row"><label class="btn secondary file-button">上传中文字体<input id="fontInputZh" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label><label class="btn secondary file-button">上传英文字体<input id="fontInputEn" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label><label class="btn secondary file-button">上传日文字体<input id="fontInputJa" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label></div><p class="hint">默认字体使用 Noto Sans CJK 系列，采用 SIL Open Font License 1.1，可免费商用。中、英、日可分别选择字体；自定义字体只在当前浏览器会话中生效。</p><p class="hint" id="fontStatus">尚未上传自定义字体。</p></div><div class="field"><label><input id="nameEnabled" type="checkbox"> 开启姓名文字层</label><p class="hint">关闭时不显示姓名框；开启后画布上的“姓名”框可选中、拖动和缩放。</p></div><div id="nameControls" hidden><div class="field"><label>姓名框快速对齐</label><div class="align-actions"><button class="btn secondary align-button" data-align-target="name" data-align-axis="centerX" type="button">水平居中</button><button class="btn secondary align-button" data-align-target="name" data-align-axis="centerY" type="button">垂直居中</button></div></div><div class="field"><label>字体选择</label><div class="field-row"><div><label for="fontFamilyZh" class="sub-label">中文字体</label><select id="fontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option></select></div><div><label for="fontFamilyEn" class="sub-label">英文字体</label><select id="fontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option></select></div></div><div style="margin-top:9px"><label for="fontFamilyJa" class="sub-label">日文字体</label><select id="fontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option></select></div><p class="hint">姓名会根据字符自动使用对应语言字体；混合姓名可同时使用三套字体。</p><select id="fontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select></div><div class="field"><label for="fontSize">字号（留空自动适配）</label><input id="fontSize" type="number" min="8" step="1"></div></div><div class="field-row"><div class="field"><label for="nameColor">文字颜色</label><input id="nameColor" type="color"></div><div class="field"><label for="letterSpacing">字间距</label><input id="letterSpacing" type="number" min="0" step="0.5"></div></div><div class="field-row"><div class="field"><label for="nameAlign">水平对齐</label><select id="nameAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div><div class="field"><label for="nameVertical">垂直对齐</label><select id="nameVertical"><option value="top">顶部</option><option value="middle">居中</option><option value="bottom">底部</option></select></div></div></div></div>
+        <section class="tool-panel" id="templatePanel">
+          <header class="panel-head"><div class="panel-titles"><h2>模板设置</h2><p class="panel-sub">在画布上点选头像框或姓名框，拖动位置、拖拽右下角圆点缩放；右侧按分组微调效果。</p></div><span class="head-actions"><button id="wizardNextTemplate" class="btn primary lg" type="button" disabled>下一步 · 导入数据 →</button></span></header>
+          <div class="ws">
+            <div class="stage-col">
+              <div class="canvas-stage" id="templateStage">
+                <span class="stage-badge">拖动头像框与姓名框调整位置</span>
+                <div class="stage-empty" id="templateEmpty"><span class="se-inner"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.6" stroke="currentColor" stroke-width="1.7"/><circle cx="8.7" cy="9.6" r="1.9" stroke="currentColor" stroke-width="1.7"/><path d="m3.5 17.2 4.6-4.3a1.6 1.6 0 0 1 2.2-.03L20.4 21" stroke="currentColor" stroke-width="1.7"/></svg><strong>先选择一张背景图</strong><span>建议使用最终证件尺寸的原图，导入后头像与姓名区域可直接在画布上调整。</span></span></div>
+                <img id="templateImage" alt="模板背景预览" hidden>
+                <div class="zone zone-avatar" id="templateAvatarZone"><span class="zone-label">头像</span><span class="resize-handle" aria-hidden="true"></span></div>
+                <div class="zone zone-name zone-name-template" id="templateNameZone"><span class="zone-label">姓名</span><span class="resize-handle" aria-hidden="true"></span></div>
+              </div>
+              <p id="stageHintTemplate" class="stage-side-hint">点击左侧画布上的虚线框切换选中对象，拖动即可移动</p>
+            </div>
+            <div class="set-col group-stack">
+              <div class="fgroup rise-in" style="animation-delay:.06s">
+                <div class="ghead"><h3 class="gtitle">背景图</h3></div>
+                <div class="pick-row"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V5.5m0 0c-1.8 0-3 .3-4.2 1.2M12 5.5c1.8 0 3 .3 4.2 1.2M4.5 13.5v3A3.5 3.5 0 0 0 8 20h8a3.5 3.5 0 0 0 3.5-3.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span class="pf-copy"><strong>选择背景图</strong><span class="hint">支持 PNG / JPG / WebP / HEIC，仅本地读取</span></span><input id="backgroundInput" type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif"></label><button id="clearBackgroundBtn" class="btn ghost" type="button" title="清除背景图">清除</button></div>
+                <p class="slot-note">更换背景后已调整过的区域会按比例自动迁移，建议再逐条检查。</p>
+              </div>
+              <div class="fgroup rise-in" style="animation-delay:.14s">
+                <div class="ghead"><h3 class="gtitle">示例头像预览</h3><span class="ghead-note">建议先传一张真实照片再调头像框</span></div>
+                <div class="setting-row">
+                  <label class="upload-slot file-button stage-input" title="仅用于预览，不会导入到证件">上传示例头像<input id="sampleAvatarInput" type="file" accept="image/*"></label>
+                  <button id="cropSampleBtn" class="btn-sm-solid" type="button" disabled title="裁剪当前头像">裁剪</button>
+                  <button id="removeSampleAvatarBtn" class="btn-sm-solid" type="button" disabled title="移除示例头像">移除</button>
+                </div>
+                <p class="slot-note">先上传示例头像，再确认头像框的位置、尺寸、圆角和描边效果。裁剪时使用方形或头像框对应比例更准确。</p>
+              </div>
+              <div class="fgroup rise-in" style="animation-delay:.2s">
+                <div class="ghead"><h3 class="gtitle">画布编辑</h3></div>
+                <p class="gnote" style="margin-top:0;margin-bottom:11px">点击头像框或姓名框选中后直接拖动位置；拖动右下角圆点调整大小。</p>
+                <div class="mini-grid2">
+                  <div class="sub-block"><span class="sub-label">头像框快速对齐</span><div class="align-actions"><button class="btn ghost align-button" data-align-target="avatar" data-align-axis="centerX" type="button">水平居中</button><button class="btn ghost align-button" data-align-target="avatar" data-align-axis="centerY" type="button">垂直居中</button></div></div>
+                  <div class="sub-block"><span class="sub-label">裁剪比例</span><select id="avatarAspect" aria-label="裁剪比例"><option value="1">1 : 1 方形</option><option value="0.75">3 : 4 竖向</option><option value="1.333333">4 : 3 横向</option><option value="0">自由比例</option></select></div>
+                </div>
+                <p class="hint" style="margin-top:9px">预设比例下头像框高度随宽度自动计算；切到自由比例后可独立修改宽高。</p>
+              </div>
+              <div class="fgroup rise-in" style="animation-delay:.26s">
+                <div class="ghead"><h3 class="gtitle">头像框外观</h3></div>
+                <div class="inline-fields">
+                  <span class="inline-field"><label for="avatarRadius">圆角半径</label><input id="avatarRadius" type="number" min="0" step="1" aria-label="头像框圆角半径" placeholder="24"></span>
+                  <span class="inline-field"><label for="avatarBorder">描边宽度</label><input id="avatarBorder" type="number" min="0" step="1" aria-label="头像框描边宽度" placeholder="0"></span>
+                  <span class="inline-field"><label for="avatarBorderColor">描边颜色</label><input id="avatarBorderColor" type="color" value="#ffffff" aria-label="头像框描边颜色"></span>
+                </div>
+              </div>
+              <div id="gnameRow"><div class="fgroup fg-font rise-in" style="animation-delay:.32s">
+                <div class="ghead"><h3 class="gtitle">姓名字体</h3><div class="font-seg" role="tablist" aria-label="字体设置方式"><button type="button" role="tab" aria-selected="true">选择默认字体</button><button type="button" role="tab" aria-selected="false">上传字体文件</button></div></div>
+                <div id="fontPickPane">
+                  <div class="lang-placeholders">
+                    <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="fontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Liu Jian Mao Cao">Liu Jian Mao Cao（钟齐流江毛草，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option><option value="Zhi Mang Xing">Zhi Mang Xing（志莽行书，OFL 1.1）</option></select></span></div>
+                    <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="fontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
+                    <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="fontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
+                  </div>
+                  <p class="slot-note">姓名会根据字符自动使用对应语言字体，混合姓名可同时用三套字体。非默认字体为在线字体，选中后自动加载。</p>
+                  <p id="webfontStatus" class="slot-note" hidden></p>
+                  <select id="fontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select>
+                </div>
+                <div id="fontUploadPane" hidden>
+                  <div class="setting-row"><label class="upload-slot">中文<input id="fontInputZh" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label><label class="upload-slot">英文<input id="fontInputEn" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label><label class="upload-slot">日文<input id="fontInputJa" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"></label></div>
+                  <p id="fontStatus" class="js-status-note">尚未上传自定义字体。</p>
+                  <p class="slot-note">默认 Noto Sans CJK 系列（OFL 1.1，可免费商用）；自定义字体只在当前浏览器会话内生效，可分别覆盖中英日三套。</p>
+                </div>
+              </div>
+              <div class="fgroup fg-layer rise-in" style="animation-delay:.38s">
+                <div class="ghead"><h3 class="gtitle">姓名文字层</h3><label class="checkline" for="nameEnabled"><input id="nameEnabled" type="checkbox"> 开启姓名显示</label></div>
+                <div id="nameControls" hidden>
+                  <div class="mini-grid2" style="margin-bottom:13px">
+                    <div class="sub-block"><span class="sub-label">姓名框对齐</span><div class="align-actions"><button class="btn ghost align-button" data-align-target="name" data-align-axis="centerX" type="button">水平居中</button><button class="btn ghost align-button" data-align-target="name" data-align-axis="centerY" type="button">垂直居中</button></div></div>
+                    <div class="sub-block"><span class="sub-label">字号（留空自动适配）</span><input id="fontSize" type="number" min="8" step="1"></div>
+                  </div>
+                  <div class="mini-grid2">
+                    <div class="sub-block"><span class="sub-label">文字颜色</span><div class="setting-row"><input id="nameColor" type="color"><span class="stage-input"><input id="letterSpacing" type="number" min="0" step="0.5" aria-label="字间距" placeholder="字间距（px）"></span></div><span class="hint" style="margin-top:5px">第二个输入框是字间距</span></div>
+                    <div class="stack-gaps">
+                      <div class="field"><label for="nameAlign" class="sub-label">水平对齐</label><select id="nameAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+                      <div class="field"><label for="nameVertical" class="sub-label">垂直对齐</label><select id="nameVertical"><option value="top">顶部</option><option value="middle">居中</option><option value="bottom">底部</option></select></div>
+                    </div>
+                  </div>
+                  <p class="slot-note">关闭后证件上不绘制姓名；开启后画布上的“姓名”框可选中、拖动和缩放。</p>
+                </div>
+                <p id="nameOffNote" class="slot-note">当前未开启姓名显示，开启后可在这里设置字体、字号、颜色和对齐方式。</p>
+              </div>
+              </div>
+            </div>
           </div>
         </section>
-        <section class="panel disabled-panel" id="importPanel"><p class="panel-lock-note">请先完成上方的模板设置并选择背景图。</p><div class="panel-head"><div><h2>导入数据</h2><p>两种模式都会统一生成证件记录。建议优先使用“表格 + 文件夹匹配”。</p></div></div><div class="import-layout"><div><div class="segmented" role="tablist" aria-label="导入模式"><button class="active" data-mode="folder" type="button" role="tab" aria-selected="true">表格 + 文件夹匹配</button><button data-mode="embedded" type="button" role="tab" aria-selected="false">表格内嵌头像</button></div><p id="modeDescription" class="mode-copy">上传只含姓名第一列、备注第三列的 xlsx，再选择头像文件夹，按文件名去扩展名后与姓名精确匹配。</p><div class="mode-panel"><div class="field"><label class="btn secondary file-button">选择 XLSX 表格<input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label><p id="xlsxStatus" class="hint">尚未选择表格。</p></div><div id="folderField" class="field"><label class="btn secondary file-button">选择头像文件夹<input id="folderInput" type="file" webkitdirectory multiple accept="image/*"></label><p id="folderStatus" class="hint">支持 Chrome、Edge 等现代浏览器；不支持文件夹选择时可多选头像文件。</p></div><div id="embeddedField" class="field" hidden><p class="hint">将尽力读取 sheet1、共享字符串、内联字符串、数字单元格和标准图片锚点。WPS 的 EMF/WMF 或不兼容结构会提示改用文件夹匹配。</p></div><button id="importBtn" class="btn primary" type="button">导入并生成缩略图</button></div></div><div class="mode-panel"><strong style="font-size:13px">导入规则</strong><p class="hint" style="margin-top:8px">第一列：姓名<br>第二列：模式 A 中的内嵌头像<br>第三列：备注，可留空<br><br>同名记录会保留行号；未匹配头像的记录可在下方直接补传。</p></div></div><p id="importStatus" class="status" aria-live="polite"></p></section>
-        <section class="panel disabled-panel" id="exportPanel"><p class="panel-lock-note">请先导入数据并生成证件缩略图。</p><div class="export-bar"><div class="prefix-field"><label for="filenamePrefix">批量导出文件名前缀（可留空）</label><input id="filenamePrefix" type="text" maxlength="30" placeholder="例如：Only2026_"></div><button id="exportBtn" class="btn primary" type="button" disabled>批量导出 ZIP</button></div><div class="progress-wrap" aria-hidden="true"><span id="exportProgress"></span></div><p id="exportStatus" class="status" aria-live="polite"></p></section>
-        <div class="items-head"><div><h2>证件缩略图</h2><span id="itemsCount" class="items-count">尚未导入数据</span></div></div><div id="itemsGrid" class="items-grid"><div class="empty-items">导入表格后，这里会生成每条记录的模板缩略图。</div></div>
+        <section class="tool-panel disabled-panel" id="importPanel" hidden><p class="lock-note">完成模板设置后，这里会自动解锁。</p><header class="panel-head"><div class="panel-titles"><h2>导入数据</h2><p class="panel-sub">两种模式都会统一生成证件记录，建议优先使用“表格 + 文件夹匹配”。</p></div></header>
+          <div class="import-grid">
+            <div>
+              <div class="mode-tabs" role="tablist" aria-label="导入模式"><button class="active" data-mode="folder" type="button" role="tab" aria-selected="true">表格 + 文件夹匹配</button><button data-mode="embedded" type="button" role="tab" aria-selected="false">表格内嵌头像</button></div>
+              <p id="modeDescription" class="mode-intro-line">上传只含姓名第一列、备注第三列的 xlsx，再选择头像文件夹，按文件名去扩展名后与姓名精确匹配。</p>
+              <div class="mode-card"><div class="stack-gaps">
+                <div class="field"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5L13.5 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M13.5 3v5.5H19" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="pf-copy"><strong>选择 XLSX 表格</strong><span class="hint" id="xlsxStatus">尚未选择表格</span></span><input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></div>
+                <div id="folderField" class="field"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 6.5A1.9 1.9 0 0 1 5.4 4.6h4.1l2 2.4h7.1a1.9 1.9 0 0 1 1.9 1.9v8.6A1.9 1.9 0 0 1 18.6 19.4H5.4A1.9 1.9 0 0 1 3.5 17.5V6.5Z" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="pf-copy"><strong>选择头像文件夹</strong><span class="hint" id="folderStatus">支持 Chrome、Edge 等；不支持时可多选头像文件</span></span><input id="folderInput" type="file" webkitdirectory multiple accept="image/*"></label></div>
+                <div id="embeddedField" class="field" hidden><p class="hint">将尽力读取 sheet1、共享字符串、内联字符串、数字单元格和标准图片锚点。WPS 的 EMF/WMF 或不兼容结构会提示改用文件夹匹配。</p></div>
+                <button id="importBtn" class="btn primary lg wide" type="button">导入并生成缩略图</button>
+              </div></div>
+              <div class="wizard-next-row"><button id="wizardBackImport" class="btn ghost lg" type="button">← 上一步</button><button id="wizardNextImport" class="btn primary lg" type="button">下一步 · 预览与导出 →</button></div>
+              <p id="importStatus" class="status-slot" aria-live="polite"></p>
+            </div>
+            <aside class="tips-card">
+              <h3 class="tc-title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8h.01M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>导入规则速览</h3>
+              <ul>
+                <li><b>第一列</b>：姓名</li>
+                <li><b>第二列</b>：模式 B 的内嵌头像</li>
+                <li><b>第三列</b>：备注，可留空</li>
+                <li>同名记录会保留行号</li>
+                <li>未匹配头像的记录可在下方缩略图卡片直接补传</li>
+                <li>重新导入会替换全部现有记录，操作前有确认提示</li>
+              </ul>
+            </aside>
+          </div>
+        </section>
+        <section class="tool-panel disabled-panel" id="exportPanel" hidden><p class="lock-note">导入数据并生成缩略图后，这里会自动解锁。</p><header class="panel-head"><div class="panel-titles"><h2>批量导出</h2><p class="panel-sub">导出前可设置文件名前缀；单条微调请点击下方对应证件卡片。</p></div></header>
+          <div class="export-bar"><div class="prefix-field"><label for="filenamePrefix">批量导出文件名前缀（可留空）</label><input id="filenamePrefix" type="text" maxlength="30" placeholder="例如：Only2026_"></div><button id="exportBtn" class="btn primary lg" type="button" disabled>批量导出 ZIP</button></div>
+          <div class="progress-wrap" aria-hidden="true"><span id="exportProgress"></span></div>
+          <p id="exportStatus" class="status-slot" aria-live="polite"></p>
+          <div class="wizard-next-row"><button id="wizardBackExport" class="btn ghost lg" type="button">← 上一步 · 返回导入</button></div>
+        </section>
+        <div id="itemsWrap" hidden><div class="items-head"><div style="min-width:0"><h2>证件缩略图</h2></div><span id="itemsCount" class="items-count">尚未导入数据</span></div>
+        <div id="itemsGrid" class="items-grid"><div class="empty-items"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" width="30" height="30" style="color:#7ba78f"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M7 9.5h6M7 12.5h4M7 15.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>导入表格后，这里会生成每条记录的模板缩略图。<br>点击任意卡片即可进入单条编辑。</div></div></div>
+      </section>      <section id="editorView" hidden>
+        <div class="editor-toolbar"><div style="min-width:0"><button id="backToListBtn" class="btn back-button" type="button">&larr; 返回列表</button><h2 id="editorTitle" style="display:inline-block;margin-left:10px">编辑证件</h2></div><span id="editorStatus" class="status-slot" style="margin:0"></span></div>
+        <p class="leave-note">当前证件、头像和表格只在浏览器内存中处理，不会保存。需要编辑其他证件请点击“返回列表”；离开本工具页面时相关文件不会保留。</p>
+        <section class="tool-panel">
+          <div class="editor-layout">
+            <div class="editor-stage" id="editorStage"><img id="editorImage" alt="当前证件编辑预览">
+              <div class="zone zone-avatar active" id="editorAvatarZone"><span class="zone-label">头像</span><span class="resize-handle" aria-hidden="true"></span></div>
+              <div class="zone zone-name zone-name-editor" id="editorNameZone"><span class="zone-label">姓名</span><span class="resize-handle" aria-hidden="true"></span></div>
+            </div>
+            <div class="editor-side group-stack">
+              <div><h3>单条覆盖设置</h3>
+                <p class="slot-note" style="margin-top:10px"><strong style="color:var(--ob-ink)">画布编辑</strong> · 点击头像框或姓名框选中后直接拖动；拖动右下角圆点调整大小。居中后仍可继续手动调整。</p>
+              </div>
+              <div class="mini-grid2">
+                <div class="sub-block"><span class="sub-label">头像框对齐</span><div class="align-actions"><button class="btn ghost align-button" data-align-target="avatar" data-align-axis="centerX" type="button">水平居中</button><button class="btn ghost align-button" data-align-target="avatar" data-align-axis="centerY" type="button">垂直居中</button></div></div>
+                <div class="sub-block"><span class="sub-label">姓名框对齐</span><div class="align-actions"><button class="btn ghost align-button" data-align-target="name" data-align-axis="centerX" type="button">水平居中</button><button class="btn ghost align-button" data-align-target="name" data-align-axis="centerY" type="button">垂直居中</button></div></div>
+              </div>
+              <div class="mini-grid2">
+                <div class="field"><label for="editorNameInput" class="sub-label">姓名（只影响此条）</label><input id="editorNameInput" type="text"></div>
+                <div class="field"><label for="editorRemarkInput" class="sub-label">备注</label><input id="editorRemarkInput" type="text"></div>
+              </div>
+              <div class="fgroup">
+                <div class="ghead"><h3 class="gtitle">头像状态</h3></div>
+                <div id="editorAvatarStatus" class="avatar-status-card"><strong>无头像</strong><span>当前证件不会绘制头像；补传后头像会绑定到画布头像框。</span></div>
+                <div class="stack-gap-8">
+                  <label class="upload-slot file-button stage-input">补传或替换头像<input id="editorAvatarInput" type="file" accept="image/*"></label>
+                  <button id="cropEditorBtn" class="btn-sm-solid" type="button" disabled>裁剪当前头像</button>
+                  <button id="removeEditorAvatarBtn" class="btn-sm-solid soft-danger" type="button" disabled>设为无头像</button>
+                </div>
+              </div>
+              <div class="fgroup">
+                <div class="ghead"><h3 class="gtitle">姓名字体与颜色</h3></div>
+                <div class="lang-placeholders" style="margin-top:0">
+                  <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="editorFontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Liu Jian Mao Cao">Liu Jian Mao Cao（钟齐流江毛草，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option><option value="Zhi Mang Xing">Zhi Mang Xing（志莽行书，OFL 1.1）</option></select></span></div>
+                  <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="editorFontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
+                  <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="editorFontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
+                </div>
+                <select id="editorFontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select>
+                <div class="mini-grid2" style="margin-top:13px">
+                  <div class="field"><label for="editorFontSize" class="sub-label">字号</label><input id="editorFontSize" type="number" min="8" step="1"></div>
+                  <div class="field"><label for="editorNameColor" class="sub-label">颜色</label><input id="editorNameColor" type="color"></div>
+                </div>
+                <div class="mini-grid2" style="margin-top:12px">
+                  <div class="field"><label for="editorNameAlign" class="sub-label">水平对齐</label><select id="editorNameAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+                  <div class="field"><label for="editorNameVertical" class="sub-label">垂直对齐</label><select id="editorNameVertical"><option value="top">顶部</option><option value="middle">居中</option><option value="bottom">底部</option></select></div>
+                </div>
+              </div>
+              <div class="editor-actions"><button id="resetItemBtn" class="btn ghost" type="button">重置为默认</button><button id="setGlobalBtn" class="btn ghost" type="button">设为新全局默认</button><p class="hint">设置后，当前证件会恢复为跟随全局默认，不再保留独立位置和姓名设置。</p><button id="downloadCurrentBtn" class="btn primary" type="button">下载当前</button></div>
+            </div>
+          </div>
+        </section>
       </section>
-      <section id="editorView" hidden><div class="editor-toolbar"><div><button id="backToListBtn" class="btn back-button" type="button">← 返回列表</button><h2 id="editorTitle" style="display:inline-block;margin-left:10px">编辑证件</h2></div><span id="editorStatus" class="status" style="margin:0"></span></div><p class="leave-note">当前证件、头像和表格只在浏览器内存中处理，不会保存。需要编辑其他证件，请点击“返回列表”；离开本工具页面时，相关文件不会保留。</p><section class="panel"><div class="editor-layout"><div class="editor-stage" id="editorStage"><img id="editorImage" alt="当前证件编辑预览"><div class="zone zone-avatar active" id="editorAvatarZone"><span class="zone-label">头像</span><span class="resize-handle" aria-hidden="true"></span></div><div class="zone zone-name zone-name-editor" id="editorNameZone"><span class="zone-label">姓名</span><span class="resize-handle" aria-hidden="true"></span></div></div><div class="editor-side"><h3>单条覆盖设置</h3><div class="canvas-help"><strong>画布编辑</strong><span>点击头像框或姓名框选中后直接拖动；拖动右下角圆点调整大小。居中后仍可继续手动调整。</span></div><div class="field"><label>头像框快速对齐</label><div class="align-actions"><button class="btn secondary align-button" data-align-target="avatar" data-align-axis="centerX" type="button">水平居中</button><button class="btn secondary align-button" data-align-target="avatar" data-align-axis="centerY" type="button">垂直居中</button></div></div><div class="field"><label>姓名框快速对齐</label><div class="align-actions"><button class="btn secondary align-button" data-align-target="name" data-align-axis="centerX" type="button">水平居中</button><button class="btn secondary align-button" data-align-target="name" data-align-axis="centerY" type="button">垂直居中</button></div></div><div class="field"><label for="editorNameInput">姓名（只影响此条显示）</label><input id="editorNameInput" type="text"></div><div class="field"><label for="editorRemarkInput">备注</label><input id="editorRemarkInput" type="text"></div><div class="field"><label>头像状态</label><div id="editorAvatarStatus" class="canvas-help"><strong>无头像</strong><span>当前证件不会绘制头像；补传后头像会绑定到画布头像框。</span></div><label class="btn secondary file-button">补传或替换头像<input id="editorAvatarInput" type="file" accept="image/*"></label><button id="cropEditorBtn" class="btn secondary" type="button" disabled style="width:100%;margin-top:7px">裁剪当前头像</button><button id="removeEditorAvatarBtn" class="btn danger" type="button" disabled style="width:100%;margin-top:7px">设为无头像</button></div><div class="field"><label>姓名字体</label><div class="field-row"><div><label for="editorFontFamilyZh" class="sub-label">中文字体</label><select id="editorFontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option></select></div><div><label for="editorFontFamilyEn" class="sub-label">英文字体</label><select id="editorFontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option></select></div></div><div style="margin-top:9px"><label for="editorFontFamilyJa" class="sub-label">日文字体</label><select id="editorFontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option></select></div><select id="editorFontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select></div><div class="field-row"><div class="field"><label for="editorFontSize">字号</label><input id="editorFontSize" type="number" min="8" step="1"></div><div class="field"><label for="editorNameColor">颜色</label><input id="editorNameColor" type="color"></div></div><div class="field-row"><div class="field"><label for="editorNameAlign">水平对齐</label><select id="editorNameAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div><div class="field"><label for="editorNameVertical">垂直对齐</label><select id="editorNameVertical"><option value="top">顶部</option><option value="middle">居中</option><option value="bottom">底部</option></select></div></div><div class="editor-actions"><button id="resetItemBtn" class="btn secondary" type="button">重置为默认</button><button id="setGlobalBtn" class="btn secondary" type="button">设为新全局默认</button><p class="hint" style="flex-basis:100%;margin:0">设置后，当前证件会恢复为跟随全局默认，不再保留独立位置和姓名设置。</p><button id="downloadCurrentBtn" class="btn primary" type="button">下载当前</button></div></div></div></section></section>
     </div>
   </main>
-  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 批量证件生成</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
-  <div id="cropDialog" class="crop-dialog" hidden><div class="crop-box" role="dialog" aria-modal="true" aria-labelledby="cropTitle"><h2 id="cropTitle">裁剪头像</h2><div class="crop-image-wrap"><img id="cropImage" alt="头像裁剪预览"></div><div class="crop-actions"><button id="cancelCropBtn" class="btn secondary" type="button">取消</button><button id="saveCropBtn" class="btn primary" type="button">应用裁剪</button></div></div></div>
+  <footer class="site-footer"><div class="footer-inner"><span>Only-box · 批量证件生成</span><a href="../index.html">返回工具箱首页 &rarr;</a></div></footer>
+  <div id="cropDialog" class="crop-dialog" hidden><div class="crop-box" role="dialog" aria-modal="true" aria-labelledby="cropTitle"><h2 id="cropTitle">裁剪头像</h2><div class="crop-image-wrap"><img id="cropImage" alt="头像裁剪预览"></div><div class="crop-actions"><button id="cancelCropBtn" class="btn ghost" type="button">取消</button><button id="saveCropBtn" class="btn primary" type="button">应用裁剪</button></div></div></div>
   <script src="../js/mobile-image-upload.js"></script>
   <script src="../js/canvas-utils.js"></script>
   <script src="../js/badge-generator.js"></script>
+  <script src="../js/badge-wizard.js"></script>
+  <script src="../js/badge-webfonts.js"></script>
 </body>
 </html>
