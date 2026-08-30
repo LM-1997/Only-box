@@ -2,11 +2,20 @@
   "use strict";
 
   const MAX_IMAGES = 30;
+  // 压缩档位预设：轻度=无损（oxipng 最高档）；中/高度=有损（颜色量化，尺寸不变，纯本地 UPNG）
+  const COMPRESS_PRESETS = Object.freeze({
+    light: { lossy: false, mode: "oxipng" },
+    medium: { lossy: true, mode: "quantize", colors: 256, dither: [1, 1, 1, 0] },
+    high: { lossy: true, mode: "quantize", colors: 128, dither: [1, 1, 1, 0] }
+  });
   const state = {
     items: [],
     order: [],
     direction: "vertical",
     crossSize: { vertical: "", horizontal: "" },
+    multiplier: "1",
+    compressEnabled: false,
+    compressLevel: "medium",
     sorting: false,
     loading: false,
     generating: false,
@@ -25,12 +34,18 @@
     horizontalBtn: $("horizontalBtn"),
     crossSizeInput: $("crossSizeInput"),
     crossSizeLabel: $("crossSizeLabel"),
+    multiplierInput: $("multiplierInput"),
     sizeClearBtn: $("sizeClearBtn"),
     sizeHint: $("sizeHint"),
+    compressToggle: $("compressToggle"),
+    compressLevels: $("compressLevels"),
+    compressLightBtn: $("compressLightBtn"),
+    compressMediumBtn: $("compressMediumBtn"),
+    compressHighBtn: $("compressHighBtn"),
     dimensionReadout: $("dimensionReadout"),
     generateBtn: $("generateBtn"),
     generateStatus: $("generateStatus"),
-    sequencePanel: $("sequencePanel"),
+    uploadList: $("uploadList"),
     sortHelp: $("sortHelp"),
     sortBtn: $("sortBtn"),
     resetOrderBtn: $("resetOrderBtn"),
@@ -90,10 +105,29 @@
     updateUI();
   }
 
+  function setCompressEnabled(enabled) {
+    state.compressEnabled = Boolean(enabled);
+    invalidateResult();
+    updateUI();
+  }
+
+  function setCompressLevel(level) {
+    if (!Object.prototype.hasOwnProperty.call(LongImageCompress.LEVELS, level)) return;
+    state.compressLevel = level;
+    invalidateResult();
+    updateUI();
+  }
+
   function readCrossSize() {
     const value = Number(els.crossSizeInput.value);
     if (!Number.isFinite(value) || value <= 0) return 0;
     return Math.round(value);
+  }
+
+  function readMultiplier() {
+    const value = Number(els.multiplierInput.value);
+    if (!Number.isFinite(value) || value <= 0) return 1;
+    return Math.round(value * 100) / 100;
   }
 
   function updateCrossSizeLabel() {
@@ -101,15 +135,16 @@
     els.crossSizeLabel.textContent = vertical ? "输出宽度" : "输出高度";
     els.crossSizeInput.placeholder = vertical ? "自动（取最小宽度）" : "自动（取最小高度）";
     els.sizeHint.textContent = vertical
-      ? "留空时自动取所有图片的最小宽度；手动设置后强制按该宽度输出，不会自动缩小。"
-      : "留空时自动取所有图片的最小高度；手动设置后强制按该高度输出，不会自动缩小。";
-    els.sizeClearBtn.hidden = els.crossSizeInput.value.trim() === "";
+      ? "留空时自动取所有图片的最小宽度（过大时为手机稳定性自动缩小）；手动设置后强制按该宽度输出。倍率默认 1，对最终输出整体放大，不会被自动缩小覆盖。"
+      : "留空时自动取所有图片的最小高度（过大时为手机稳定性自动缩小）；手动设置后强制按该高度输出。倍率默认 1，对最终输出整体放大，不会被自动缩小覆盖。";
+    const multiplierValue = els.multiplierInput.value.trim();
+    els.sizeClearBtn.hidden = els.crossSizeInput.value.trim() === "" && (multiplierValue === "" || Number(multiplierValue) === 1);
   }
 
   function calculateLayout() {
     const items = orderedItems();
     if (items.length < 2 || items.length !== state.items.length) return null;
-    return LongImageLayout.calculate(items, state.direction, readCrossSize());
+    return LongImageLayout.calculate(items, state.direction, readCrossSize(), readMultiplier());
   }
 
   function renderDimensionReadout() {
@@ -123,19 +158,29 @@
     } else {
       title.textContent = `${layout.width} × ${layout.height}px`;
       detail.textContent = `${state.items.length} 张图片 · ${state.direction === "vertical" ? "统一宽度后竖向拼接" : "统一高度后横向拼接"}`;
-      if (layout.wasReduced) {
-        detail.className = "scale-warning";
-        detail.textContent += ` · 已为手机稳定性缩小至 ${Math.round(layout.scale * 100)}%`;
+      const notes = [];
+      if (layout.multiplier !== 1) {
+        const rateNote = layout.multiplier > 1 ? `已按 ${layout.multiplier} 倍率放大` : `已按 ${layout.multiplier} 倍率缩小`;
+        notes.push(`${rateNote}，原图分辨率不足时可能发虚`);
+      } else if (layout.wasReduced) {
+        notes.push(`已为手机稳定性缩小至 ${Math.round(layout.scale * 100)}%`);
       } else if (layout.enlarged) {
+        notes.push(`已按设置放大至 ${Math.round(layout.scale * 100)}%，原图分辨率不足时可能发虚`);
+      }
+      const preset = COMPRESS_PRESETS[state.compressLevel];
+      if (state.compressEnabled && preset && preset.lossy) {
+        notes.push(`有损压缩 ${preset.colors} 色（输出尺寸不变）`);
+      }
+      if (notes.length) {
         detail.className = "scale-warning";
-        detail.textContent += ` · 已按设置放大至 ${Math.round(layout.scale * 100)}%，原图分辨率不足时可能发虚`;
+        detail.textContent += ` · ${notes.join(" · ")}`;
       }
     }
     els.dimensionReadout.append(title, detail);
   }
 
   function renderSequence() {
-    els.sequencePanel.hidden = state.items.length === 0;
+    els.uploadList.hidden = state.items.length === 0;
     els.imageGrid.replaceChildren();
     els.imageGrid.classList.toggle("sorting-active", state.sorting);
     if (!state.items.length) return;
@@ -205,6 +250,7 @@
     els.verticalBtn.disabled = busy;
     els.horizontalBtn.disabled = busy;
     els.crossSizeInput.disabled = busy;
+    els.multiplierInput.disabled = busy;
     els.verticalBtn.classList.toggle("active", state.direction === "vertical");
     els.horizontalBtn.classList.toggle("active", state.direction === "horizontal");
     els.verticalBtn.setAttribute("aria-pressed", String(state.direction === "vertical"));
@@ -213,6 +259,17 @@
     els.resetOrderBtn.disabled = busy || state.items.length < 2;
     els.clearAllBtn.disabled = busy || state.items.length === 0;
     els.fitWidthBtn.disabled = !state.resultUrl;
+    els.compressToggle.disabled = busy;
+    els.compressLevels.hidden = !state.compressEnabled;
+    els.compressLightBtn.disabled = busy || !state.compressEnabled;
+    els.compressMediumBtn.disabled = busy || !state.compressEnabled;
+    els.compressHighBtn.disabled = busy || !state.compressEnabled;
+    els.compressLightBtn.classList.toggle("active", state.compressLevel === "light");
+    els.compressMediumBtn.classList.toggle("active", state.compressLevel === "medium");
+    els.compressHighBtn.classList.toggle("active", state.compressLevel === "high");
+    els.compressLightBtn.setAttribute("aria-pressed", String(state.compressLevel === "light"));
+    els.compressMediumBtn.setAttribute("aria-pressed", String(state.compressLevel === "medium"));
+    els.compressHighBtn.setAttribute("aria-pressed", String(state.compressLevel === "high"));
     const ready = Boolean(calculateLayout()) && !busy;
     els.generateBtn.disabled = !ready;
     els.generateBtn.textContent = state.generating ? "正在生成…" : state.items.length < 2 ? "至少需要 2 张图片" : state.sorting ? "请先完成点按排序" : `生成${state.direction === "vertical" ? "竖向" : "横向"}长图`;
@@ -372,15 +429,51 @@
       }
       els.generateStatus.textContent = "正在编码 PNG…";
       const blob = await canvasToBlob(canvas);
-      state.resultUrl = URL.createObjectURL(blob);
+
+      let outputBlob = blob;
+      let compressNote = "";
+      let compressError = null;
+      if (state.compressEnabled) {
+        const preset = COMPRESS_PRESETS[state.compressLevel] || COMPRESS_PRESETS.medium;
+        if (preset.lossy) {
+          // 有损档：颜色量化（减少颜色数量），输出尺寸与拼接结果完全一致（纯本地 UPNG，无需联网）
+          els.generateStatus.textContent = `正在有损压缩（${preset.colors} 色）…`;
+          const rgba = ctx.getImageData(0, 0, layout.width, layout.height).data;
+          const quantized = await LongImageCompress.quantize(rgba, layout.width, layout.height, preset.colors, preset.dither);
+          outputBlob = quantized;
+          const saved = ((1 - quantized.size / blob.size) * 100).toFixed(1);
+          compressNote = `有损压缩 ${preset.colors} 色（尺寸不变 ${layout.width} × ${layout.height}px）· 原 ${formatBytes(blob.size)} → 压缩 ${formatBytes(quantized.size)}（省 ${saved}%）`;
+        } else {
+          // 无损档：oxipng 最高档优化（PNG 无损，画质不变）
+          els.generateStatus.textContent = "正在压缩 PNG…";
+          try {
+            const compressed = await LongImageCompress.compress(blob, "high");
+            if (compressed.size < blob.size) {
+              outputBlob = compressed;
+              const saved = ((1 - compressed.size / blob.size) * 100).toFixed(1);
+              compressNote = `无损优化 · 原 ${formatBytes(blob.size)} → 压缩 ${formatBytes(compressed.size)}（省 ${saved}%）`;
+            } else {
+              compressNote = "无损优化未减小体积，已使用未压缩版本";
+            }
+          } catch (error) {
+            compressError = LongImageCompress.errorMessage(error);
+            compressNote = compressError;
+          }
+        }
+      }
+
+      state.resultUrl = URL.createObjectURL(outputBlob);
       state.previewZoom = 100;
       els.resultImage.src = state.resultUrl;
       els.resultViewport.className = `result-viewport ${state.direction}`;
       els.downloadLink.href = state.resultUrl;
       els.downloadLink.download = `only-box-long-image-${state.direction === "vertical" ? "vertical" : "horizontal"}.png`;
-      els.resultMeta.textContent = `${layout.width} × ${layout.height}px · ${state.items.length} 张 · PNG ${formatBytes(blob.size)}`;
+      const baseMeta = `${layout.width} × ${layout.height}px · ${state.items.length} 张 · PNG ${formatBytes(outputBlob.size)}`;
+      els.resultMeta.textContent = compressNote ? `${baseMeta} · ${compressNote}` : baseMeta;
       els.resultPanel.hidden = false;
-      els.generateStatus.textContent = "拼接完成，可以下载 PNG。";
+      els.generateStatus.textContent = compressError
+        ? "压缩失败，已使用未压缩版本，可以下载 PNG。"
+        : "拼接完成，可以下载 PNG。";
       requestAnimationFrame(applyPreviewZoom);
       els.resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
@@ -396,8 +489,8 @@
   }
 
   function formatBytes(bytes) {
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024) return `${Math.max(0.1, bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   }
 
   els.fileInput.addEventListener("change", event => {
@@ -424,13 +517,27 @@
     invalidateResult();
     updateUI();
   });
-  els.sizeClearBtn.addEventListener("click", () => {
-    els.crossSizeInput.value = "";
-    state.crossSize[state.direction] = "";
+  els.multiplierInput.addEventListener("input", () => {
+    state.multiplier = els.multiplierInput.value;
     updateCrossSizeLabel();
     invalidateResult();
     updateUI();
   });
+  els.sizeClearBtn.addEventListener("click", () => {
+    els.crossSizeInput.value = "";
+    state.crossSize[state.direction] = "";
+    els.multiplierInput.value = "1";
+    state.multiplier = "1";
+    updateCrossSizeLabel();
+    invalidateResult();
+    updateUI();
+  });
+  els.compressToggle.addEventListener("change", event => {
+    setCompressEnabled(event.target.checked);
+  });
+  els.compressLightBtn.addEventListener("click", () => setCompressLevel("light"));
+  els.compressMediumBtn.addEventListener("click", () => setCompressLevel("medium"));
+  els.compressHighBtn.addEventListener("click", () => setCompressLevel("high"));
   els.sortBtn.addEventListener("click", startSorting);
   els.resetOrderBtn.addEventListener("click", resetOrder);
   els.clearAllBtn.addEventListener("click", clearAll);

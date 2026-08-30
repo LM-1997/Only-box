@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Only-box 长图拼接工具：多选图片、点按排序，在浏览器本地生成竖向或横向长图。">
   <title>长图拼接｜Only-box</title>
-  <link rel="stylesheet" href="../css/only-box.css">
-  <link rel="stylesheet" href="../css/long-image-stitch.css">
+  <!-- 版本号：修改本页引用的 css/js 后请同步递增 v= 数值，避免浏览器继续使用旧缓存文件 -->
+  <link rel="stylesheet" href="../css/only-box.css?v=20260830-2">
+  <link rel="stylesheet" href="../css/long-image-stitch.css?v=20260830-2">
 </head>
 <body class="stitch-page">
   <nav class="site-nav home-nav" aria-label="网站导航">
@@ -27,6 +28,21 @@
             <span><strong>点这里多选图片</strong><small>支持 JPEG、PNG、WebP、HEIC/HEIF 等常见格式</small></span>
           </label>
           <p class="status-line" id="loadStatus" aria-live="polite">还没有选择图片。</p>
+          <div class="upload-list" id="uploadList" hidden>
+            <div class="upload-list-head">
+              <div class="upload-list-title">
+                <p class="panel-kicker">Tap to order</p>
+                <h3>已添加图片</h3>
+                <p id="sortHelp">当前按添加顺序排列。需要调整时，进入点按排序。</p>
+              </div>
+              <div class="sequence-actions">
+                <button class="small-btn primary" id="sortBtn" type="button">重新点按排序</button>
+                <button class="small-btn" id="resetOrderBtn" type="button">恢复添加顺序</button>
+                <button class="small-btn danger" id="clearAllBtn" type="button">清空全部</button>
+              </div>
+            </div>
+            <div class="image-grid" id="imageGrid" role="list" aria-label="待拼接图片"></div>
+          </div>
         </section>
 
         <section class="stitch-panel settings-panel">
@@ -40,25 +56,29 @@
               <label class="size-label" for="crossSizeInput"><span id="crossSizeLabel">输出宽度</span><em>px</em></label>
               <button class="size-clear" id="sizeClearBtn" type="button" hidden>恢复自动</button>
             </div>
-            <input id="crossSizeInput" type="number" min="1" max="100000" step="100" placeholder="自动（取最小宽度）" inputmode="numeric">
-            <p class="size-hint" id="sizeHint">留空时自动取所有图片的最小宽度；手动设置后强制按该宽度输出，不会自动缩小。</p>
+            <div class="size-input-row">
+              <input id="crossSizeInput" type="number" min="1" max="100000" step="100" placeholder="自动（取最小宽度）" inputmode="numeric">
+              <label class="multiplier-field" for="multiplierInput"><span>倍率</span><input id="multiplierInput" type="number" min="0.1" max="100" step="0.1" value="1" inputmode="decimal"></label>
+            </div>
+            <p class="size-hint" id="sizeHint">留空时自动取所有图片的最小宽度（过大时为手机稳定性自动缩小）；手动设置后强制按该宽度输出。倍率默认 1，对最终输出整体放大，不会被自动缩小覆盖。</p>
+          </div>
+          <div class="compress-setting" id="compressSetting">
+            <label class="compress-switch" for="compressToggle">
+              <input id="compressToggle" type="checkbox" role="switch">
+              <span class="compress-switch-track" aria-hidden="true"></span>
+              <span class="compress-switch-text"><strong>压缩输出</strong><small id="compressHint">轻度=无损优化；中度/高度=有损压缩（减少颜色数量），输出尺寸不变，仍为 PNG</small></span>
+            </label>
+            <div class="compress-levels" id="compressLevels" role="group" aria-label="压缩强度" hidden>
+              <button class="compress-level-btn" id="compressLightBtn" type="button" aria-pressed="false">轻度</button>
+              <button class="compress-level-btn active" id="compressMediumBtn" type="button" aria-pressed="true">中度</button>
+              <button class="compress-level-btn" id="compressHighBtn" type="button" aria-pressed="false">高度</button>
+            </div>
+            <p class="size-hint" id="compressTip">轻度需联网加载压缩组件（仅一次）；中度、高度为本地有损压缩，通过减少颜色数减小体积，输出尺寸保持不变。</p>
           </div>
           <div class="dimension-readout" id="dimensionReadout"><strong>等待图片</strong><span>添加两张或更多图片后可生成</span></div>
           <button class="primary-action" id="generateBtn" type="button" disabled>至少需要 2 张图片</button>
           <p class="status-line" id="generateStatus" aria-live="polite"></p>
         </section>
-      </section>
-
-      <section class="stitch-panel sequence-panel" id="sequencePanel" hidden>
-        <div class="sequence-head">
-          <div><p class="panel-kicker">Tap to order</p><h2>图片顺序</h2><p id="sortHelp">当前按添加顺序排列。需要调整时，进入点按排序。</p></div>
-          <div class="sequence-actions">
-            <button class="small-btn primary" id="sortBtn" type="button">重新点按排序</button>
-            <button class="small-btn" id="resetOrderBtn" type="button">恢复添加顺序</button>
-            <button class="small-btn danger" id="clearAllBtn" type="button">清空全部</button>
-          </div>
-        </div>
-        <div class="image-grid" id="imageGrid" role="list" aria-label="待拼接图片"></div>
       </section>
 
       <section class="stitch-panel result-panel" id="resultPanel" hidden>
@@ -82,8 +102,11 @@
   </main>
 
   <footer class="site-footer"><div class="footer-inner"><span>Only-box · 长图拼接</span><a href="../index.html">返回工具箱首页 →</a></div></footer>
-  <script src="../js/mobile-image-upload.js"></script>
-  <script src="../js/long-image-layout.js"></script>
-  <script src="../js/long-image-stitch.js"></script>
+  <script src="../js/mobile-image-upload.js?v=20260830-2"></script>
+  <script src="../js/long-image-layout.js?v=20260830-2"></script>
+  <script src="../js/vendor/pako.min.js?v=20260830-2"></script>
+  <script src="../js/vendor/upng.js?v=20260830-2"></script>
+  <script src="../js/long-image-compress.js?v=20260830-2"></script>
+  <script src="../js/long-image-stitch.js?v=20260830-2"></script>
 </body>
 </html>
