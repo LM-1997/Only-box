@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Only-box 批量生成摊位证、舞台证和嘉宾证图片。纯浏览器本地处理，支持表格导入与批量导出。">
   <title>批量证件生成｜Only-box</title>
-  <link rel="stylesheet" href="../css/only-box.css">
+  <link rel="stylesheet" href="../css/only-box.css?v=20260901">
   <style>
 /* ================= 基础 ================= */
 [hidden]{display:none!important}
@@ -138,6 +138,8 @@ input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--ob-prima
 .zone:active{cursor:grabbing}
 .zone.active{display:block}
 .zone.selected{box-shadow:0 0 0 3px rgba(35,107,79,.28),0 0 0 1px #fff}
+.zone-avatar{border-style:dashed;border-color:rgba(35,107,79,.85);background:rgba(35,107,79,.05);box-shadow:0 0 0 1px rgba(255,255,255,.5)}
+.zone-avatar.selected{box-shadow:0 0 0 1px rgba(255,255,255,.85),0 0 0 4px rgba(35,107,79,.32)}
 .zone-name{border-style:dashed;border-color:var(--ob-accent);background:rgba(255,118,93,.12)}
 .zone-name.selected{box-shadow:0 0 0 3px rgba(255,118,93,.28),0 0 0 1px #fff}
 .zone-label{position:absolute;top:0;left:0;padding:3px 6px;color:#fff;background:var(--ob-primary);font-size:10px;font-weight:800;pointer-events:none}
@@ -154,7 +156,7 @@ input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--ob-prima
 
 /* ================= 导入面板 ================= */
 .import-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,1fr);gap:20px;align-items:start}
-.mode-tabs{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin-bottom:12px;border-radius:13px;background:var(--bdg-soft)}
+.mode-tabs{position:relative;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:4px;margin-bottom:12px;border-radius:13px;background:var(--bdg-soft)}
 .mode-tabs button{min-height:37px;border:0;border-radius:10px;color:var(--ob-muted);background:transparent;font-size:12px;font-weight:800;cursor:pointer;transition:.18s}
 .mode-tabs button:hover{color:var(--ob-primary-dark)}
 .mode-tabs button.active{color:#fff;background:var(--ob-primary);box-shadow:0 4px 12px rgba(35,107,79,.24)}
@@ -162,6 +164,10 @@ input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:var(--ob-prima
 .mode-intro-line::before{content:"i";position:absolute;left:13px;top:11px;display:grid;width:15px;height:15px;place-items:center;border-radius:50%;background:var(--ob-primary);color:#fff;font-size:10px;font-weight:900;font-style:normal}
 .mode-card{padding:16px;border:1px solid var(--bdg-line);border-radius:15px;background:linear-gradient(180deg,rgba(252,254,252,.9),rgba(245,249,245,.7))}
 .mode-card .stack-gaps{gap:13px}
+.sep-settings{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:10px 12px;border:1px dashed #b8d5c4;border-radius:11px;background:rgba(255,255,255,.6)}
+.sep-label{font-size:12px;font-weight:800;color:#3d5546;white-space:nowrap}
+.sep-settings input[type=text]{min-width:0;height:36px;padding:0 10px;border:1px solid var(--bdg-line);border-radius:9px;background:#fff;font-size:12.5px}
+.sep-settings select{height:36px;padding:0 8px;border:1px solid var(--bdg-line);border-radius:9px;background:#fff;font-size:12.5px;color:#2e4a38}
 .tips-card{position:relative;padding:16px;border:1px solid rgba(184,213,196,.65);border-radius:15px;background:linear-gradient(180deg,rgba(240,250,243,.8),rgba(223,240,230,.4))}
 .tc-title{display:flex;gap:8px;align-items:center;margin:0 0 10px;font-size:13px;font-weight:800}
 .tc-title svg{width:16px;height:16px;color:var(--ob-primary)}
@@ -549,7 +555,7 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
 
       <section id="listView">
         <section class="tool-panel" id="templatePanel">
-          <header class="panel-head"><div class="panel-titles"><h2>模板设置</h2><p class="panel-sub">在画布上点选头像框或姓名框，拖动位置、拖拽右下角圆点缩放；右侧按分组微调效果。</p></div><span class="head-actions"><button id="wizardNextTemplate" class="btn primary lg" type="button" disabled>下一步 · 导入数据 →</button></span></header>
+          <header class="panel-head"><div class="panel-titles"><h2>模板设置</h2><p class="panel-sub">在画布上点选头像框或姓名框，拖动位置、拖拽右下角圆点缩放；右侧按分组微调效果。</p></div><span class="head-actions"><button id="saveTemplateBtn" class="btn ghost" type="button" title="下载当前模板配置（JSON）">保存配置</button><label class="btn ghost file-button" title="从 JSON 导入模板配置">导入配置<input id="loadTemplateInput" type="file" accept=".json,application/json"></label><button id="wizardNextTemplate" class="btn primary lg" type="button" disabled>下一步 · 导入数据 →</button></span></header>
           <div class="ws">
             <div class="stage-col">
               <div class="canvas-stage" id="templateStage">
@@ -574,7 +580,7 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
                   <button id="cropSampleBtn" class="btn-sm-solid" type="button" disabled title="裁剪当前头像">裁剪</button>
                   <button id="removeSampleAvatarBtn" class="btn-sm-solid" type="button" disabled title="移除示例头像">移除</button>
                 </div>
-                <p class="slot-note">先上传示例头像，再确认头像框的位置、尺寸、圆角和描边效果。裁剪时使用方形或头像框对应比例更准确。</p>
+                <p class="slot-note">先上传示例头像，再确认头像框的位置、尺寸、圆角和描边效果。裁剪时使用方形或头像框对应比例更准确。示例头像以半透明显示，方便对齐证件上预留的头像框线。</p>
               </div>
               <div class="fgroup rise-in" style="animation-delay:.2s">
                 <div class="ghead"><h3 class="gtitle">画布编辑</h3></div>
@@ -592,12 +598,22 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
                   <span class="inline-field"><label for="avatarBorder">描边宽度</label><input id="avatarBorder" type="number" min="0" step="1" aria-label="头像框描边宽度" placeholder="0"></span>
                   <span class="inline-field"><label for="avatarBorderColor">描边颜色</label><input id="avatarBorderColor" type="color" value="#ffffff" aria-label="头像框描边颜色"></span>
                 </div>
+                <div class="inline-fields" style="margin-top:10px">
+                  <span class="inline-field"><label for="avatarBaseEnabled">底部色块</label><input id="avatarBaseEnabled" type="checkbox" aria-label="头像底部色块开关"></span>
+                  <span class="inline-field"><label for="avatarBaseColor">底色</label><input id="avatarBaseColor" type="color" value="#ffffff" aria-label="头像底部色块颜色"></span>
+                </div>
+                <div class="inline-fields" style="margin-top:10px">
+                  <span class="inline-field"><label for="avatarOutlineWidth">外描边宽度</label><input id="avatarOutlineWidth" type="number" min="0" step="1" aria-label="外描边宽度" placeholder="0"></span>
+                  <span class="inline-field"><label for="avatarOutlineGap">与头像间距</label><input id="avatarOutlineGap" type="number" min="0" step="1" aria-label="外描边与头像间距" placeholder="0"></span>
+                  <span class="inline-field"><label for="avatarOutlineColor">外描边颜色</label><input id="avatarOutlineColor" type="color" value="#000000" aria-label="外描边颜色"></span>
+                </div>
+                <p class="hint" style="margin-top:9px">底部色块为透明 PNG 头像垫一层底色；外描边在头像框外再描一圈，可设间距与颜色，宽度 0 表示关闭。</p>
               </div>
               <div id="gnameRow"><div class="fgroup fg-font rise-in" style="animation-delay:.32s">
                 <div class="ghead"><h3 class="gtitle">姓名字体</h3><div class="font-seg" role="tablist" aria-label="字体设置方式"><button type="button" role="tab" aria-selected="true">选择默认字体</button><button type="button" role="tab" aria-selected="false">上传字体文件</button></div></div>
                 <div id="fontPickPane">
                   <div class="lang-placeholders">
-                    <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="fontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Liu Jian Mao Cao">Liu Jian Mao Cao（钟齐流江毛草，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option><option value="Zhi Mang Xing">Zhi Mang Xing（志莽行书，OFL 1.1）</option></select></span></div>
+                    <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="fontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option></select></span></div>
                     <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="fontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
                     <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="fontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
                   </div>
@@ -636,12 +652,13 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
         <section class="tool-panel disabled-panel" id="importPanel" hidden><p class="lock-note">完成模板设置后，这里会自动解锁。</p><header class="panel-head"><div class="panel-titles"><h2>导入数据</h2><p class="panel-sub">两种模式都会统一生成证件记录，建议优先使用“表格 + 文件夹匹配”。</p></div></header>
           <div class="import-grid">
             <div>
-              <div class="mode-tabs" role="tablist" aria-label="导入模式"><button class="active" data-mode="folder" type="button" role="tab" aria-selected="true">表格 + 文件夹匹配</button><button data-mode="embedded" type="button" role="tab" aria-selected="false">表格内嵌头像</button></div>
-              <p id="modeDescription" class="mode-intro-line">上传只含姓名第一列、备注第三列的 xlsx，再选择头像文件夹，按文件名去扩展名后与姓名精确匹配。</p>
+              <div class="mode-tabs" role="tablist" aria-label="导入模式"><button class="active" data-mode="folder" type="button" role="tab" aria-selected="true">表格 + 文件夹匹配</button><button data-mode="embedded" type="button" role="tab" aria-selected="false">表格内嵌头像</button><button data-mode="foldername" type="button" role="tab" aria-selected="false">文件夹生成姓名</button></div>
+              <p id="modeDescription" class="mode-intro-line">上传只含姓名第一列、文件名第二列、备注第三列的 xlsx，再选择头像文件夹，按文件名去扩展名后与第二列（或姓名）精确匹配。</p>
               <div class="mode-card"><div class="stack-gaps">
-                <div class="field"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5L13.5 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M13.5 3v5.5H19" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="pf-copy"><strong>选择 XLSX 表格</strong><span class="hint" id="xlsxStatus">尚未选择表格</span></span><input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></div>
+                <div id="xlsxField" class="field"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5L13.5 3Z" stroke="currentColor" stroke-width="1.7"/><path d="M13.5 3v5.5H19" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="pf-copy"><strong>选择 XLSX 表格</strong><span class="hint" id="xlsxStatus">尚未选择表格</span></span><input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label></div>
                 <div id="folderField" class="field"><label class="pick-file file-button"><span class="pf-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 6.5A1.9 1.9 0 0 1 5.4 4.6h4.1l2 2.4h7.1a1.9 1.9 0 0 1 1.9 1.9v8.6A1.9 1.9 0 0 1 18.6 19.4H5.4A1.9 1.9 0 0 1 3.5 17.5V6.5Z" stroke="currentColor" stroke-width="1.7"/></svg></span><span class="pf-copy"><strong>选择头像文件夹</strong><span class="hint" id="folderStatus">支持 Chrome、Edge 等；不支持时可多选头像文件</span></span><input id="folderInput" type="file" webkitdirectory multiple accept="image/*"></label></div>
                 <div id="embeddedField" class="field" hidden><p class="hint">将尽力读取 sheet1、共享字符串、内联字符串、数字单元格和标准图片锚点。WPS 的 EMF/WMF 或不兼容结构会提示改用文件夹匹配。</p></div>
+                <div id="foldernameField" class="field" hidden><div class="sep-settings"><label class="sep-label" for="filenameSeparator">文件名分隔符</label><input id="filenameSeparator" type="text" maxlength="8" placeholder="例如 _ 或 -，留空则用整个文件名"><select id="separatorSide" aria-label="取分隔符哪一侧"><option value="before">取分隔符前</option><option value="after">取分隔符后</option></select></div><p class="hint">直接根据文件夹（含子文件夹）内图片的文件名生成姓名，无需表格。文件名去扩展名后按分隔符切分，取前/后段作为姓名。</p></div>
                 <button id="importBtn" class="btn primary lg wide" type="button">导入并生成缩略图</button>
               </div></div>
               <div class="wizard-next-row"><button id="wizardBackImport" class="btn ghost lg" type="button">← 上一步</button><button id="wizardNextImport" class="btn primary lg" type="button">下一步 · 预览与导出 →</button></div>
@@ -651,8 +668,9 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
               <h3 class="tc-title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 8h.01M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>导入规则速览</h3>
               <ul>
                 <li><b>第一列</b>：姓名</li>
-                <li><b>第二列</b>：模式 B 的内嵌头像</li>
+                <li><b>第二列</b>：文件名，用于匹配头像（可留空，则用姓名匹配）</li>
                 <li><b>第三列</b>：备注，可留空</li>
+                <li><b>文件夹生成姓名</b>：无需表格，按文件名生成姓名</li>
                 <li>同名记录会保留行号</li>
                 <li>未匹配头像的记录可在下方缩略图卡片直接补传</li>
                 <li>重新导入会替换全部现有记录，操作前有确认提示</li>
@@ -699,9 +717,28 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
                 </div>
               </div>
               <div class="fgroup">
+                <div class="ghead"><h3 class="gtitle">头像框外观（仅此条）</h3></div>
+                <div class="sub-block" style="margin-bottom:10px"><span class="sub-label">裁剪比例</span><select id="editorAvatarAspect" aria-label="单条裁剪比例"><option value="1">1 : 1 方形</option><option value="0.75">3 : 4 竖向</option><option value="1.333333">4 : 3 横向</option><option value="0">自由比例</option></select></div>
+                <div class="inline-fields">
+                  <span class="inline-field"><label for="editorAvatarRadius">圆角半径</label><input id="editorAvatarRadius" type="number" min="0" step="1" aria-label="单条头像框圆角半径" placeholder="24"></span>
+                  <span class="inline-field"><label for="editorAvatarBorder">描边宽度</label><input id="editorAvatarBorder" type="number" min="0" step="1" aria-label="单条头像框描边宽度" placeholder="0"></span>
+                  <span class="inline-field"><label for="editorAvatarBorderColor">描边颜色</label><input id="editorAvatarBorderColor" type="color" value="#ffffff" aria-label="单条头像框描边颜色"></span>
+                </div>
+                <div class="inline-fields" style="margin-top:10px">
+                  <span class="inline-field"><label for="editorAvatarBaseEnabled">底部色块</label><input id="editorAvatarBaseEnabled" type="checkbox" aria-label="单条底部色块开关"></span>
+                  <span class="inline-field"><label for="editorAvatarBaseColor">底色</label><input id="editorAvatarBaseColor" type="color" value="#ffffff" aria-label="单条底部色块颜色"></span>
+                </div>
+                <div class="inline-fields" style="margin-top:10px">
+                  <span class="inline-field"><label for="editorAvatarOutlineWidth">外描边宽度</label><input id="editorAvatarOutlineWidth" type="number" min="0" step="1" aria-label="单条外描边宽度" placeholder="0"></span>
+                  <span class="inline-field"><label for="editorAvatarOutlineGap">与头像间距</label><input id="editorAvatarOutlineGap" type="number" min="0" step="1" aria-label="单条外描边间距" placeholder="0"></span>
+                  <span class="inline-field"><label for="editorAvatarOutlineColor">外描边颜色</label><input id="editorAvatarOutlineColor" type="color" value="#000000" aria-label="单条外描边颜色"></span>
+                </div>
+                <p class="hint" style="margin-top:9px">这里的设置只影响当前这一条证件，覆盖全局默认；点击下方「重置为默认」可恢复跟随全局。</p>
+              </div>
+              <div class="fgroup">
                 <div class="ghead"><h3 class="gtitle">姓名字体与颜色</h3></div>
                 <div class="lang-placeholders" style="margin-top:0">
-                  <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="editorFontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Liu Jian Mao Cao">Liu Jian Mao Cao（钟齐流江毛草，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option><option value="Zhi Mang Xing">Zhi Mang Xing（志莽行书，OFL 1.1）</option></select></span></div>
+                  <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="editorFontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option></select></span></div>
                   <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="editorFontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
                   <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="editorFontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
                 </div>
@@ -726,7 +763,8 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
   <div id="cropDialog" class="crop-dialog" hidden><div class="crop-box" role="dialog" aria-modal="true" aria-labelledby="cropTitle"><h2 id="cropTitle">裁剪头像</h2><div class="crop-image-wrap"><img id="cropImage" alt="头像裁剪预览"></div><div class="crop-actions"><button id="cancelCropBtn" class="btn ghost" type="button">取消</button><button id="saveCropBtn" class="btn primary" type="button">应用裁剪</button></div></div></div>
   <script src="../js/mobile-image-upload.js"></script>
   <script src="../js/canvas-utils.js"></script>
-  <script src="../js/badge-generator.js"></script>
+  <script src="../js/badge-edge-detect.js?v=20260901-7"></script>
+  <script src="../js/badge-generator.js?v=20260901-12"></script>
   <script src="../js/badge-wizard.js"></script>
   <script src="../js/badge-webfonts.js"></script>
 </body>
