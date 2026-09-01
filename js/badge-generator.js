@@ -340,15 +340,25 @@
       }
       const matched = new Set(); const folderMap = new Map();
       if (state.mode !== "embedded") { state.folderFiles.forEach(file => { if (M.isImageFile(file)) folderMap.set(extless(file.name), file); }); }
-      const nextItems = [];
+      const nextItems = []; let failedAvatars = 0;
       for (const record of records) {
         let avatar = record.avatar; let ok = Boolean(avatar);
-        if (state.mode === "folder") { const matchKey = record.fileName ? extless(record.fileName) : normalizeName(record.name); const file = matchKey ? folderMap.get(matchKey) : null; if (file) { avatar = await readAvatar(file); matched.add(file); ok = true; } else ok = false; }
-        else if (state.mode === "foldername") { if (record.file) { avatar = await readAvatar(record.file); matched.add(record.file); ok = true; } }
-        const item = { id: id(), name: record.name || record.fileName || (record.file ? extless(record.file.name) : "未命名"), remark: record.remark, avatarSource: avatar, avatarOverride: null, nameOverride: null, matched: ok, status: ok ? "ready" : "missing-avatar" }; item.thumbnail = await thumbnail(item); nextItems.push(item);
+        try {
+          if (state.mode === "folder") { const matchKey = record.fileName ? extless(record.fileName) : normalizeName(record.name); const file = matchKey ? folderMap.get(matchKey) : null; if (file) { avatar = await readAvatar(file); matched.add(file); ok = true; } else ok = false; }
+          else if (state.mode === "foldername") { if (record.file) { avatar = await readAvatar(record.file); matched.add(record.file); ok = true; } }
+        } catch (error) { avatar = null; ok = false; failedAvatars += 1; }
+        const item = { id: id(), name: record.name || record.fileName || (record.file ? extless(record.file.name) : "未命名"), remark: record.remark, avatarSource: avatar, avatarOverride: null, nameOverride: null, matched: ok, status: ok ? "ready" : "missing-avatar" };
+        try { item.thumbnail = await thumbnail(item); } catch (error) { item.thumbnail = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="; }
+        nextItems.push(item);
       }
       if (state.mode === "folder") unused = state.folderFiles.filter(file => M.isImageFile(file) && !matched.has(file)).length;
-      state.items = nextItems; renderItems(); els.importBtn.disabled = false; setStatus(els.importStatus, "已导入 " + state.items.length + " 条记录" + (unused ? "，有 " + unused + " 个头像文件未被使用。" : "。") + (state.items.filter(item => item.status === "missing-avatar").length ? " 缺少头像的记录已标记。" : ""));
+      const missingCount = nextItems.filter(item => item.status === "missing-avatar").length;
+      let importMsg = "已导入 " + nextItems.length + " 条记录";
+      if (unused) importMsg += "，有 " + unused + " 个头像文件未被使用";
+      if (missingCount) importMsg += "，有 " + missingCount + " 条缺少头像（已标记）";
+      if (failedAvatars) importMsg += "，其中 " + failedAvatars + " 张图片读取失败";
+      importMsg += "。";
+      state.items = nextItems; renderItems(); els.importBtn.disabled = false; setStatus(els.importStatus, importMsg);
     } catch (error) {
       els.importBtn.disabled = false; const message = error.message === "XLSX_VECTOR_IMAGE" || error.message === "XLSX_SHEET_MISSING" ? "该表格暂不支持自动提取头像，请改用“表格 + 文件夹匹配”模式。" : error.message === "XLSX_EMPTY" ? "表格中没有可导入的记录。" : "表格解析失败，请检查文件或改用“表格 + 文件夹匹配”模式。"; setStatus(els.importStatus, message);
     }
