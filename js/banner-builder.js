@@ -1,0 +1,2121 @@
+(function (global) {
+  "use strict";
+
+  const C = global.BannerBuilderConstants;
+  const R = global.BannerBuilderRegistry;
+  const M = global.BannerBuilderModel;
+  const state = {
+    doc: M.createDoc(C.DEFAULT_RATIO),
+    activePageId: null,
+    selectedModuleId: null,
+    zoom: 0.46,
+  };
+  const els = {};
+  let inputId = 0;
+  let initialized = false;
+  let framePending = false;
+  const fontLinks = {};
+
+  function ensureFont(key) {
+    const f = C.FONTS[key] || C.FONTS.sans;
+    (f.css || []).forEach(function (url) {
+      if (fontLinks[url]) return;
+      fontLinks[url] = true;
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = url;
+      document.head.appendChild(link);
+    });
+  }
+
+  async function readyFontForText(key, text) {
+    const f = C.FONTS[key] || C.FONTS.sans;
+    ensureFont(key);
+    if (!document.fonts || typeof document.fonts.load !== "function") return;
+    const payload = String(text || "Only-box 活动宣传长条 0123456789");
+    try {
+      await document.fonts.load("400 24px \"" + f.family + "\"", payload);
+      await document.fonts.load("700 24px \"" + f.family + "\"", payload);
+      if (f.css.length > 3) await document.fonts.load("900 24px \"" + f.family + "\"", payload);
+    } catch (error) { /* 字体加载失败时使用回退字体渲染 */ }
+  }
+
+  function collectPageText(page) {
+    const parts = [];
+    (page.modules || []).forEach(function (module) {
+      const data = module.data || {};
+      Object.keys(data).forEach(function (key) {
+        const value = data[key];
+        if (typeof value === "string") parts.push(value);
+        else if (Array.isArray(value)) value.forEach(function (item) {
+          if (typeof item === "string") parts.push(item);
+          else if (item) Object.keys(item).forEach(function (k) { if (typeof item[k] === "string") parts.push(item[k]); });
+        });
+      });
+    });
+    return parts.join(" ");
+  }
+
+  function docFontFamily() {
+    return state.doc.fontFamily || "sans";
+  }
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function activePage() {
+    return M.findPage(state.doc, state.activePageId) || state.doc.pages[state.doc.pages.length - 1];
+  }
+
+  function activePageIndex() {
+    return state.doc.pages.indexOf(activePage());
+  }
+
+  function pageSize() {
+    return C.pageSize(state.doc.ratio);
+  }
+
+  function continuousMode() {
+    return (state.doc.screenMode || "split") === "continuous";
+  }
+
+  function docBackgroundStyle(value) {
+    if (!value || !value.url) return "";
+    return "linear-gradient(rgba(255,255,255,.18),rgba(255,255,255,.18)),url(\"" + value.url + "\")";
+  }
+
+  function imageSrc(value) {
+    return value && value.url ? value.url : "";
+  }
+
+  function dataImageFit(data) {
+    return data && data.imageFit === "contain" ? "contain" : "cover";
+  }
+
+  function hexToRgba(value, alpha) {
+    const raw = String(value || "").trim().replace("#", "");
+    if (!/^[0-9a-f]{6}$/i.test(raw)) return "";
+    const number = parseInt(raw, 16);
+    return "rgba(" + ((number >> 16) & 255) + "," + ((number >> 8) & 255) + "," + (number & 255) + "," + Math.max(0, Math.min(1, alpha)) + ")";
+  }
+
+  function imageField(field, obj, id) {
+    const wrap = el("div", "bb-image-field");
+    const preview = el("div", "bb-image-preview");
+    const current = obj[field.key];
+    if (imageSrc(current)) {
+      const img = el("img", "bb-image-thumb");
+      img.src = current.url;
+      img.alt = current.name || "已选图片";
+      preview.appendChild(img);
+    } else preview.appendChild(el("span", "bb-image-empty", "未选择"));
+    const actions = el("div", "bb-image-actions");
+    const pick = el("label", "bb-file-btn", "选择图片");
+    pick.htmlFor = id;
+    const input = el("input");
+    input.type = "file";
+    input.id = id;
+    input.accept = "image/*";
+    input.className = "bb-file-input";
+    input.addEventListener("change", function () {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      obj[field.key] = { url: URL.createObjectURL(file), name: file.name, type: file.type };
+      renderAll();
+    });
+    pick.appendChild(input);
+    actions.appendChild(pick);
+    if (current && current.url) {
+      const clear = el("button", "bb-mini-btn", "移除");
+      clear.type = "button";
+      clear.addEventListener("click", function () { obj[field.key] = null; renderAll(); });
+      actions.appendChild(clear);
+    }
+    actions.appendChild(el("span", "bb-image-name", current && current.name ? current.name : "仅在浏览器本地处理"));
+    wrap.appendChild(preview);
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
+  function defaultFor(field) {
+    if (field.type === "select") return field.options && field.options[0] ? field.options[0].value : "";
+    if (field.type === "number") return 0;
+    if (field.type === "image" || field.type === "imageList") return field.type === "imageList" ? [] : null;
+    if (field.type === "stringList" || field.type === "objectList") return [];
+    return "";
+  }
+
+  function newEntry(field) {
+    const value = {};
+    (field.fields || []).forEach(function (sub) { value[sub.key] = defaultFor(sub); });
+    return value;
+  }
+
+  function buildField(field, obj, moduleType) {
+    const wrap = el("div", "bb-field");
+    const id = "bb-input-" + (++inputId);
+    if (field.dynamicOptions === "templates") {
+      field = Object.assign({}, field, { options: R.templateOptions(moduleType) });
+    }
+    if (field.type === "image") return imageField(field, obj, id);
+    if (field.type === "stringList") return buildStringList(field, obj, wrap);
+    if (field.type === "objectList") return buildObjectList(field, obj, wrap);
+    if (field.type === "imageList") return buildImageList(field, obj, wrap);
+
+    const label = el("label", "bb-field-label", field.label);
+    label.htmlFor = id;
+    wrap.appendChild(label);
+    let input;
+    if (field.type === "textarea") {
+      input = el("textarea", "bb-input");
+      input.rows = field.rows || 4;
+    } else if (field.type === "select") {
+      input = el("select", "bb-input");
+      if (field.dynamicOptions === "templates") input.dataset.templateField = "1";
+      (field.options || []).forEach(function (option) {
+        const item = el("option", null, option.label);
+        item.value = option.value;
+        input.appendChild(item);
+      });
+    } else {
+      input = el("input", "bb-input");
+      input.type = field.type === "number" ? "number" : "text";
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      if (field.step !== undefined) input.step = field.step;
+    }
+    input.id = id;
+    input.value = obj[field.key] == null ? "" : String(obj[field.key]);
+    if (field.placeholder) input.placeholder = field.placeholder;
+    input.addEventListener(field.type === "select" ? "change" : "input", function () {
+      obj[field.key] = field.type === "number" ? Number(input.value) || 0 : input.value;
+      if (field.type === "select") renderAll(); else scheduleCanvas();
+    });
+    wrap.appendChild(input);
+    if (field.options === R.LEVEL_OPTIONS) {
+      const warning = C.captionWarning(obj[field.key], pageSize().pageWidth);
+      wrap.appendChild(el("p", "bb-hint" + (warning ? " warn" : ""), warning || "字号按画布宽度比例保存"));
+    }
+    return wrap;
+  }
+
+  function buildStringList(field, obj, wrap) {
+    const list = Array.isArray(obj[field.key]) ? obj[field.key] : (obj[field.key] = []);
+    const head = el("div", "bb-field-head");
+    head.appendChild(el("span", "bb-field-label", field.label));
+    head.appendChild(el("span", "bb-count", list.length + " 项"));
+    const add = el("button", "bb-add-btn", "＋ 添加" + (field.itemLabel || "一行"));
+    add.type = "button";
+    add.addEventListener("click", function () { list.push(""); renderAll(); });
+    head.appendChild(add);
+    wrap.appendChild(head);
+    const body = el("div", "bb-list");
+    list.forEach(function (value, index) {
+      const row = el("div", "bb-list-row");
+      const input = el("input", "bb-input");
+      input.value = value || "";
+      input.placeholder = field.placeholder || "请输入内容";
+      input.addEventListener("input", function () { list[index] = input.value; scheduleCanvas(); });
+      const del = el("button", "bb-icon-btn danger", "×");
+      del.type = "button";
+      del.title = "删除这一项";
+      del.addEventListener("click", function () { list.splice(index, 1); renderAll(); });
+      row.appendChild(input); row.appendChild(del); body.appendChild(row);
+    });
+    if (!list.length) body.appendChild(el("p", "bb-hint", "还没有内容，点击添加。"));
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function buildObjectList(field, obj, wrap) {
+    const list = Array.isArray(obj[field.key]) ? obj[field.key] : (obj[field.key] = []);
+    const head = el("div", "bb-field-head");
+    head.appendChild(el("span", "bb-field-label", field.label));
+    head.appendChild(el("span", "bb-count", list.length + " 项"));
+    const add = el("button", "bb-add-btn", "＋ 添加" + (field.itemLabel || "一条"));
+    add.type = "button";
+    add.addEventListener("click", function () { list.push(newEntry(field)); renderAll(); });
+    head.appendChild(add); wrap.appendChild(head);
+    list.forEach(function (entry, index) {
+      const card = el("div", "bb-entry");
+      const title = el("div", "bb-entry-head");
+      title.appendChild(el("span", "bb-entry-title", (field.itemLabel || "条目") + " " + (index + 1)));
+      const del = el("button", "bb-icon-btn danger", "×");
+      del.type = "button";
+      del.title = "删除这一项";
+      del.addEventListener("click", function () { list.splice(index, 1); renderAll(); });
+      title.appendChild(del); card.appendChild(title);
+      const body = el("div", "bb-entry-body");
+      (field.fields || []).forEach(function (sub) { body.appendChild(buildField(sub, entry)); });
+      card.appendChild(body); wrap.appendChild(card);
+    });
+    if (!list.length) wrap.appendChild(el("p", "bb-hint", "还没有内容，点击添加。"));
+    return wrap;
+  }
+
+  function buildImageList(field, obj, wrap) {
+    const list = Array.isArray(obj[field.key]) ? obj[field.key] : (obj[field.key] = []);
+    const head = el("div", "bb-field-head");
+    head.appendChild(el("span", "bb-field-label", field.label));
+    head.appendChild(el("span", "bb-count", list.length + " / " + (field.max || 4)));
+    const id = "bb-input-" + (++inputId);
+    const add = el("label", "bb-add-btn", "＋ 添加图片");
+    add.htmlFor = id;
+    const input = el("input");
+    input.id = id; input.type = "file"; input.accept = "image/*"; input.className = "bb-file-input";
+    input.addEventListener("change", function () {
+      const file = input.files && input.files[0];
+      if (!file || list.length >= (field.max || 4)) return;
+      list.push({ url: URL.createObjectURL(file), name: file.name, type: file.type }); renderAll();
+    });
+    add.appendChild(input); head.appendChild(add); wrap.appendChild(head);
+    const grid = el("div", "bb-image-grid");
+    list.forEach(function (item, index) {
+      const cell = el("div", "bb-image-cell");
+      const img = el("img", "bb-image-thumb"); img.src = item.url; img.alt = item.name || "已选图片";
+      const del = el("button", "bb-icon-btn danger", "×"); del.type = "button"; del.title = "移除这张图片";
+      del.addEventListener("click", function () { list.splice(index, 1); renderAll(); });
+      cell.appendChild(img); cell.appendChild(del); grid.appendChild(cell);
+    });
+    if (list.length) wrap.appendChild(grid); else wrap.appendChild(el("p", "bb-hint", "还没有图片，点击添加。"));
+    return wrap;
+  }
+
+  function text(value, fallback) { return String(value || fallback || ""); }
+  function moduleTitle(module, def) { return module.data.sectionTitle || def.label; }
+
+  function visualImage(src, cls, alt) {
+    if (!src) return null;
+    const img = el("img", cls || "bb-art-image"); img.src = src; img.alt = alt || ""; return img;
+  }
+
+  function addVisualBody(box, module) {
+    const data = module.data;
+    const tpl = data.template || "";
+    switch (module.type) {
+      case "cover": renderCover(box, data, tpl); break;
+      case "announcement": renderAnnouncement(box, data, tpl); break;
+      case "ticketInfo": renderTicket(box, data, tpl); break;
+      case "materials": renderMaterials(box, data, tpl); break;
+      case "crossPromo": renderCrossPromo(box, data, tpl); break;
+      case "schedule": renderSchedule(box, data, tpl); break;
+      case "venueInfo": renderVenue(box, data, tpl); break;
+      case "routeText": renderRoute(box, data, tpl); break;
+      case "programList": renderProgram(box, data, tpl); break;
+      case "performerCard": renderPerformer(box, data, tpl); break;
+      case "boothList": renderBooth(box, data, tpl); break;
+      case "divider": renderDivider(box, data, tpl); break;
+      case "footer": renderFooter(box, data, tpl); break;
+      case "freeText": renderFreeText(box, data, tpl); break;
+      case "freeImageBox": renderFreeImage(box, data, tpl); break;
+      default: box.appendChild(el("p", "bb-art-body", "内容模块"));
+    }
+  }
+
+  function renderCover(box, data, tpl) {
+    const img = visualImage(imageSrc(data.mainImage), "bb-art-cover-image", "主视觉图");
+    if (tpl === "info") {
+      if (img) { const figure = el("div", "bb-cover-figure"); figure.appendChild(img); box.appendChild(figure); }
+      const copy = el("div", "bb-cover-info-copy");
+      copy.appendChild(el("strong", "bb-art-h1", text(data.title, "活动主标题")));
+      if (data.subtitle) copy.appendChild(el("span", "bb-art-subtitle", data.subtitle));
+      const lines = (data.infoLines || []).slice(0, 4);
+      if (lines.length) { const ul = el("div", "bb-cover-info-lines"); lines.forEach(function (line) { ul.appendChild(el("div", "bb-cover-info-line", line)); }); copy.appendChild(ul); }
+      if (data.qqGroupNumber) copy.appendChild(el("div", "bb-cover-qq", "QQ 群：" + data.qqGroupNumber));
+      box.appendChild(copy); return;
+    }
+    if (tpl === "minimal") {
+      const copy = el("div", "bb-cover-minimal");
+      copy.appendChild(el("strong", "bb-art-h1", text(data.title, "活动主标题")));
+      if (data.subtitle) copy.appendChild(el("span", "bb-art-subtitle", data.subtitle));
+      const lines = (data.infoLines || []).slice(0, 4);
+      if (lines.length) { const ul = el("div", "bb-cover-info-lines"); lines.forEach(function (line) { ul.appendChild(el("div", "bb-cover-info-line", line)); }); copy.appendChild(ul); }
+      if (data.qqGroupNumber) copy.appendChild(el("div", "bb-cover-qq", "QQ 群：" + data.qqGroupNumber));
+      box.appendChild(copy); return;
+    }
+    if (tpl === "split") {
+      if (img) { const figure = el("div", "bb-cover-figure"); figure.appendChild(img); box.appendChild(figure); }
+      const panel = el("div", "bb-cover-panel");
+      panel.appendChild(el("strong", "bb-art-h1", text(data.title, "活动主标题")));
+      if (data.subtitle) panel.appendChild(el("span", "bb-art-subtitle", data.subtitle));
+      const lines = (data.infoLines || []).slice(0, 4);
+      if (lines.length) { const ul = el("div", "bb-cover-info-lines"); lines.forEach(function (line) { ul.appendChild(el("div", "bb-cover-info-line", line)); }); panel.appendChild(ul); }
+      if (data.qqGroupNumber) panel.appendChild(el("div", "bb-cover-qq", "QQ 群：" + data.qqGroupNumber));
+      box.appendChild(panel); return;
+    }
+    const hero = el("div", "bb-art-cover");
+    if (img) hero.appendChild(img);
+    const overlay = el("div", "bb-art-cover-copy");
+    overlay.appendChild(el("strong", "bb-art-h1", text(data.title, "活动主标题")));
+    if (data.subtitle) overlay.appendChild(el("span", "bb-art-subtitle", data.subtitle));
+    (data.infoLines || []).slice(0, 3).forEach(function (line) { overlay.appendChild(el("span", "bb-art-info", line)); });
+    hero.appendChild(overlay); box.appendChild(hero);
+  }
+
+  function renderAnnouncement(box, data, tpl) {
+    if (tpl === "quote") {
+      const quote = el("div", "bb-announce-quote");
+      quote.appendChild(el("span", "bb-quote-mark", "“"));
+      quote.appendChild(el("p", "bb-art-body", text(data.body, "重点引语内容")));
+      if (data.heading) quote.appendChild(el("span", "bb-quote-source", data.heading));
+      box.appendChild(quote); return;
+    }
+    if (tpl === "plain") {
+      if (data.heading) box.appendChild(el("strong", "bb-art-h3", data.heading));
+      box.appendChild(el("p", "bb-art-body", text(data.body, "在这里填写活动公告、入场须知或情报说明。"))); return;
+    }
+    if (tpl === "boxed") {
+      const boxed = el("div", "bb-announce-box");
+      if (data.heading) boxed.appendChild(el("strong", "bb-art-h3", data.heading));
+      boxed.appendChild(el("p", "bb-art-body", text(data.body, "在这里填写活动公告、入场须知或情报说明。")));
+      box.appendChild(boxed); return;
+    }
+    const card = el("div", "bb-announce-notice");
+    if (data.heading) card.appendChild(el("strong", "bb-announce-notice-title", data.heading));
+    card.appendChild(el("p", "bb-art-body", text(data.body, "在这里填写活动公告、入场须知或情报说明。")));
+    box.appendChild(card);
+  }
+
+  function renderTicket(box, data, tpl) {
+    const qr = visualImage(imageSrc(data.qrImage), "bb-art-qr", "购票二维码");
+    const tiers = data.tiers || [];
+    if (tpl === "ticket-cards") {
+      const grid = el("div", "bb-ticket-cards");
+      tiers.forEach(function (tier) { const card = el("div", "bb-ticket-card"); card.appendChild(el("span", "bb-ticket-card-label", text(tier.label, "票档"))); card.appendChild(el("strong", "bb-ticket-card-price", text(tier.price, "价格"))); grid.appendChild(card); });
+      if (!tiers.length) grid.appendChild(el("p", "bb-art-caption", "暂无票档"));
+      box.appendChild(grid);
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
+      if (qr) box.appendChild(el("div", "bb-ticket-qr-wrap", qr)); return;
+    }
+    if (tpl === "ticket-focus") {
+      const focus = el("div", "bb-ticket-focus");
+      const first = tiers[0];
+      if (first) { focus.appendChild(el("strong", "bb-ticket-focus-price", text(first.price, "价格"))); focus.appendChild(el("span", "bb-ticket-focus-label", text(first.label, "票档"))); }
+      if (qr) focus.appendChild(qr);
+      box.appendChild(focus);
+      const rest = tiers.slice(1);
+      if (rest.length) { const list = el("div", "bb-ticket-rest"); rest.forEach(function (t) { list.appendChild(el("div", "bb-ticket-rest-item", text(t.label, "") + "　" + text(t.price, ""))); }); box.appendChild(list); }
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+    }
+    if (tpl === "ticket-hero") {
+      const first = tiers[0];
+      const hero = el("div", "bb-ticket-hero");
+      hero.appendChild(el("strong", "bb-ticket-hero-price", text(first ? first.price : "价格", "价格")));
+      hero.appendChild(el("span", "bb-ticket-hero-label", text(first ? first.label : "票档", "票档")));
+      box.appendChild(hero);
+      const rest = tiers.slice(1);
+      if (rest.length) { const list = el("div", "bb-ticket-rest"); rest.forEach(function (t) { list.appendChild(el("div", "bb-ticket-rest-item", text(t.label, "") + "　" + text(t.price, ""))); }); box.appendChild(list); }
+      if (qr) box.appendChild(el("div", "bb-ticket-qr-wrap", qr));
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+    }
+    const row = el("div", "bb-art-split");
+    const copy = el("div");
+    tiers.forEach(function (tier) { const p = el("div", "bb-art-ticket"); p.appendChild(el("b", null, text(tier.label, "票档"))); p.appendChild(el("span", null, text(tier.price, "价格"))); copy.appendChild(p); });
+    if (!tiers.length) copy.appendChild(el("p", "bb-art-caption", "暂无票档"));
+    if (data.note) copy.appendChild(el("p", "bb-art-caption", data.note));
+    row.appendChild(copy); if (qr) row.appendChild(qr); box.appendChild(row);
+  }
+
+  function renderMaterials(box, data, tpl) {
+    const items = data.items || [];
+    if (tpl === "checklist") {
+      const list = el("div", "bb-materials-checklist");
+      items.forEach(function (item) { list.appendChild(el("div", "bb-checklist-item", text(item.label, "物料条目"))); });
+      if (!items.length) list.appendChild(el("p", "bb-art-caption", "暂无条目"));
+      box.appendChild(list);
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+    }
+    if (tpl === "notice-strip") {
+      const list = el("div", "bb-materials-strip");
+      items.forEach(function (item) { list.appendChild(el("div", "bb-strip-item", text(item.label, "物料条目"))); });
+      if (!items.length) list.appendChild(el("p", "bb-art-caption", "暂无条目"));
+      box.appendChild(list);
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+    }
+    addGrid(box, items, data.columns, "icon", "label", "物料条目");
+    if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
+  }
+
+  function renderCrossPromo(box, data, tpl) {
+    const img = visualImage(imageSrc(data.icon), "bb-art-icon", "联动方图标");
+    if (tpl === "promo-strip") {
+      const strip = el("div", "bb-promo-strip");
+      if (img) strip.appendChild(img);
+      strip.appendChild(el("p", "bb-art-body", text(data.text, "联动推广文案")));
+      box.appendChild(strip); return;
+    }
+    if (tpl === "promo-centered") {
+      const center = el("div", "bb-promo-centered");
+      if (img) center.appendChild(img);
+      center.appendChild(el("p", "bb-art-body", text(data.text, "联动推广文案")));
+      box.appendChild(center); return;
+    }
+    const row = el("div", "bb-art-split");
+    if (img) row.appendChild(img);
+    row.appendChild(el("p", "bb-art-body", text(data.text, "联动推广文案")));
+    box.appendChild(row);
+  }
+
+  function renderSchedule(box, data, tpl) {
+    const groups = data.groups || [];
+    if (tpl === "schedule-table") {
+      groups.forEach(function (group) {
+        const tbl = el("div", "bb-schedule-table");
+        tbl.appendChild(el("strong", "bb-art-h3", text(group.groupName, "活动时间")));
+        (group.rows || []).forEach(function (item) { const r = el("div", "bb-schedule-table-row"); r.appendChild(el("b", null, text(item.time, "00:00"))); r.appendChild(el("span", null, text(item.name, "环节"))); tbl.appendChild(r); });
+        box.appendChild(tbl);
+      });
+      if (!groups.length) box.appendChild(el("p", "bb-art-caption", "暂无时间安排")); return;
+    }
+    if (tpl === "schedule-cards") {
+      groups.forEach(function (group) {
+        const card = el("div", "bb-schedule-card");
+        card.appendChild(el("strong", "bb-art-h3", text(group.groupName, "活动时间")));
+        (group.rows || []).forEach(function (item) { const r = el("div", "bb-schedule-card-row"); r.appendChild(el("span", null, text(item.name, "环节"))); r.appendChild(el("b", null, text(item.time, "00:00"))); card.appendChild(r); });
+        box.appendChild(card);
+      });
+      if (!groups.length) box.appendChild(el("p", "bb-art-caption", "暂无时间安排")); return;
+    }
+    groups.forEach(function (group) {
+      const g = el("div", "bb-art-timeline-group");
+      g.appendChild(el("strong", "bb-art-h3", text(group.groupName, "活动时间")));
+      (group.rows || []).forEach(function (item) { const r = el("div", "bb-art-time-row"); r.appendChild(el("b", null, text(item.time, "00:00"))); r.appendChild(el("span", null, text(item.name, "环节"))); g.appendChild(r); });
+      box.appendChild(g);
+    });
+    if (!groups.length) box.appendChild(el("p", "bb-art-caption", "暂无时间安排"));
+  }
+
+  function renderVenue(box, data, tpl) {
+    const img = visualImage(imageSrc(data.photo), "bb-art-side-image", "场地照片");
+    const tags = data.tags || [];
+    function buildTags() { const chips = el("div", "bb-venue-tags"); tags.forEach(function (t) { chips.appendChild(el("span", "bb-venue-tag", t)); }); return chips; }
+    if (tpl === "venue-focus") {
+      if (img) { const figure = el("div", "bb-venue-focus-figure"); figure.appendChild(img); box.appendChild(figure); }
+      box.appendChild(el("p", "bb-art-body", text(data.description, "场地描述")));
+      if (tags.length) box.appendChild(buildTags()); return;
+    }
+    if (tpl === "venue-map") {
+      const map = el("div", "bb-venue-map");
+      map.appendChild(el("p", "bb-art-body", text(data.description, "场地描述")));
+      if (tags.length) map.appendChild(buildTags());
+      box.appendChild(map); return;
+    }
+    const row = el("div", "bb-art-split");
+    const copy = el("div");
+    copy.appendChild(el("p", "bb-art-body", text(data.description, "场地描述")));
+    if (tags.length) copy.appendChild(buildTags());
+    row.appendChild(copy);
+    if (img) row.appendChild(img);
+    box.appendChild(row);
+  }
+
+  function renderRoute(box, data, tpl) {
+    const lines = data.lines || [];
+    if (tpl === "route-list") {
+      const list = el("div", "bb-route-list");
+      lines.forEach(function (line) { list.appendChild(el("div", "bb-route-list-item", line)); });
+      if (!lines.length) list.appendChild(el("p", "bb-art-caption", "暂无路线"));
+      box.appendChild(list); return;
+    }
+    if (tpl === "route-focus") {
+      const first = lines[0];
+      if (first) box.appendChild(el("div", "bb-route-focus", first));
+      const rest = lines.slice(1);
+      if (rest.length) { const list = el("div", "bb-route-list"); rest.forEach(function (line) { list.appendChild(el("div", "bb-route-list-item", line)); }); box.appendChild(list); }
+      if (!lines.length) box.appendChild(el("p", "bb-art-caption", "暂无路线")); return;
+    }
+    lines.forEach(function (line, index) { const r = el("div", "bb-art-route-row"); r.appendChild(el("b", null, String(index + 1).padStart(2, "0"))); r.appendChild(el("span", null, line)); box.appendChild(r); });
+    if (!lines.length) box.appendChild(el("p", "bb-art-caption", "暂无路线"));
+  }
+
+  function renderProgram(box, data, tpl) {
+    const items = data.items || [];
+    if (tpl === "program-cards") {
+      const grid = el("div", "bb-program-cards");
+      items.forEach(function (item) {
+        const card = el("div", "bb-program-card");
+        const img = visualImage(imageSrc(item.image), "bb-program-card-image", "节目配图");
+        if (img) card.appendChild(img);
+        const c = el("div");
+        if (item.tag) c.appendChild(el("span", "bb-program-card-tag", item.tag));
+        c.appendChild(el("strong", null, text(item.title, "节目标题")));
+        if (item.subtitle) c.appendChild(el("span", null, item.subtitle));
+        card.appendChild(c); grid.appendChild(card);
+      });
+      if (!items.length) grid.appendChild(el("p", "bb-art-caption", "暂无节目"));
+      box.appendChild(grid); return;
+    }
+    if (tpl === "program-compact") {
+      const grid = el("div", "bb-program-compact");
+      items.forEach(function (item) { const cell = el("div", "bb-program-compact-item"); cell.appendChild(el("b", null, text(item.tag, "节目"))); cell.appendChild(el("strong", null, text(item.title, "节目标题"))); grid.appendChild(cell); });
+      if (!items.length) grid.appendChild(el("p", "bb-art-caption", "暂无节目"));
+      box.appendChild(grid); return;
+    }
+    items.forEach(function (item) {
+      const r = el("div", "bb-art-program-row");
+      const img = visualImage(imageSrc(item.image), "bb-art-program-image", "节目配图");
+      if (item.mediaSide === "left" && img) r.appendChild(img);
+      const c = el("div");
+      if (item.tag) c.appendChild(el("b", null, text(item.tag, "节目")));
+      c.appendChild(el("strong", null, text(item.title, "节目标题")));
+      if (item.subtitle) c.appendChild(el("span", null, item.subtitle));
+      r.appendChild(c);
+      if (item.mediaSide !== "left" && img) r.appendChild(img);
+      box.appendChild(r);
+    });
+    if (!items.length) box.appendChild(el("p", "bb-art-caption", "暂无节目"));
+  }
+
+  function renderPerformer(box, data, tpl) {
+    const portraits = el("div", "bb-art-portraits");
+    (data.images || []).forEach(function (item) { const img = visualImage(imageSrc(item), "bb-art-portrait", "嘉宾照片"); if (img) portraits.appendChild(img); });
+    const hasPortraits = portraits.childNodes.length > 0;
+    function makeCopy() {
+      const c = el("div");
+      c.appendChild(el("strong", "bb-art-h3", text(data.name, "嘉宾名称")));
+      c.appendChild(el("p", "bb-art-body", text(data.bio, "嘉宾简介")));
+      const setlist = data.setlist || [];
+      if (setlist.length) { const ul = el("div", "bb-performer-setlist"); setlist.forEach(function (s) { ul.appendChild(el("div", "bb-setlist-item", s)); }); c.appendChild(ul); }
+      return c;
+    }
+    if (tpl === "performer-poster") {
+      const poster = el("div", "bb-performer-poster");
+      if (hasPortraits) poster.appendChild(portraits);
+      const overlay = el("div", "bb-performer-poster-copy");
+      overlay.appendChild(el("strong", "bb-art-h3", text(data.name, "嘉宾名称")));
+      overlay.appendChild(el("p", "bb-art-body", text(data.bio, "嘉宾简介")));
+      poster.appendChild(overlay); box.appendChild(poster); return;
+    }
+    if (tpl === "performer-grid") {
+      const grid = el("div", "bb-performer-grid");
+      if (hasPortraits) grid.appendChild(portraits);
+      grid.appendChild(makeCopy()); box.appendChild(grid); return;
+    }
+    const row = el("div", "bb-art-split");
+    if (hasPortraits) row.appendChild(portraits);
+    row.appendChild(makeCopy()); box.appendChild(row);
+  }
+
+  function renderBooth(box, data, tpl) {
+    const items = data.items || [];
+    if (tpl === "booth-cards") {
+      const list = el("div", "bb-booth-cards");
+      items.forEach(function (item) {
+        const card = el("div", "bb-booth-card");
+        const img = visualImage(imageSrc(item.image), "bb-booth-card-image", "摊位图");
+        if (img) card.appendChild(img);
+        const c = el("div");
+        c.appendChild(el("strong", null, text(item.name, "摊位")));
+        if (item.desc) c.appendChild(el("span", null, item.desc));
+        card.appendChild(c); list.appendChild(card);
+      });
+      if (!items.length) list.appendChild(el("p", "bb-art-caption", "暂无摊位"));
+      box.appendChild(list); return;
+    }
+    if (tpl === "booth-list") {
+      const list = el("div", "bb-booth-list");
+      items.forEach(function (item) { const row = el("div", "bb-booth-list-item"); row.appendChild(el("strong", null, text(item.name, "摊位"))); if (item.desc) row.appendChild(el("span", null, item.desc)); list.appendChild(row); });
+      if (!items.length) list.appendChild(el("p", "bb-art-caption", "暂无摊位"));
+      box.appendChild(list); return;
+    }
+    addGrid(box, items, data.columns, "image", "name", "摊位条目", "desc");
+  }
+
+  function renderDivider(box, data, tpl) {
+    const style = tpl === "dots" ? "dots" : tpl === "line" ? "line" : "wave";
+    box.appendChild(el("div", "bb-art-divider " + style, ""));
+  }
+
+  function renderFooter(box, data, tpl) {
+    const lines = data.lines || [];
+    if (tpl === "footer-banner") {
+      const banner = el("div", "bb-footer-banner");
+      lines.forEach(function (line) { banner.appendChild(el("span", "bb-footer-banner-item", line)); });
+      if (!lines.length) banner.appendChild(el("span", "bb-footer-banner-item", "微博 @XXX"));
+      box.appendChild(banner); return;
+    }
+    if (tpl === "footer-center") {
+      lines.forEach(function (line) { box.appendChild(el("p", "bb-art-caption bb-caption-center", line)); });
+      if (!lines.length) box.appendChild(el("p", "bb-art-caption bb-caption-center", "微博 @XXX")); return;
+    }
+    if (tpl === "footer-pills") {
+      const wrap = el("div", "bb-footer-pills");
+      const items = lines.length ? lines : ["主办：Only-box 企划"];
+      items.forEach(function (line) { wrap.appendChild(el("span", null, line)); });
+      box.appendChild(wrap); return;
+    }
+    lines.forEach(function (line) { box.appendChild(el("p", "bb-art-caption", line)); });
+    if (!lines.length) box.appendChild(el("p", "bb-art-caption", "微博 @XXX"));
+  }
+
+  function renderFreeText(box, data, tpl) {
+    const cls = "bb-art-free-text " + text(data.level, "body") + " align-" + text(data.align, "left");
+    if (tpl === "text-highlight") {
+      const hl = el("div", "bb-free-text-highlight");
+      hl.appendChild(el("p", cls, text(data.text, "自由文本")));
+      box.appendChild(hl); return;
+    }
+    if (tpl === "text-note") {
+      box.appendChild(el("p", "bb-art-free-text bb-free-text-note", text(data.text, "自由文本"))); return;
+    }
+    if (tpl === "text-card") {
+      const card = el("div", "bb-text-card");
+      card.appendChild(el("p", cls, text(data.text, "自由文本")));
+      box.appendChild(card); return;
+    }
+    box.appendChild(el("p", cls, text(data.text, "自由文本")));
+  }
+
+  function renderFreeImage(box, data, tpl) {
+    const img = visualImage(imageSrc(data.image), "bb-art-free-image", "自由图片");
+    if (tpl === "image-card") {
+      const card = el("div", "bb-free-image-card");
+      if (img) card.appendChild(img);
+      if (data.caption) card.appendChild(el("p", "bb-art-caption", data.caption));
+      box.appendChild(card); return;
+    }
+    if (img) box.appendChild(img);
+    if (data.caption) box.appendChild(el("p", "bb-art-caption", data.caption));
+  }
+
+  function addGrid(box, list, columns, imageKey, titleKey, emptyText, descKey) {
+    const grid = el("div", "bb-art-grid cols-" + text(columns, "2"));
+    (list || []).forEach(function (item) { const cell = el("div", "bb-art-grid-item"); const img = visualImage(imageSrc(item[imageKey]), "bb-art-grid-image", ""); if (img) cell.appendChild(img); cell.appendChild(el("strong", null, text(item[titleKey], emptyText))); if (descKey && item[descKey]) cell.appendChild(el("span", null, item[descKey])); grid.appendChild(cell); });
+    if (!list || !list.length) grid.appendChild(el("p", "bb-art-caption", "暂无" + emptyText)); box.appendChild(grid);
+  }
+
+  function applyBlockSurface(box, data) {
+    const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : .94;
+    box.style.padding = Math.max(0, Number(data.padding) || 16) + "px";
+    box.style.marginBottom = Math.max(0, Number(data.marginBottom) || 18) + "px";
+    box.style.borderRadius = Math.max(0, Number(data.radius) || 0) + "px";
+    box.style.borderColor = data.blockBorderColor || "";
+    box.style.textAlign = data.contentAlign || "center";
+    box.style.backgroundColor = data.blockBgColor ? (hexToRgba(data.blockBgColor, opacity) || data.blockBgColor) : "rgba(255,255,255," + opacity + ")";
+    if (data.blockBgImage && data.blockBgImage.url) { box.style.backgroundImage = "url(\"" + data.blockBgImage.url + "\")"; box.style.backgroundSize = "cover"; box.style.backgroundPosition = "center"; }
+    box.dataset.imageRatio = data.imageRatio || "auto";
+    box.dataset.imageFit = data.imageFit || "cover";
+  }
+
+  function buildModule(page, module, index) {
+    const def = R.getDef(module.type);
+    const tpl = module.data.template || "";
+    const box = el("article", "bb-art-module width-" + text(module.data.width, "full") + " bb-tpl-" + module.type + "-" + (tpl || "default"));
+    box.dataset.action = "module-pick"; box.dataset.moduleId = module.id; box.dataset.template = tpl;
+    if (module.id === state.selectedModuleId) box.classList.add("is-selected");
+    applyBlockSurface(box, module.data);
+    const head = el("div", "bb-art-module-head");
+    const title = el("div", "bb-art-module-title");
+    title.appendChild(el("span", "bb-art-kicker", "0" + (index + 1)));
+    title.appendChild(el("strong", "bb-art-h2", moduleTitle(module, def)));
+    head.appendChild(title);
+    const actions = el("div", "bb-art-actions");
+    const up = el("button", "bb-icon-btn", "↑"); up.type = "button"; up.title = "上移"; up.disabled = index === 0; up.dataset.action = "module-up"; up.dataset.moduleId = module.id;
+    const down = el("button", "bb-icon-btn", "↓"); down.type = "button"; down.title = "下移"; down.disabled = index === page.modules.length - 1; down.dataset.action = "module-down"; down.dataset.moduleId = module.id;
+    const remove = el("button", "bb-icon-btn danger", "×"); remove.type = "button"; remove.title = "删除模块"; remove.dataset.action = "module-del"; remove.dataset.moduleId = module.id;
+    actions.appendChild(up); actions.appendChild(down); actions.appendChild(remove); head.appendChild(actions); box.appendChild(head);
+    addVisualBody(box, module);
+    box.querySelectorAll("img").forEach(function (image) {
+      image.style.objectFit = dataImageFit(module.data);
+      if (module.data.imageRatio && module.data.imageRatio !== "auto") image.style.aspectRatio = module.data.imageRatio.replace(":", " / ");
+    });
+    const bodyAlign = module.data.bodyAlign;
+    if (bodyAlign === "left" || bodyAlign === "center" || bodyAlign === "right") {
+      box.querySelectorAll(".bb-art-body,.bb-art-caption,.bb-art-free-text,.bb-announce-notice-title,.bb-cover-qq,.bb-quote-source").forEach(function (node) { node.classList.add("bb-txt-" + bodyAlign); });
+    }
+    return box;
+  }
+
+  function buildPage(page, index, continuous) {
+    const card = el("section", "bb-page-card"); card.dataset.pageId = page.id;
+    const isActive = page.id === state.activePageId;
+    if (!continuous && isActive) card.classList.add("is-active");
+    if (!continuous) {
+      const head = el("header", "bb-page-head"); const title = el("div", "bb-page-title"); title.appendChild(el("strong", "bb-page-index", "第 " + (index + 1) + " 屏")); title.appendChild(el("span", "bb-page-meta", page.modules.length + " 个板块 · " + pageSize().pageWidth + " × " + pageSize().pageHeight)); head.appendChild(title);
+      const del = el("button", "bb-text-btn danger", "删除本屏"); del.type = "button"; del.dataset.action = "page-del"; del.dataset.pageId = page.id; head.appendChild(del); card.appendChild(head);
+    }
+    const canvas = el("div", "bb-page-canvas"); canvas.dataset.action = "page-pick"; canvas.dataset.pageId = page.id; canvas.style.aspectRatio = pageSize().pageWidth + " / " + pageSize().pageHeight;
+    if (continuous) { if (isActive) canvas.classList.add("is-active"); canvas.style.width = "100%"; }
+    else canvas.style.width = Math.round(state.zoom * 100) + "%";
+    canvas.dataset.theme = state.doc.theme || "forest"; canvas.style.fontFamily = C.fontStack(state.doc.fontFamily || "sans");
+    if (continuous) {
+      if (page.backgroundColor) canvas.style.backgroundColor = page.backgroundColor;
+      if (page.backgroundImage && page.backgroundImage.url) { canvas.style.backgroundImage = docBackgroundStyle(page.backgroundImage); canvas.style.backgroundSize = "cover"; }
+    } else {
+      const pageColor = page.backgroundColor || state.doc.backgroundColor || "#ffffff";
+      canvas.style.backgroundColor = pageColor;
+      const pageImage = page.backgroundImage || state.doc.backgroundImage;
+      if (pageImage && pageImage.url) { canvas.style.backgroundImage = docBackgroundStyle(pageImage); canvas.style.backgroundSize = "cover"; }
+    }
+    if (!page.modules.length) canvas.appendChild(el("div", "bb-page-empty", "从左侧添加第一个板块，开始制作真实长条。"));
+    else {
+      const rows = M.packModuleRows(page.modules);
+      rows.forEach(function (row) {
+        if (row.kind === "pair") {
+          const pair = el("div", "bb-art-module-row");
+          row.modules.forEach(function (module) {
+            if (module.visible !== false) pair.appendChild(buildModule(page, module, page.modules.indexOf(module)));
+          });
+          canvas.appendChild(pair);
+        } else if (row.modules[0].visible !== false) {
+          canvas.appendChild(buildModule(page, row.modules[0], page.modules.indexOf(row.modules[0])));
+        }
+      });
+    }
+    if (continuous) {
+      const tag = el("div", "bb-slice-tag"); tag.dataset.action = "page-pick"; tag.dataset.pageId = page.id; tag.title = "选择第 " + (index + 1) + " 屏";
+      tag.appendChild(el("span", null, "第 " + (index + 1) + " 屏"));
+      const del = el("button", null, "×"); del.type = "button"; del.title = "删除本屏"; del.dataset.action = "page-del"; del.dataset.pageId = page.id;
+      tag.appendChild(del); canvas.appendChild(tag);
+    }
+    card.appendChild(canvas); return card;
+  }
+
+  function renderCanvas() {
+    const keep = els.canvasBody.scrollTop; const frag = document.createDocumentFragment();
+    if (continuousMode()) {
+      const strip = el("div", "bb-strip");
+      strip.style.width = Math.round(state.zoom * 100) + "%";
+      strip.style.backgroundColor = state.doc.backgroundColor || "#ffffff";
+      if (state.doc.backgroundImage && state.doc.backgroundImage.url) { strip.style.backgroundImage = docBackgroundStyle(state.doc.backgroundImage); strip.style.backgroundSize = "cover"; }
+      state.doc.pages.forEach(function (page, index) { strip.appendChild(buildPage(page, index, true)); });
+      frag.appendChild(strip);
+    } else {
+      state.doc.pages.forEach(function (page, index) { frag.appendChild(buildPage(page, index, false)); });
+    }
+    els.canvasBody.classList.toggle("bb-continuous", continuousMode());
+    els.canvasBody.textContent = ""; els.canvasBody.appendChild(frag); els.canvasBody.scrollTop = keep;
+  }
+
+  function renderToolbar() {
+    const size = pageSize(); els.sizeReadout.textContent = size.pageWidth + " × " + size.pageHeight + " px";
+    Array.prototype.forEach.call(els.ratioGroup.querySelectorAll("[data-ratio]"), function (button) { const active = button.dataset.ratio === state.doc.ratio; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    els.zoomValue.textContent = Math.round(state.zoom * 100) + "%"; els.stats.textContent = state.doc.pages.length + " 屏 · " + M.countModules(state.doc) + " 个板块";
+    els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans";
+    Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+  }
+
+  function renderLibrary() {
+    els.libraryList.textContent = ""; const frag = document.createDocumentFragment();
+    R.MODULE_ORDER.forEach(function (type) { const button = el("button", "bb-lib-item"); button.type = "button"; button.dataset.action = "lib-add"; button.dataset.type = type; button.appendChild(el("span", "bb-lib-text", R.getDef(type).label)); button.appendChild(el("span", "bb-lib-plus", "+")); frag.appendChild(button); });
+    els.libraryList.appendChild(frag); els.libraryHint.textContent = "点击板块，添加到第 " + (activePageIndex() + 1) + " 屏";
+  }
+
+  /* ===== 我的模板（IndexedDB 本地持久化）===== */
+  async function renderMyTemplates() {
+    els.myTplArea.hidden = true; els.myTplList.textContent = "";
+    if (!global.BannerBuilderMyTemplates || !global.BannerBuilderMyTemplates.isAvailable()) return;
+    let rows;
+    try { rows = await global.BannerBuilderMyTemplates.listTemplates(); } catch (error) { return; }
+    if (!rows || !rows.length) return;
+    els.myTplArea.hidden = false; els.myTplCount.textContent = rows.length + " 个";
+    rows.forEach(function (row) {
+      const def = R.getDef(row.type);
+      const item = el("div", "bb-lib-item bb-mytpl-item"); item.dataset.action = "tpl-add"; item.dataset.tplId = row.id; item.title = "点击把整个板块（含文字与图片）加入当前屏";
+      item.appendChild(el("span", "bb-lib-text", "★ " + row.name));
+      item.appendChild(el("span", "bb-mytpl-type", def ? def.label : row.type));
+      const del = el("button", "bb-mytpl-del", "×"); del.type = "button"; del.title = "删除此模板"; del.dataset.action = "tpl-del"; del.dataset.tplId = row.id;
+      item.appendChild(del); els.myTplList.appendChild(item);
+    });
+  }
+
+  async function saveSelectedModuleAsTemplate() {
+    const hit = M.findModule(state.doc, state.selectedModuleId);
+    if (!hit.module || !global.BannerBuilderMyTemplates) return;
+    const def = R.getDef(hit.module.type);
+    const suggested = def.label + " 模板";
+    let name = suggested;
+    if (global.prompt) { const raw = global.prompt("给我的模板起个名字（留空用默认）", suggested); if (raw === null) return; name = (raw || "").trim() || suggested; }
+    try {
+      const data = await global.BannerBuilderMyTemplates.snapshotData(hit.module.data);
+      await global.BannerBuilderMyTemplates.saveTemplate({ id: C.uid(), type: hit.module.type, name: name, createdAt: Date.now(), data: data });
+      renderMyTemplates();
+    } catch (error) { if (global.alert) global.alert("模板保存失败（浏览器可能不支持本地存储）：" + ((error && error.message) || error)); }
+  }
+
+  async function addTemplateToPage(tplId) {
+    if (!global.BannerBuilderMyTemplates) return;
+    let rows = [];
+    try { rows = await global.BannerBuilderMyTemplates.listTemplates(); } catch (error) { return; }
+    const row = rows.filter(function (record) { return record.id === tplId; })[0];
+    if (!row) { renderMyTemplates(); return; }
+    const module = M.addModule(state.doc, activePage().id, row.type);
+    if (!module) return;
+    module.data = Object.assign({}, module.data, global.BannerBuilderMyTemplates.cloneTemplateData(row.data));
+    state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView();
+  }
+
+  function deleteMyTemplate(tplId) {
+    if (!global.BannerBuilderMyTemplates) return;
+    if (!global.confirm("删除这个「我的模板」？不会影响已放进画布的板块。")) return;
+    global.BannerBuilderMyTemplates.removeTemplate(tplId).then(renderMyTemplates, function () {});
+  }
+
+  function buildSurfacePanel() {
+    const wrap = el("div"); wrap.appendChild(el("p", "bb-hint", "点击画布空白处编辑整条或当前屏背景。"));
+    wrap.appendChild(buildField({ key: "name", label: "草稿名称", type: "text" }, state.doc));
+    wrap.appendChild(buildField({ key: "backgroundColor", label: "整条底色", type: "text", placeholder: "#ffffff" }, state.doc));
+    wrap.appendChild(buildField({ key: "backgroundImage", label: "整条底图", type: "image" }, state.doc));
+    const page = activePage(); if (page) { wrap.appendChild(el("div", "bb-panel-divider", "当前第 " + (activePageIndex() + 1) + " 屏")); wrap.appendChild(buildField({ key: "backgroundColor", label: "本屏底色", type: "text" }, page)); wrap.appendChild(buildField({ key: "backgroundImage", label: "本屏底图", type: "image" }, page)); }
+    return wrap;
+  }
+
+  function renderPanel() {
+    const hit = M.findModule(state.doc, state.selectedModuleId); els.panelBody.textContent = "";
+    if (!hit.module) { els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = "画布真实预览 · 点模块编辑板块"; els.panelBody.appendChild(buildSurfacePanel()); return; }
+    const def = R.getDef(hit.module.type); els.panelTitle.textContent = def.label; els.panelSub.textContent = "第 " + (hit.pageIndex + 1) + " 屏 · 可编辑文字、图片与版式";
+    const saveRow = el("div", "bb-field"); const saveBtn = el("button", "bb-file-btn", "☆ 存为我的模板"); saveBtn.type = "button"; saveBtn.dataset.action = "save-tpl"; saveBtn.title = "把当前这整个板块（含文字、配色、图片与版式）存成「我的模板」，浏览器本地保存，刷新后仍在"; saveRow.appendChild(saveBtn); els.panelBody.appendChild(saveRow);
+    (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type)); });
+  }
+
+  function renderAll() { renderToolbar(); renderLibrary(); renderCanvas(); renderPanel(); }
+  /* 连续模式跟随：新增屏后让新屏顶部对齐可视区上沿（新屏在最下）。 */
+  function scrollCanvasToBottom() {
+    const target = document.querySelector("#canvasBody .bb-page-canvas.is-active") || document.querySelector(".bb-strip");
+    if (!target) return;
+    if (typeof target.scrollIntoView === "function") {
+      try { target.scrollIntoView({ block: "start", behavior: "smooth" }); } catch (error) { target.scrollIntoView(); }
+      return;
+    }
+    if (!els.canvasBody) return;
+    try { els.canvasBody.scrollTo({ top: els.canvasBody.scrollHeight, behavior: "smooth" }); } catch (error) { els.canvasBody.scrollTop = els.canvasBody.scrollHeight; }
+  }
+  function scrollSelectedIntoView() {
+    const node = document.querySelector("#canvasBody .bb-art-module.is-selected");
+    if (!node || typeof node.scrollIntoView !== "function") return;
+    try { node.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (error) { node.scrollIntoView(); }
+  }
+  function scheduleCanvas() { if (framePending) return; framePending = true; global.requestAnimationFrame(function () { framePending = false; renderCanvas(); renderToolbar(); }); }
+
+  function downloadBlob(blob, name) { const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000); }
+  function downloadText(content, name) { downloadBlob(new Blob([content], { type: "application/json;charset=utf-8" }), name); }
+
+  function wrapLines(ctx, value, maxWidth) { const result = []; String(value || "").split("\n").forEach(function (line) { let current = ""; Array.from(line).forEach(function (char) { const next = current + char; if (ctx.measureText(next).width > maxWidth && current) { result.push(current); current = char; } else current = next; }); result.push(current); }); return result; }
+  function drawText(ctx, value, x, y, maxWidth, size, color, weight, align) { ctx.font = (weight || 400) + " " + size + "px " + C.fontStack(docFontFamily()); ctx.fillStyle = color || "#18221d"; ctx.textAlign = align || "left"; wrapLines(ctx, value, maxWidth).forEach(function (line, index) { ctx.fillText(line, x, y + index * Math.round(size * 1.45)); }); return y + Math.max(1, wrapLines(ctx, value, maxWidth).length) * Math.round(size * 1.45); }
+
+  function loadImage(value) { return new Promise(function (resolve) { if (!imageSrc(value)) return resolve(null); const image = new Image(); image.onload = function () { resolve(image); }; image.onerror = function () { resolve(null); }; image.src = imageSrc(value); }); }
+
+  /* ================================================================
+     导出画质：15 类板块按「预览模板」还原成 canvas 绘制（主题色系、
+     卡片底色/边框/圆角、图文排版），供分屏 / 全部 / 连续长图导出共用。
+     ================================================================ */
+
+  /* 主题色：与 DOM 预览同源（C.THEMES[theme]），保证导出观感随主题变化。 */
+  function artTheme() {
+    return C.THEMES[state.doc.theme] || C.THEMES.forest;
+  }
+  /* 把 CSS px 手感换算成 1242 设计宽下的像素（预览列 ≈ 宽度的一半显示，
+     因此导出文字/间距需比 DOM CSS px 放大 ~2.2 倍才与预览等观感）。 */
+  function px2(v) {
+    return Math.max(1, Math.round((Number(v) || 0) * 2.2));
+  }
+  /* canvas 只认 100 一档的 numeric font-weight，兜底 clamp 到最接近档位。 */
+  function artWeight(v) {
+    return v >= 900 ? 900 : v >= 800 ? 800 : v >= 600 ? 600 : v >= 500 ? 500 : 400;
+  }
+  function artFont(ctx, size, weight) {
+    ctx.font = artWeight(weight || 400) + " " + size + "px " + C.fontStack(docFontFamily());
+  }
+  function artInk() {
+    return "#20251f";
+  }
+  function artMuted() {
+    return "#6a706c";
+  }
+  function alphaColor(value, alpha) {
+    const raw = hexToRgba(value, alpha);
+    return raw || value || "";
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.arcTo(x + w, y, x + w, y + radius, radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+    ctx.lineTo(x + radius, y + h);
+    ctx.arcTo(x, y + h, x, y + h - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+  }
+  function coverDraw(ctx, image, x, y, w, h) {
+    if (!image || !w || !h) return;
+    const ir = image.width / image.height;
+    const tr = w / h;
+    let sw = image.width, sh = image.height, sx = 0, sy = 0;
+    if (ir > tr) { sw = image.height * tr; sx = (image.width - sw) / 2; }
+    else { sh = image.width / tr; sy = (image.height - sh) / 2; }
+    ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+  }
+  function containDraw(ctx, image, x, y, w, h) {
+    if (!image || !w || !h) return;
+    const ir = image.width / image.height;
+    const tr = w / h;
+    let dw = w, dh = h, dx = 0, dy = 0;
+    if (ir > tr) { dw = w; dh = w / ir; dy = (h - dh) / 2; }
+    else { dh = h; dw = h * ir; dx = (w - dw) / 2; }
+    ctx.drawImage(image, dx, dy, dw, dh);
+  }
+  /* 取图片应显示比例：模块级 imageRatio 优先，其次原图自然比例，缺省 1:1。 */
+  function artImageRatio(data, image) {
+    const raw = (data && data.imageRatio) || "auto";
+    if (raw && raw !== "auto") {
+      const m = String(raw).replace(/\s+/g, "").match(/^(\d+(?:\.\d+)?)[:/](\d+(?:\.\d+)?)$/);
+      if (m && Number(m[2]) > 0) return Number(m[1]) / Number(m[2]);
+    }
+    if (image && image.width && image.height) return image.width / image.height;
+    return 1;
+  }
+  function artImageHeight(data, image, w) {
+    return Math.round(w / artImageRatio(data, image));
+  }
+  /* 当前模块的卡片底色：没有自定义底色时 = 半透明白（与 DOM 默认一致）。 */
+  function cardFillStyle(data, ink) {
+    const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
+    if (data.blockBgColor) { const raw = hexToRgba(data.blockBgColor, opacity); return raw || data.blockBgColor; }
+    return alphaColor(ink || "#ffffff", opacity);
+  }
+
+  /* 文本排版：支持 左/中/右；返回用尽后(含行距)的 y。
+     与旧 drawText 同构但显式携带字号/字重/行距倍数。 */
+  function drawRich(ctx, value, x, y, maxWidth, size, weight, color, align, lineMul) {
+    ctx.save();
+    artFont(ctx, size, weight);
+    ctx.fillStyle = color || artInk();
+    ctx.textAlign = align || "left";
+    ctx.textBaseline = "alphabetic";
+    const step = Math.round(size * (lineMul || 1.45));
+    const lines = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth));
+    lines.forEach(function (line, index) { ctx.fillText(line, x, y + index * step); });
+    ctx.restore();
+    return y + Math.max(1, lines.length) * step;
+  }
+  /* 只测高度的排版辅助：行数 × 步进，供「先铺底、后写字」的内衬面板计算高度。 */
+  function textBlockInfo(ctx, value, maxWidth, size, weight, lineMul) {
+    ctx.save();
+    artFont(ctx, size, weight || 400);
+    const step = Math.round(size * (lineMul || 1.45));
+    const count = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth)).length;
+    ctx.restore();
+    return { count: count, step: step, height: Math.max(1, count) * step };
+  }
+  /* 从 bottom 界向上排版一个文本块（供封面沉浸底部锚定），返回块顶(可作为上方块的新 bottom)。 */
+  function paintUpText(ctx, value, x, bottom, maxWidth, size, weight, color, align, lineMul) {
+    const info = textBlockInfo(ctx, value, maxWidth, size, weight, lineMul);
+    const step = info.step;
+    const count = info.count;
+    const yStart = bottom - (count - 1) * step - Math.round(size * 0.3);
+    ctx.save();
+    artFont(ctx, size, weight);
+    ctx.fillStyle = color || artInk();
+    ctx.textAlign = align || "left";
+    ctx.textBaseline = "alphabetic";
+    const lines = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth));
+    lines.forEach(function (line, index) { ctx.fillText(line, x, yStart + index * step); });
+    ctx.restore();
+    return yStart - Math.round(size * 0.78);
+  }
+  /* 圆角胶囊 chips：自动换行；返回下一行起始 y。 */
+  function drawChips(ctx, items, x, y, maxWidth, opt) {
+    if (!items || !items.length) return y;
+    const o = opt || {};
+    const size = o.size || 27;
+    const gap = Math.round(size * 0.6);
+    const padX = Math.round(size * 0.95);
+    const lh = Math.round(size * 1.85);
+    ctx.save();
+    artFont(ctx, size, o.weight || 500);
+    ctx.textAlign = "left";
+    const measure = function (label) { return { label: label, bw: ctx.measureText(label).width + padX * 2 }; };
+    const rowsLayout = [];
+    let row = []; let rowW = 0;
+    (items || []).forEach(function (item) {
+      const label = String(item || "");
+      if (!label) return;
+      const chip = measure(label);
+      if (row.length && rowW + chip.bw + gap > maxWidth) { rowsLayout.push({ row: row, width: rowW }); row = []; rowW = 0; }
+      row.push(chip); rowW += chip.bw + (row.length > 1 ? gap : 0);
+    });
+    if (row.length) rowsLayout.push({ row: row, width: rowW });
+    const padTop = Math.round(size * 0.72);
+    let cy = y;
+    if (o.center) {
+      rowsLayout.forEach(function (line) {
+        let sx = x - line.width / 2;
+        line.row.forEach(function (chip) {
+          if (o.fill) { ctx.fillStyle = o.fill; roundRectPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.fill(); }
+          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; roundRectPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.stroke(); }
+          ctx.fillStyle = o.color || artInk();
+          ctx.fillText(chip.label, sx + padX, cy + Math.round(size * 0.32));
+          sx += chip.bw + gap;
+        });
+        cy += lh;
+      });
+    } else {
+      let cx = x;
+      rowsLayout.forEach(function (line) {
+        line.row.forEach(function (chip) {
+          if (o.fill) { ctx.fillStyle = o.fill; roundRectPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.fill(); }
+          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; roundRectPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.stroke(); }
+          ctx.fillStyle = o.color || artInk();
+          ctx.fillText(chip.label, cx + padX, cy + Math.round(size * 0.32));
+          cx += chip.bw + gap;
+        });
+        cy += lh;
+        cx = x;
+      });
+    }
+    ctx.restore();
+    return cy;
+  }
+  /* 只量 chips 高度（行数 × 行高），供「先铺底、后排版」的布局预估。 */
+  function chipRowCount(ctx, items, maxWidth, size) {
+    const gap = Math.round(size * 0.6);
+    const padX = Math.round(size * 0.95);
+    ctx.save();
+    artFont(ctx, size, 500);
+    let rows = 1; let rowW = 0;
+    (items || []).forEach(function (item) {
+      const label = String(item || "");
+      if (!label) return;
+      const bw = ctx.measureText(label).width + padX * 2;
+      if (rowW > 0 && rowW + bw + gap > maxWidth) { rows += 1; rowW = bw; }
+      else rowW += bw + (rowW > 0 ? gap : 0);
+    });
+    ctx.restore();
+    if (!items || !items.filter(function (i) { return String(i || ""); }).length) return 0;
+    return rows * Math.round(size * 1.85);
+  }
+  function drawDividerShape(ctx, data, x, y, w, color) {
+    const style = data.template === "dots" ? "dots" : data.template === "line" ? "line" : "wave";
+    ctx.save();
+    const cy = y + Math.round(22);
+    if (style === "line") {
+      ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + w, cy); ctx.stroke();
+    } else if (style === "dots") {
+      ctx.fillStyle = color; const d = 9; const gap = Math.round(26);
+      const count = Math.max(1, Math.floor((w - d) / (d + gap)));
+      const start = x + (w - (count * d + (count - 1) * gap)) / 2;
+      for (let i = 0; i < count; i += 1) { ctx.beginPath(); ctx.arc(start + i * (d + gap) + d / 2, cy, d / 2, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineCap = "round";
+      ctx.beginPath();
+      const seg = Math.max(1, Math.floor(w / 64));
+      const amp = 12;
+      for (let i = 0; i <= seg; i += 1) {
+        const px = x + (w * i) / seg;
+        const py = cy + (i % 2 === 0 ? -amp : amp);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawLine(ctx, x1, y1, x2, y2, color, width) {
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width || 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+  }
+  function drawGradientOverlay(ctx, x, y, w, h, color, from, to) {
+    ctx.save();
+    const gradient = ctx.createLinearGradient(0, y, 0, y + h);
+    gradient.addColorStop(0, alphaColor(color, from || 0));
+    gradient.addColorStop(1, alphaColor(color, to == null ? 0.84 : to));
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+  function capText(value, limit) {
+    const out = String(value || "").trim();
+    return out.length > limit ? out.slice(0, limit) + "…" : out;
+  }
+
+  /* ===== 各模块类型的内容绘制器：ctx 为模块临时画布，x0/y0 为内容区原点（已含卡片内边距），
+        宽 w 为内容宽；返回内容底部的 y（供卡片定高）。所有绘制在坐标 y0 起、逐块向下排版。 ===== */
+  async function paintCover(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const img = await loadImage(data.mainImage);
+    const tpl = data.template || "immersive";
+    const title = text(data.title, "活动主标题");
+    const subtitle = data.subtitle;
+    const infoLines = (data.infoLines || []).slice(0, 6).filter(Boolean);
+    const qqText = data.qqGroupNumber ? "QQ 群：" + data.qqGroupNumber : "";
+    const chipPlain = { size: 28, color: ink, border: alphaColor(P.primary, 0.35), fill: "#ffffff", lw: 2 };
+    const chipCenter = { size: 28, color: P.primaryDark, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2, center: true };
+    const drawInfoCopy = function (yy, centered) {
+      let c = yy;
+      c = drawRich(ctx, title, centered ? x0 + w / 2 : x0, c, w, 82, 900, P.primaryDark, centered ? "center" : "left", 1.2) + 16;
+      if (subtitle) c = drawRich(ctx, subtitle, centered ? x0 + w / 2 : x0, c, w, 35, 500, artMuted(), centered ? "center" : "left") + 14;
+      c = drawChips(ctx, infoLines, centered ? x0 + w / 2 : x0, c + 4, w, centered ? chipCenter : chipPlain);
+      if (qqText) c = drawRich(ctx, qqText, centered ? x0 + w / 2 : x0, c + 10, w, 27, 500, artMuted(), centered ? "center" : "left") + 8;
+      return c;
+    };
+    if (tpl === "info") {
+      let y = y0;
+      if (img) { const h = Math.min(Math.round(w * 0.6), 860); ctx.save(); roundRectPath(ctx, x0, y, w, h, 24); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 34; }
+      return drawInfoCopy(y, false);
+    }
+    if (tpl === "minimal") {
+      return drawInfoCopy(y0, true);
+    }
+    if (tpl === "split") {
+      let y = y0;
+      if (img) { const h = Math.min(Math.round(w * 0.64), 940); ctx.save(); roundRectPath(ctx, x0, y, w, h, 24); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 36; }
+      else { ctx.save(); roundRectPath(ctx, x0, y, w, 300, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore(); y += 340; }
+      return drawInfoCopy(y, false);
+    }
+    /* immersive 沉浸封面：主图整幅 + 底部渐变信息带（从下往上锚定）。 */
+    const heroH = img ? Math.round(w * 0.94) : Math.round(w * 0.6);
+    if (img) { ctx.save(); roundRectPath(ctx, x0, y0, w, heroH, 26); ctx.clip(); coverDraw(ctx, img, x0, y0, w, heroH); ctx.restore(); }
+    else { ctx.save(); roundRectPath(ctx, x0, y0, w, heroH, 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
+    drawGradientOverlay(ctx, x0, y0 + Math.round(heroH * 0.42), w, heroH - Math.round(heroH * 0.42), P.primaryDark, 0.05, 0.88);
+    const cx = x0 + w / 2;
+    const cw = w - 70;
+    let bottom = y0 + heroH - 46;
+    const infoShown = infoLines.slice(0, 3);
+    for (let i = infoShown.length - 1; i >= 0; i -= 1) {
+      if (!infoShown[i]) continue;
+      bottom = paintUpText(ctx, infoShown[i], cx, bottom - 6, cw, 26, 500, "rgba(255,255,255,.85)", "center", 1.55);
+      bottom -= 18;
+    }
+    if (subtitle) { bottom = paintUpText(ctx, subtitle, cx, bottom - 6, cw, 34, 600, "rgba(255,255,255,.96)", "center", 1.45); bottom -= 22; }
+    paintUpText(ctx, title, cx, bottom - 4, cw, 88, 900, "#ffffff", "center", 1.22);
+    let y = y0 + heroH;
+    if (qqText) y = drawRich(ctx, qqText, cx, y + 28, w, 28, 500, artMuted(), "center") + 10;
+    return y;
+  }
+
+  async function paintAnnouncement(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const tpl = data.template || "notice";
+    const bodyValue = data.body || "在这里填写活动公告、入场须知或情报说明。";
+    const heading = data.heading || "";
+    const align = data.bodyAlign === "right" ? "right" : data.bodyAlign === "center" ? "center" : "left";
+    const bodySize = 34; const bodyMul = 1.62; const headSize = 44;
+    const anchor = function (leftX, width) {
+      return { x: align === "center" ? leftX + width / 2 : align === "right" ? leftX + width : leftX };
+    };
+    if (tpl === "plain") {
+      let y = y0;
+      const a = anchor(x0, w);
+      if (heading) y = drawRich(ctx, heading, a.x, y, w, headSize, 800, P.primaryDark, align, 1.35) + 10;
+      y = drawRich(ctx, bodyValue, a.x, y, w, bodySize, 400, ink, align, bodyMul);
+      return y;
+    }
+    const padX = 38;
+    const innerLeft = x0 + padX;
+    const innerW = Math.max(60, w - padX * 2);
+    const a = anchor(innerLeft, innerW);
+    const headInfo = heading ? textBlockInfo(ctx, heading, innerW, headSize, 800, 1.35) : { height: 0 };
+    const bodyInfo = textBlockInfo(ctx, bodyValue, innerW, bodySize, 400, bodyMul);
+    if (tpl === "boxed") {
+      const padY = 32;
+      const paneH = padY * 2 + headInfo.height + (heading ? 12 : 0) + bodyInfo.height;
+      let y = y0 + padY + Math.round(headSize * 0.2);
+      if (heading) y = drawRich(ctx, heading, a.x, y, innerW, headSize, 800, P.primaryDark, align, 1.35) + 12;
+      drawRich(ctx, bodyValue, a.x, y, innerW, bodySize, 400, ink, align, bodyMul);
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.primary, 0.42); ctx.lineWidth = 3; ctx.setLineDash([2, 16]); ctx.stroke(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.accent, 0.9); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      return y0 + paneH;
+    }
+    /* notice / quote：内衬面板 */
+    let innerH = bodyInfo.height;
+    if (heading) innerH += headInfo.height + 12;
+    if (tpl === "quote") innerH = Math.max(innerH, 170);
+    const padTop = 30; const padBottom = 30;
+    const paneH = padTop + innerH + padBottom;
+    let bodyLeft = innerLeft;
+    let bodyTopPad = 0;
+    if (tpl === "quote") {
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
+      ctx.save(); artFont(ctx, 104, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.fillText("“", x0 + 24, y0 + padTop + 120); ctx.restore();
+      bodyLeft = x0 + 116;
+      bodyTopPad = 4;
+    } else {
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = alphaColor(P.primary, 0.07); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0, y0 + 10, 12, paneH - 20, 6); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
+      bodyLeft = innerLeft + 14;
+      bodyTopPad = 0;
+    }
+    const bodyW = Math.max(60, w - (bodyLeft - x0) - padX);
+    const ba = anchor(bodyLeft, bodyW);
+    let y = y0 + padTop + Math.round(headSize * 0.2);
+    if (heading && tpl !== "quote") {
+      const headLeft = x0 + padX;
+      const ha = anchor(headLeft, bodyW);
+      y = drawRich(ctx, heading, ha.x, y, bodyW, headSize, 800, P.primaryDark, align, 1.35) + 12;
+    }
+    y = y0 + padTop + Math.round(bodySize * 0.2) + (heading && tpl !== "quote" ? headInfo.height + 12 : 0) + bodyTopPad;
+    if (tpl === "quote") {
+      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 700, "#20251f", align, bodyMul);
+      if (heading) drawRich(ctx, heading, x0 + w - padX, y0 + paneH - padBottom + 10, innerW, 26, 600, P.primaryDark, "right", 1.4);
+    } else {
+      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 400, ink, align, bodyMul);
+    }
+    return y0 + paneH;
+  }
+
+  async function paintTicket(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk(); let y = y0;
+    const tiers = (data.tiers || []).filter(function (t) { return t && (t.label || t.price); });
+    const qr = await loadImage(data.qrImage);
+    const tpl = data.template || "qr-side";
+    const qrSize = Math.round(w * 0.2);
+    if (tpl === "ticket-focus" || tpl === "ticket-hero") {
+      const first = tiers[0];
+      const bandH = Math.round(w * 0.42);
+      ctx.save(); roundRectPath(ctx, x0, y, w, bandH, 30); const g = ctx.createLinearGradient(x0, y, x0 + w, y + bandH); g.addColorStop(0, P.primary); g.addColorStop(1, P.primaryDark); ctx.fillStyle = g; ctx.fill(); ctx.restore();
+      if (qr && tpl === "ticket-focus") {
+        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize, 18); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize, 18); ctx.clip(); containDraw(ctx, qr, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize); ctx.restore();
+      }
+      if (first) {
+        ctx.fillStyle = "#ffffff"; ctx.textAlign = "left";
+        y = drawRich(ctx, text(first.price, "价格"), x0 + 36, y + Math.round(bandH * 0.34), w * 0.6, 108, 900, "#ffffff", "left", 1) + 4;
+        if (first.label) y = drawRich(ctx, first.label, x0 + 36, y + 6, w * 0.6, 30, 600, "rgba(255,255,255,.9)", "left") + 6;
+      } else y = drawRich(ctx, "价格", x0 + 36, y + Math.round(bandH * 0.4), w * 0.6, 96, 900, "#ffffff", "left") + 4;
+      y += Math.round(bandH * 0.18);
+      const rest = tiers.slice(1);
+      if (rest.length) y = drawChips(ctx, rest.map(function (t) { return [t.label, t.price].filter(Boolean).join("　"); }), x0, y + 14, w, { size: 27, color: ink, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2 });
+      if (qr && tpl === "ticket-hero") {
+        y += 24;
+        const qw = qrSize + 44; const qh = qrSize + 44;
+        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 22, y + 22, qrSize, qrSize); ctx.restore();
+        y += qh + 8;
+      }
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 12, w, 26, 500, artMuted(), "left", 1.5) + 8;
+      return y;
+    }
+    if (tpl === "ticket-cards") {
+      const cols = Math.max(1, Math.min(3, Math.ceil(tiers.length / 2)));
+      const gap = 22;
+      const cw = (w - gap * (cols - 1)) / cols;
+      const ch = Math.round(cw * 0.9);
+      tiers.slice(0, 6).forEach(function (tier, index) {
+        const col = index % cols; const row = Math.floor(index / cols);
+        const cx = x0 + col * (cw + gap); const cy = y + row * (ch + gap);
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 24); ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 24); ctx.strokeStyle = alphaColor(P.primary, 0.22); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        drawRich(ctx, text(tier.price, "价格"), cx + cw / 2, cy + Math.round(ch * 0.4), cw - 20, 62, 900, P.accent, "center", 1);
+        drawRich(ctx, text(tier.label, "票档"), cx + cw / 2, cy + Math.round(ch * 0.4) + 76, cw - 20, 27, 600, artMuted(), "center", 1);
+      });
+      if (!tiers.length) { ctx.save(); roundRectPath(ctx, x0, y, w, 140, 24); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); drawRich(ctx, "暂无票档", x0 + w / 2, y + 88, w, 30, 600, artMuted(), "center", 1); y += 170; }
+      else y += Math.ceil(Math.min(tiers.length, 6) / cols) * (ch + gap) - gap;
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 18, w, 26, 500, artMuted(), "left", 1.5) + 12;
+      if (qr) {
+        y += 18; const qw = qrSize + 60; const qh = qrSize + 60;
+        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 30, y + 30, qrSize, qrSize); ctx.restore();
+        y += qh + 6;
+      }
+      return y;
+    }
+    /* 默认 qr-side / 其余：左侧票档行 + 右侧二维码 */
+    const splitGap = 30;
+    const qrSide = qr ? qrSize + 40 : 0;
+    const leftW = qrSide ? w - qrSide - splitGap : w;
+    let ly = y;
+    if (!tiers.length) { drawRich(ctx, "暂无票档", x0, ly + 6, leftW, 30, 600, artMuted(), "left", 1); ly += 60; }
+    tiers.slice(0, 8).forEach(function (tier) {
+      const rowY = ly + 8;
+      drawRich(ctx, text(tier.label, "票档"), x0, rowY, leftW * 0.62, 33, 600, ink, "left", 1);
+      drawRich(ctx, text(tier.price, "价格"), x0 + leftW, rowY, leftW * 0.38, 33, 900, P.accent, "right", 1);
+      ly += 66;
+      drawLine(ctx, x0, ly, x0 + leftW, ly, alphaColor(P.primary, 0.14), 2);
+    });
+    if (qr) {
+      const qx = x0 + leftW + splitGap;
+      ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.clip(); containDraw(ctx, qr, qx + 20, y + 20, qrSize, qrSize); ctx.restore();
+    }
+    y = Math.max(ly, qr ? y + qrSide : ly);
+    if (data.note) y = drawRich(ctx, data.note, x0, y + 16, w, 26, 500, artMuted(), "left", 1.5) + 8;
+    return y;
+  }
+
+  async function paintMaterials(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const items = data.items || [];
+    const note = data.note;
+    const tpl = data.template || "icon-grid";
+    const list = items.length ? items : [{}];
+    let y = y0;
+    if (tpl === "checklist") {
+      for (const item of list) {
+        drawRich(ctx, "✓", x0, y + 46, 70, 36, 900, P.accent, "left", 1);
+        drawRich(ctx, text(item.label, "物料条目"), x0 + 64, y + 40, w - 64, 31, 500, ink, "left", 1);
+        y += 76;
+      }
+      if (!items.length) y -= 26;
+      if (note) y = drawRich(ctx, note, x0, y + 14, w, 26, 500, artMuted(), "left", 1.5) + 10;
+      return y;
+    }
+    if (tpl === "notice-strip") {
+      const stripH = 64;
+      list.forEach(function (item, index) {
+        ctx.save(); roundRectPath(ctx, x0, y, w, stripH, 18); ctx.fillStyle = index % 2 === 0 ? P.accent : P.primary; ctx.fill(); ctx.restore();
+        drawRich(ctx, text(item.label, "物料条目"), x0 + w / 2, y + stripH - 24, w - 30, 28, 700, "#ffffff", "center", 1);
+        y += stripH + 16;
+      });
+      if (!items.length) y -= 44;
+      if (note) y = drawRich(ctx, note, x0, y + 12, w, 26, 500, artMuted(), "left", 1.5) + 8;
+      return y;
+    }
+    /* icon-grid：图标圆角块 + 说明文字 */
+    const icons = await Promise.all(items.map(function (it) { return it && it.icon && it.icon.url ? loadImage(it.icon) : Promise.resolve(null); }));
+    const cols = Math.max(1, Math.min(4, Number(data.columns) || 2));
+    const gap = 20;
+    const cw = (w - gap * (cols - 1)) / cols;
+    const cellH = Math.round(cw * 1.15);
+    const iconBox = Math.min(150, Math.round(cw * 0.7));
+    const count = Math.max(1, items.length);
+    for (let i = 0; i < count; i += 1) {
+      const item = items[i] || {};
+      const cx = x0 + (i % cols) * (cw + gap);
+      const cy = y + Math.floor(i / cols) * (cellH + gap);
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.fillStyle = alphaColor("#ffffff", 0.78); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.14); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      const img = icons[i];
+      if (img) { ctx.save(); roundRectPath(ctx, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox, 24); ctx.clip(); coverDraw(ctx, img, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox); ctx.restore(); }
+      drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 42, cw - 12, 27, 600, ink, "center", 1.35);
+    }
+    y += Math.ceil(count / cols) * (cellH + gap) - gap;
+    if (note) y = drawRich(ctx, note, x0, y + 16, w, 26, 500, artMuted(), "left", 1.5) + 8;
+    return y;
+  }
+
+  async function paintCrossPromo(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const icon = await loadImage(data.icon);
+    const tpl = data.template || "promo-card";
+    const value = data.text || "联动推广文案";
+    const padY = 44;
+    let innerH = 0;
+    if (tpl === "promo-centered") {
+      const info = textBlockInfo(ctx, value, w - 70, 32, 600, 1.7);
+      innerH = (icon ? Math.round(w * 0.24) + 34 : 0) + info.height + padY * 2 - 30;
+      ctx.save(); roundRectPath(ctx, x0, y0, w, innerH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
+      let y = y0 + 40;
+      if (icon) {
+        const iw = Math.min(160, Math.round(w * 0.22)); const ih = iw;
+        const ix = x0 + (w - iw) / 2;
+        ctx.save(); roundRectPath(ctx, ix, y, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, y, iw, ih); ctx.restore();
+        y += ih + 30;
+      }
+      y = drawRich(ctx, value, x0 + w / 2, y, w - 70, 32, 600, ink, "center", 1.7);
+      return y0 + innerH;
+    }
+    const side = icon ? Math.min(230, Math.round(w * 0.26)) : 0;
+    const textInfo = textBlockInfo(ctx, value, w - side - (icon ? 90 : 0), 32, 600, 1.68);
+    const bandH = Math.max(200, padY * 2 + textInfo.height);
+    ctx.save(); roundRectPath(ctx, x0, y0, w, bandH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
+    if (icon) {
+      const iw = Math.min(150, side - 40); const ih = iw;
+      const ix = x0 + (side - iw) / 2; const iy = y0 + (bandH - ih) / 2;
+      ctx.save(); roundRectPath(ctx, ix, iy, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, iy, iw, ih); ctx.restore();
+      drawRich(ctx, value, x0 + side + 22, y0 + (bandH - textInfo.height) / 2 + 26, w - side - 46, 32, 600, ink, "left", 1.68);
+    } else {
+      drawRich(ctx, value, x0 + w / 2, y0 + (bandH - textInfo.height) / 2 + 26, w - 90, 33, 600, ink, "center", 1.68);
+    }
+    return y0 + bandH;
+  }
+
+  async function paintSchedule(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk(); let y = y0;
+    const groups = data.groups || [];
+    const tpl = data.template || "timeline";
+    for (const group of groups) {
+      const rows = group.rows || [];
+      if (!rows.length) continue;
+      if (tpl === "schedule-table") {
+        const headH = 66;
+        ctx.save(); roundRectPath(ctx, x0, y, w, headH, 18); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
+        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 24, y + 42, w - 48, 34, 800, P.primaryDark, "left", 1);
+        y += headH;
+        rows.forEach(function (row, ri) {
+          if (ri > 0) drawLine(ctx, x0, y, x0 + w, y, P.line, 2);
+          drawRich(ctx, text(row.time, "00:00"), x0 + 24, y + 46, w * 0.22, 30, 700, P.accent, "left", 1);
+          drawRich(ctx, text(row.name, "环节"), x0 + w * 0.22 + 24, y + 46, w * 0.72, 30, 500, ink, "left", 1);
+          y += 64;
+        });
+        y += 12;
+      } else if (tpl === "schedule-cards") {
+        ctx.save(); roundRectPath(ctx, x0, y, w, 96, 24); ctx.fillStyle = alphaColor("#ffffff", 0.78); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0, y, w, 96, 24); ctx.strokeStyle = alphaColor(P.primary, 0.2); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 24, y + 60, w - 48, 36, 800, P.primaryDark, "left", 1);
+        y += 96;
+        rows.forEach(function (row, ri) {
+          if (ri > 0) drawLine(ctx, x0 + 20, y - 6, x0 + w - 20, y - 6, alphaColor(P.primary, 0.12), 2);
+          drawRich(ctx, text(row.name, "环节"), x0 + 24, y + 48, w * 0.62, 30, 500, ink, "left", 1);
+          drawRich(ctx, text(row.time, "00:00"), x0 + w - 24, y + 48, w * 0.3, 30, 800, P.accent, "right", 1);
+          y += 66;
+        });
+        y += 12;
+      } else {
+        drawRich(ctx, text(group.groupName, "活动时间"), x0, y, w, 44, 800, P.primaryDark, "left", 1.35);
+        y += 20;
+        rows.forEach(function (row) {
+          ctx.save(); ctx.fillStyle = P.accent; ctx.beginPath(); ctx.arc(x0 + 16, y + 24, 9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+          drawRich(ctx, text(row.time, "00:00"), x0 + 52, y + 22, w * 0.2, 30, 700, P.accent, "left", 1);
+          drawRich(ctx, text(row.name, "环节"), x0 + 52 + w * 0.2 + 18, y + 22, w * 0.72, 30, 500, ink, "left", 1.7);
+          y += 62;
+        });
+        y += 14;
+      }
+    }
+    if (!groups.length || !groups.some(function (g) { return (g.rows || []).length; })) {
+      drawRich(ctx, "暂无时间安排", x0 + w / 2, y + 54, w, 30, 600, artMuted(), "center", 1);
+      y += 110;
+    }
+    return y;
+  }
+
+  async function paintVenue(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const tags = (data.tags || []).filter(Boolean);
+    const img = await loadImage(data.photo);
+    const tpl = data.template || "venue-side";
+    const chipsOpt = { size: 27, color: P.primaryDark, border: alphaColor(P.primary, 0.3), fill: P.primarySoft, lw: 2 };
+    if (tpl === "venue-focus") {
+      let y = y0;
+      if (img) { const h = Math.min(620, Math.round(w * 0.5)); ctx.save(); roundRectPath(ctx, x0, y, w, h, 26); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 30; }
+      y = drawRich(ctx, data.description || "场地描述", x0, y, w, 32, 400, ink, "left", 1.68) + 8;
+      if (tags.length) y = drawChips(ctx, tags, x0, y, w, chipsOpt) + 8;
+      return y;
+    }
+    if (tpl === "venue-map") {
+      const pad = 40;
+      const textH = textBlockInfo(ctx, data.description || "场地描述", w - pad * 2, 32, 400, 1.68).height;
+      const chipsH = tags.length ? chipRowCount(ctx, tags, w - pad * 2, 27) : 0;
+      const paneH = pad + textH + 24 + (tags.length ? chipsH + 14 : 0) + pad - 20;
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.strokeStyle = alphaColor(P.accent, 0.75); ctx.lineWidth = 3; ctx.setLineDash([14, 14]); ctx.stroke(); ctx.restore();
+      let y = y0 + pad - 10;
+      y = drawRich(ctx, data.description || "场地描述", x0 + pad, y, w - pad * 2, 32, 400, ink, "left", 1.68) + 8;
+      if (tags.length) drawChips(ctx, tags, x0 + pad, y, w - pad * 2, chipsOpt);
+      return y0 + paneH;
+    }
+    /* venue-side：左描述 + 右侧场地照片 */
+    const side = img ? Math.min(430, Math.round(w * 0.4)) : 0;
+    const textW = side ? w - side - 34 : w;
+    const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 32, 400, 1.68).height;
+    const chipsH = tags.length ? chipRowCount(ctx, tags, textW, 27) : 0;
+    const copyH = textH + (tags.length ? chipsH + 16 : 0);
+    const imgH = Math.max(Math.round(w * 0.48), copyH + 30);
+    if (img) { ctx.save(); roundRectPath(ctx, x0 + textW + 34, y0, side, imgH, 26); ctx.clip(); coverDraw(ctx, img, x0 + textW + 34, y0, side, imgH); ctx.restore(); }
+    let y = y0;
+    y = drawRich(ctx, data.description || "场地描述", x0, y, textW, 32, 400, ink, "left", 1.68) + 8;
+    if (tags.length) y = drawChips(ctx, tags, x0, y, textW, chipsOpt);
+    return Math.max(y + 10, img ? y0 + imgH : y + 10);
+  }
+
+  async function paintRoute(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const lines = (data.lines || []).filter(Boolean);
+    const tpl = data.template || "steps";
+    let y = y0;
+    if (tpl === "route-focus") {
+      if (lines[0]) {
+        ctx.save(); roundRectPath(ctx, x0, y, w, 100, 24); ctx.fillStyle = P.primary; ctx.fill(); ctx.restore();
+        drawRich(ctx, lines[0], x0 + w / 2, y + 64, w - 56, 31, 700, "#ffffff", "center", 1.5);
+        y += 100 + 24;
+      }
+      for (const line of lines.slice(1)) {
+        drawRich(ctx, "›", x0, y + 40, 44, 34, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 56, y + 36, w - 56, 30, 500, ink, "left", 1.6);
+        y += 66;
+      }
+      if (!lines.length) { drawRich(ctx, "暂无路线", x0, y + 44, w, 30, 600, artMuted(), "left", 1); y += 88; }
+      return y;
+    }
+    const showLines = lines.length ? lines : [""];
+    for (let i = 0; i < showLines.length; i += 1) {
+      const line = showLines[i];
+      if (tpl === "route-list") {
+        ctx.save(); roundRectPath(ctx, x0, y, w, 76, 18); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
+        drawRich(ctx, "›", x0 + 26, y + 48, 40, 34, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 62, y + 46, w - 76, 30, 500, ink, "left", 1);
+        y += 92;
+      } else {
+        const num = String(i + 1).padStart(2, "0");
+        drawRich(ctx, num, x0, y + 42, 96, 38, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 108, y + 42, w - 108, 30, 600, ink, "left", 1.35);
+        y += 120;
+      }
+    }
+    if (!lines.length) y -= 32;
+    return y;
+  }
+
+  async function paintProgram(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const items = data.items || [];
+    const tpl = data.template || "program-list";
+    let y = y0;
+    if (tpl === "program-cards") {
+      const cols = Math.max(1, Math.min(3, Math.ceil(Math.max(items.length, 1) / 2)));
+      const gap = 24;
+      const cw = (w - gap * (cols - 1)) / cols;
+      const imgH = Math.round(cw * 0.9);
+      const cardH = imgH + Math.round(cw * 0.48);
+      const count = Math.max(1, items.length);
+      for (let i = 0; i < count; i += 1) {
+        const item = items[i] || {};
+        const cx = x0 + (i % cols) * (cw + gap);
+        const cy = y + Math.floor(i / cols) * (cardH + gap);
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, cardH, 22); ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, cardH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.18); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        const itemImg = item.image && item.image.url ? await loadImage(item.image) : null;
+        if (itemImg) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, itemImg, cx, cy, cw, imgH); ctx.restore(); }
+        else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
+        if (item.tag) drawRich(ctx, item.tag, cx + 18, cy + imgH + 42, cw - 34, 25, 800, P.accent, "left", 1);
+        drawRich(ctx, text(item.title, "节目标题"), cx + 18, cy + imgH + 76, cw - 34, 29, 700, ink, "left", 1.35);
+        if (item.subtitle) drawRich(ctx, item.subtitle, cx + 18, cy + imgH + 112, cw - 34, 24, 500, artMuted(), "left", 1.3);
+      }
+      y += Math.ceil(count / cols) * (cardH + gap) - gap;
+      return y;
+    }
+    if (tpl === "program-compact") {
+      const cols = 2; const gap = 22; const cw = (w - gap) / 2; const ch = 130;
+      const list = items.length ? items : [{ tag: "", title: "" }];
+      list.forEach(function (item, index) {
+        const cx = x0 + (index % cols) * (cw + gap);
+        const cy = y + Math.floor(index / cols) * (ch + gap);
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 20); ctx.fillStyle = alphaColor("#ffffff", 0.75); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 20); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        if (item.tag) drawRich(ctx, item.tag, cx + 18, cy + 44, cw - 34, 25, 800, P.accent, "left", 1);
+        drawRich(ctx, text(item.title, "节目标题"), cx + 18, cy + 88, cw - 34, 29, 700, ink, "left", 1.2);
+      });
+      y += Math.ceil(Math.max(items.length, 1) / cols) * (ch + gap) - gap;
+      return y;
+    }
+    /* program-list 默认列表 */
+    const itemsShown = items.length ? items : [{}];
+    for (const item of itemsShown) {
+      const img = item.image && item.image.url ? await loadImage(item.image) : null;
+      if (img) {
+        const thumb = Math.round(w * 0.28);
+        const th = Math.min(240, Math.round(thumb * 0.74));
+        const ix = item.mediaSide === "left" ? x0 : x0 + w - thumb;
+        ctx.save(); roundRectPath(ctx, ix, y + 8, thumb, th, 18); ctx.clip(); coverDraw(ctx, img, ix, y + 8, thumb, th); ctx.restore();
+        const textX = item.mediaSide === "left" ? x0 + thumb + 30 : x0;
+        const textW = w - thumb - 30;
+        let cy = y + 34;
+        if (item.tag) cy = drawRich(ctx, item.tag, textX, cy, textW, 28, 800, P.accent, "left", 1) + 8;
+        cy = drawRich(ctx, text(item.title, "节目标题"), textX, cy, textW, 34, 700, ink, "left", 1.3) + 6;
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, textX, cy, textW, 27, 500, artMuted(), "left", 1.4);
+        y += Math.max(th + 28, cy - y + 20);
+      } else {
+        let cy = y + 36;
+        if (item.tag) cy = drawRich(ctx, item.tag, x0, cy, w, 28, 800, P.accent, "left", 1) + 8;
+        cy = drawRich(ctx, text(item.title, "节目标题"), x0, cy, w, 36, 700, ink, "left", 1.3) + 6;
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, x0, cy, w, 27, 500, artMuted(), "left", 1.4);
+        y = cy + 24;
+      }
+      drawLine(ctx, x0, y - 10, x0 + w, y - 10, alphaColor(P.primary, 0.12), 2);
+    }
+    if (!items.length) { drawRich(ctx, "暂无节目", x0 + w / 2, y + 60, w, 30, 600, artMuted(), "center", 1); y += 100; }
+    return y;
+  }
+
+  async function paintPerformer(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const tpl = data.template || "performer-side";
+    const portraits = (await Promise.all((data.images || []).map(function (item) { return loadImage(item); }))).filter(Boolean);
+    const name = text(data.name, "嘉宾名称");
+    const bio = data.bio || "嘉宾简介";
+    const setlist = (data.setlist || []).filter(Boolean);
+    const drawCopy = function (yy, width) {
+      let cy = yy;
+      cy = drawRich(ctx, name, x0, cy, width, 46, 800, P.primaryDark, "left", 1.3) + 10;
+      cy = drawRich(ctx, bio, x0, cy, width, 30, 400, ink, "left", 1.62) + 8;
+      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 27, 600, P.accent, "left", 1.5); }
+      return cy;
+    };
+    if (tpl === "performer-poster") {
+      const ph = Math.round(w * 0.92);
+      if (portraits.length) {
+        ctx.save(); roundRectPath(ctx, x0, y0, w, ph, 26); ctx.clip();
+        if (portraits.length === 1) coverDraw(ctx, portraits[0], x0, y0, w, ph);
+        else { const hw = w / 2; coverDraw(ctx, portraits[0], x0, y0, hw, ph); coverDraw(ctx, portraits[1], x0 + hw, y0, hw, ph); }
+        ctx.restore();
+        drawGradientOverlay(ctx, x0, y0 + Math.round(ph * 0.44), w, ph - Math.round(ph * 0.44), P.primaryDark, 0.02, 0.9);
+      } else { ctx.save(); roundRectPath(ctx, x0, y0, w, Math.round(ph * 0.56), 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
+      const cx = x0 + w / 2; const cw = w - 70; const photoH = portraits.length ? ph : Math.round(ph * 0.56);
+      let bottom = y0 + photoH - 44;
+      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 6, cw, 28, 500, "rgba(255,255,255,.92)", "center", 1.55); bottom -= 22; }
+      paintUpText(ctx, name, cx, bottom - 4, cw, 56, 900, "#ffffff", "center", 1.3);
+      return y0 + photoH + 24;
+    }
+    if (portraits.length) {
+      const side = Math.min(Math.round(w * 0.4), 400);
+      const ph = Math.round(side * 0.74);
+      portraits.slice(0, 2).forEach(function (img, i) {
+        ctx.save(); roundRectPath(ctx, x0, y0 + i * (ph + 22), side, ph, 24); ctx.clip(); coverDraw(ctx, img, x0, y0 + i * (ph + 22), side, ph); ctx.restore();
+      });
+      const tx = x0 + side + 34;
+      const copyTop = Math.min(Math.round(portraits.length * (ph + 22) * 0.16), 60);
+      const copyEnd = drawCopy(y0 + copyTop, w - side - 34);
+      return Math.max(y0 + portraits.length * (ph + 22) - 22, copyEnd + 20);
+    }
+    return drawCopy(y0, w);
+  }
+
+  async function paintBooth(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const items = data.items || [];
+    const tpl = data.template || "booth-grid";
+    let y = y0;
+    if (tpl === "booth-cards") {
+      const list = items.length ? items : [{}];
+      for (const item of list) {
+        const img = item.image && item.image.url ? await loadImage(item.image) : null;
+        const imgW = Math.round(w * 0.15);
+        const rowH = Math.max(170, imgW * 1.3);
+        if (img) { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.clip(); coverDraw(ctx, img, x0 + 20, y + 24, imgW, imgW); ctx.restore(); }
+        else { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
+        drawRich(ctx, text(item.name, "摊位"), x0 + imgW + 64, y + 72, w - imgW - 80, 36, 800, ink, "left", 1);
+        if (item.desc) drawRich(ctx, item.desc, x0 + imgW + 64, y + 120, w - imgW - 80, 27, 500, artMuted(), "left", 1.5);
+        ctx.save(); roundRectPath(ctx, x0, y, w, rowH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        y += rowH + 22;
+      }
+      if (!items.length) y -= 42;
+      return y;
+    }
+    if (tpl === "booth-list") {
+      const list = items.length ? items : [{}];
+      for (const item of list) {
+        drawRich(ctx, text(item.name, "摊位"), x0, y + 54, w * 0.52, 33, 700, ink, "left", 1);
+        if (item.desc) drawRich(ctx, item.desc, x0 + w * 0.5, y + 50, w * 0.5, 27, 500, artMuted(), "right", 1);
+        y += 70;
+        drawLine(ctx, x0, y - 8, x0 + w, y - 8, alphaColor(P.primary, 0.14), 2);
+      }
+      if (!items.length) { drawRich(ctx, "暂无摊位", x0 + w / 2, y + 40, w, 30, 600, artMuted(), "center", 1); y += 90; }
+      return y;
+    }
+    /* booth-grid 默认：摊位名/简介网格（有图则图上文下） */
+    const cols = Math.max(1, Math.min(4, Number(data.columns) || 2));
+    const gap = 20;
+    const cw = (w - gap * (cols - 1)) / cols;
+    const cellH = Math.round(cw * 1.35);
+    const count = Math.max(1, items.length);
+    const imgs = await Promise.all(items.map(function (it) { return it && it.image && it.image.url ? loadImage(it.image) : Promise.resolve(null); }));
+    for (let i = 0; i < count; i += 1) {
+      const item = items[i] || {};
+      const cx = x0 + (i % cols) * (cw + gap);
+      const cy = y + Math.floor(i / cols) * (cellH + gap);
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.fillStyle = alphaColor("#ffffff", 0.8); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.15); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      const img = imgs[i];
+      const hasImg = img || (item.image && item.image.url);
+      if (hasImg) {
+        const imgH = Math.round(cw * 0.52);
+        if (img) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, img, cx, cy, cw, imgH); ctx.restore(); }
+        else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
+        drawRich(ctx, text(item.name, "摊位"), cx + 14, cy + imgH + 46, cw - 28, 27, 700, ink, "left", 1.3);
+        if (item.desc) drawRich(ctx, capText(item.desc, 26), cx + 14, cy + imgH + 84, cw - 28, 24, 500, artMuted(), "left", 1.35);
+      } else {
+        drawRich(ctx, text(item.name, "摊位"), cx + cw / 2, cy + 54, cw - 24, 30, 700, ink, "center", 1.3);
+        if (item.desc) drawRich(ctx, capText(item.desc, 30), cx + cw / 2, cy + 102, cw - 24, 25, 500, artMuted(), "center", 1.35);
+      }
+    }
+    y += Math.ceil(count / cols) * (cellH + gap) - gap;
+    return y;
+  }
+  function paintDivider(ctx, data, x0, y0, w) {
+    const P = artTheme();
+    drawDividerShape(ctx, data, x0, y0 + 34, w, alphaColor(P.primary, 0.75));
+    return y0 + 96;
+  }
+
+  function paintFooter(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const lines = (data.lines || []).filter(Boolean);
+    const tpl = data.template || "footer-simple";
+    let y = y0;
+    if (tpl === "footer-banner") {
+      const items = lines.length ? lines : ["主办：Only-box 企划"];
+      const size = 30; const gap = 26; const rowH = 46;
+      ctx.save(); artFont(ctx, size, 600);
+      let rows = 1; let rowW = 0;
+      const widths = items.map(function (line) { const tw = ctx.measureText(String(line)).width; return { line: line, tw: tw }; });
+      const fitted = [];
+      let current = []; let cw2 = 0;
+      widths.forEach(function (it) {
+        if (current.length && cw2 + it.tw + gap > w - 80) { fitted.push(current); current = []; cw2 = 0; }
+        current.push(it); cw2 += it.tw + (current.length > 1 ? gap : 0);
+      });
+      if (current.length) fitted.push(current);
+      ctx.restore();
+      const boxH = 44 + fitted.length * rowH + 26;
+      ctx.save(); roundRectPath(ctx, x0, y, w, boxH, 24); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore();
+      let by = y + 46;
+      fitted.forEach(function (rowItems) {
+        let cx = x0 + w / 2 - (rowItems.reduce(function (s, it) { return s + it.tw; }, 0) + (rowItems.length - 1) * gap) / 2;
+        rowItems.forEach(function (it) {
+          drawRich(ctx, it.line, cx, by, it.tw + 6, size, 600, "#ffffff", "left", 1);
+          cx += it.tw + gap;
+        });
+        by += rowH;
+      });
+      return y + boxH;
+    }
+    if (tpl === "footer-center") {
+      (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
+        y = drawRich(ctx, line, x0 + w / 2, y, w, 28, 500, artMuted(), "center", 1.6) + 6;
+      });
+      return y;
+    }
+    if (tpl === "footer-pills") {
+      const items = lines.length ? lines : ["主办：Only-box 企划"];
+      y = drawChips(ctx, items, x0 + w / 2, y, w, { size: 27, color: P.primaryDark, border: alphaColor(P.primary, 0.35), fill: P.primarySoft, lw: 2, center: true });
+      return y + 10;
+    }
+    (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
+      y = drawRich(ctx, line, x0, y, w, 29, 500, ink, "left", 1.5) + 4;
+    });
+    return y;
+  }
+
+  function paintFreeText(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const level = data.level || "body";
+    const size = C.fontSizePx(level, 1242);
+    const align = data.align === "center" ? "center" : data.align === "right" ? "right" : "left";
+    const tx = align === "center" ? x0 + w / 2 : align === "right" ? x0 + w : x0;
+    const tpl = data.template || "text-basic";
+    const value = data.text || "自由文本";
+    const drawTxt = function (y, sizePx, weight, color, mul, maxW) {
+      return drawRich(ctx, value, tx, y, maxW || w, sizePx, weight, color || ink, align, mul || 1.66);
+    };
+    if (tpl === "text-highlight") {
+      const padX = 34; const padY = 34;
+      const innerW = w - padX * 2 - 22;
+      const info = textBlockInfo(ctx, value, innerW, size, 600, 1.7);
+      const paneH = padY * 2 + info.height;
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0 + 16, y0 + 16, 9, paneH - 32, 5); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
+      drawTxt(y0 + padY + Math.round(size * 0.2), size, 600, ink, 1.7, innerW);
+      return y0 + paneH;
+    }
+    if (tpl === "text-card") {
+      const padX = 40; const padY = 34;
+      const info = textBlockInfo(ctx, value, w - padX * 2, size, 500, 1.66);
+      const paneH = padY * 2 + info.height;
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.82); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.strokeStyle = alphaColor(P.primary, 0.2); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      drawTxt(y0 + padY + Math.round(size * 0.2), size, 500, ink, 1.66, w - padX * 2);
+      return y0 + paneH;
+    }
+    if (tpl === "text-note") return drawTxt(y0, 26, 400, artMuted(), 1.75);
+    return drawTxt(y0, size, 400, ink, 1.66);
+  }
+
+  function ratioNumber(raw) {
+    const m = String(raw || "").replace(/\s+/g, "").match(/^(\d+(?:\.\d+)?)[:/](\d+(?:\.\d+)?)$/);
+    return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : 0;
+  }
+
+  async function paintFreeImage(ctx, data, x0, y0, w) {
+    const P = artTheme(); const ink = artInk();
+    const img = await loadImage(data.image);
+    const tpl = data.template || "image-focus";
+    const fit = dataImageFit(data);
+    const isCard = tpl === "image-card";
+    const defaultRadius = isCard ? 30 : Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 0)));
+    const ratio = data.ratio && data.ratio !== "auto" ? ratioNumber(data.ratio) : 0;
+    let y = y0;
+    let h = 0;
+    if (img) h = ratio > 0 ? Math.round(w / ratio) : artImageHeight(data, img, w);
+    h = Math.max(220, Math.min(h || Math.round(w * 0.6), 1200));
+    if (!img) h = Math.round(w * 0.56);
+    const radius = Math.min(isCard ? 24 : defaultRadius, 100);
+    if (isCard) {
+      ctx.save(); roundRectPath(ctx, x0, y0, w, h + 40, 26); ctx.fillStyle = alphaColor("#ffffff", 0.85); ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0, y0, w, h + 40, 26); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      y += 20;
+    }
+    ctx.save(); roundRectPath(ctx, x0, y, w, h, radius); ctx.clip();
+    if (img) { if (fit === "contain") containDraw(ctx, img, x0, y, w, h); else coverDraw(ctx, img, x0, y, w, h); }
+    else { ctx.fillStyle = P.soft; ctx.fillRect(x0, y, w, h); }
+    ctx.restore();
+    y += h;
+    if (isCard) y += 20;
+    if (data.caption) { y += 12; y = drawRich(ctx, data.caption, x0, y, w, 27, 500, artMuted(), "left", 1.5); }
+    return y;
+  }
+
+  async function paintModuleBody(ctx, module, x0, y0, w) {
+    const data = module.data || {};
+    switch (module.type) {
+      case "cover": return paintCover(ctx, data, x0, y0, w);
+      case "announcement": return paintAnnouncement(ctx, data, x0, y0, w);
+      case "ticketInfo": return paintTicket(ctx, data, x0, y0, w);
+      case "materials": return paintMaterials(ctx, data, x0, y0, w);
+      case "crossPromo": return paintCrossPromo(ctx, data, x0, y0, w);
+      case "schedule": return paintSchedule(ctx, data, x0, y0, w);
+      case "venueInfo": return paintVenue(ctx, data, x0, y0, w);
+      case "routeText": return paintRoute(ctx, data, x0, y0, w);
+      case "programList": return paintProgram(ctx, data, x0, y0, w);
+      case "performerCard": return paintPerformer(ctx, data, x0, y0, w);
+      case "boothList": return paintBooth(ctx, data, x0, y0, w);
+      case "divider": return paintDivider(ctx, data, x0, y0, w);
+      case "footer": return paintFooter(ctx, data, x0, y0, w);
+      case "freeText": return paintFreeText(ctx, data, x0, y0, w);
+      case "freeImageBox": return paintFreeImage(ctx, data, x0, y0, w);
+      default: return drawRich(ctx, R.typeLabel(module.type), x0, y0 + 20, w, 40, 800, artInk(), "left", 1.4);
+    }
+  }
+
+  /* 板块标题头（序号 + 大标题），返回含头间距后的 y。 */
+  function paintModuleHead(ctx, module, def, x0, y0, w, serial) {
+    const P = artTheme();
+    const title = moduleTitle(module, def);
+    const kicker = String(serial).padStart(2, "0");
+    /* 标题基线需下移一个「字身顶部」的高度，否则 58px 大标题的上半截会被卡片顶边裁掉。
+       基线 = y0 + 0.92 * size，使字形顶(≈基线-0.88*size)恰好落在卡片 y0 附近。 */
+    const headBaseline = y0 + Math.round(58 * 0.92);
+    ctx.save(); artFont(ctx, 27, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(kicker, x0, y0 + 30);
+    ctx.restore();
+    const y = drawRich(ctx, title, x0 + w / 2, headBaseline, w - 80, 58, 850, P.primaryDark, "center", 1.22);
+    return y + 34;
+  }
+
+  async function drawModuleCard(ctx, module, area, serial) {
+    const def = R.getDef(module.type);
+    const data = module.data || {};
+    const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
+    const radius = Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 13)));
+    const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
+    const maxH = 2800;
+    const w = area.w;
+    const scratch = document.createElement("canvas");
+    scratch.width = Math.max(1, Math.round(w));
+    scratch.height = maxH;
+    const sctx = scratch.getContext("2d");
+    let cursor = pad;
+    if (module.type !== "divider" || module.data.sectionTitle) {
+      cursor = paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+    }
+    const contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    const usedH = Math.min(maxH, Math.max(pad * 2 + 40, contentEnd + pad));
+    const bg = data.blockBgImage && data.blockBgImage.url ? await loadImage(data.blockBgImage) : null;
+    const P = artTheme();
+    /* 1) 卡片投影 */
+    ctx.save();
+    ctx.shadowColor = "rgba(38,65,51,.15)";
+    ctx.shadowBlur = 26;
+    ctx.shadowOffsetY = 12;
+    roundRectPath(ctx, area.x, area.y, w, usedH, radius);
+    ctx.fillStyle = cardFillStyle(data);
+    ctx.fill();
+    ctx.restore();
+    /* 2) 圆角内：底色/底图 + 内容 */
+    ctx.save();
+    roundRectPath(ctx, area.x, area.y, w, usedH, radius);
+    ctx.clip();
+    if (bg) {
+      ctx.fillStyle = data.blockBgColor ? (hexToRgba(data.blockBgColor, 1) || data.blockBgColor) : "#ffffff";
+      ctx.fillRect(area.x, area.y, w, usedH);
+      coverDraw(ctx, bg, area.x, area.y, w, usedH);
+      if (opacity < 0.98) { ctx.fillStyle = alphaColor("#ffffff", 1 - opacity); ctx.fillRect(area.x, area.y, w, usedH); }
+    }
+    ctx.drawImage(scratch, 0, 0, scratch.width, usedH, area.x, area.y, w, usedH);
+    ctx.restore();
+    /* 3) 圆角描边 */
+    ctx.save();
+    roundRectPath(ctx, area.x, area.y, w, usedH, radius);
+    ctx.strokeStyle = data.blockBorderColor ? data.blockBorderColor : alphaColor(P.primary, 0.16);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+    return { h: usedH };
+  }
+
+  /* 测量单个模块卡片的真实高度与「标题基线」相对卡片顶的偏移，供排版与 PSD 对齐共用。
+     与 drawModuleCard 同款：先画到 scratch 量出 contentEnd → usedH；headBaseline 即 H2 标题基线
+     相对卡片顶的像素偏移（0.92*58 的字身顶部下移 + pad）。 */
+  async function measureCardLayout(module, w, serial) {
+    const def = R.getDef(module.type);
+    const data = module.data || {};
+    const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
+    const maxH = 2800;
+    const scratch = document.createElement("canvas");
+    scratch.width = Math.max(1, Math.round(w));
+    scratch.height = maxH;
+    const sctx = scratch.getContext("2d");
+    let cursor = pad;
+    let headBaseline = pad;
+    if (module.type !== "divider" || data.sectionTitle) {
+      headBaseline = pad + Math.round(58 * 0.92);
+      cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+    }
+    const contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    const usedH = Math.min(maxH, Math.max(pad * 2 + 40, contentEnd + pad));
+    return { h: usedH, pad: pad, headBaseline: headBaseline, w: w };
+  }
+
+  /* 计算整页模块的真实排版位置（含 offsetY），供导出与 PSD 对齐共用同一套坐标。 */
+  async function measurePageLayout(page, offsetY) {
+    const size = pageSize();
+    const x = 64;
+    const w = size.pageWidth - 128;
+    let y = 64 + (offsetY || 0);
+    const out = [];
+    const rows = M.packModuleRows(page.modules);
+    for (let r = 0; r < rows.length; r += 1) {
+      const row = rows[r];
+      const list = row.modules.filter(function (m) { return m.visible !== false; });
+      if (!list.length) continue;
+      if (row.kind === "pair" && list.length === 2) {
+        const gap = 24;
+        const halfW = (w - gap) / 2;
+        const left = await measureCardLayout(list[0], halfW, page.modules.indexOf(list[0]) + 1);
+        const right = await measureCardLayout(list[1], halfW, page.modules.indexOf(list[1]) + 1);
+        out.push({ module: list[0], x: x, y: y, w: halfW, serial: page.modules.indexOf(list[0]) + 1, head: left.headBaseline });
+        out.push({ module: list[1], x: x + halfW + gap, y: y, w: halfW, serial: page.modules.indexOf(list[1]) + 1, head: right.headBaseline });
+        const mb = Math.max(px2(Number(list[0].data && list[0].data.marginBottom) || 18), px2(Number(list[1].data && list[1].data.marginBottom) || 18));
+        y += Math.max(left.h, right.h) + Math.max(mb, 44);
+      } else {
+        const module = list[0];
+        const meas = await measureCardLayout(module, w, page.modules.indexOf(module) + 1);
+        out.push({ module: module, x: x, y: y, w: w, serial: page.modules.indexOf(module) + 1, head: meas.headBaseline });
+        const mb = px2(Number(module.data && module.data.marginBottom) || 18);
+        y += meas.h + Math.max(mb, 44);
+      }
+    }
+    return out;
+  }
+
+  async function drawModuleStack(ctx, page, offsetY) {
+    const layout = await measurePageLayout(page, offsetY);
+    for (let i = 0; i < layout.length; i += 1) {
+      const item = layout[i];
+      await drawModuleCard(ctx, item.module, { x: item.x, y: item.y, w: item.w }, item.serial);
+    }
+  }
+
+  async function drawPageToCanvas(page) {
+    const size = pageSize(); const canvas = document.createElement("canvas"); canvas.width = size.pageWidth; canvas.height = size.pageHeight; const ctx = canvas.getContext("2d");
+    await readyFontForText(docFontFamily(), collectPageText(page));
+    ctx.fillStyle = page.backgroundColor || state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const background = await loadImage(page.backgroundImage || state.doc.backgroundImage); if (background) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+    await drawModuleStack(ctx, page, 0);
+    return canvas;
+  }
+
+  async function exportPng(allPages) { const pages = allPages ? state.doc.pages : [activePage()]; for (let i = 0; i < pages.length; i += 1) { const canvas = await drawPageToCanvas(pages[i]); canvas.toBlob(function (blob) { downloadBlob(blob, "only-box-banner-" + String(state.doc.pages.indexOf(pages[i]) + 1).padStart(2, "0") + ".png"); }, "image/png"); } }
+
+  /* 连续长图：所有屏拼成一张 PNG。整条背景按「总高」cover 跨屏连续铺满；
+     某屏自带背景时，仅该屏切片用本屏背景覆盖（与分屏单屏导出一致）。 */
+  async function exportStripPng() {
+    const pages = state.doc.pages || []; if (!pages.length) return;
+    const size = pageSize(); const width = size.pageWidth; const height = size.pageHeight; const total = height * pages.length;
+    const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = total; const ctx = canvas.getContext("2d");
+    await readyFontForText(docFontFamily(), pages.map(collectPageText).join(" "));
+    ctx.fillStyle = state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, width, total);
+    const docImage = await loadImage(state.doc.backgroundImage);
+    if (docImage) { const scale = Math.max(width / docImage.width, total / docImage.height); ctx.drawImage(docImage, (width - docImage.width * scale) / 2, (total - docImage.height * scale) / 2, docImage.width * scale, docImage.height * scale); }
+    for (let i = 0; i < pages.length; i += 1) {
+      const page = pages[i]; const y0 = i * height;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, y0, width, height); ctx.clip();
+      if (page.backgroundColor) { ctx.fillStyle = page.backgroundColor; ctx.fillRect(0, y0, width, height); }
+      if (page.backgroundImage && page.backgroundImage.url) {
+        const image = await loadImage(page.backgroundImage);
+        if (image) { const s = Math.max(width / image.width, height / image.height); ctx.drawImage(image, (width - image.width * s) / 2, y0 + (height - image.height * s) / 2, image.width * s, image.height * s); }
+      }
+      await drawModuleStack(ctx, page, y0);
+      ctx.restore();
+    }
+    canvas.toBlob(function (blob) { downloadBlob(blob, "only-box-banner-continuous.png"); }, "image/png");
+  }
+
+  function psFontName() {
+    const f = C.FONTS[docFontFamily()] || C.FONTS.sans;
+    return f.family.replace(/ /g, "");
+  }
+
+  function textLayer(name, value, x, y, size, align) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontName() }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
+
+  async function exportPsd() {
+    if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return; }
+    const page = activePage(); const size = pageSize();
+    const composite = await drawPageToCanvas(page);
+    /* 用与合成预览一致的排版坐标放置可编辑文字层，保证在 PS 里文字与位图参考对齐。 */
+    const layout = await measurePageLayout(page, 0);
+    const children = [{ name: "合成预览（位图参考）", canvas: composite }];
+    const px = function (n) { return Math.round(n); };
+    layout.forEach(function (item, index) {
+      const module = item.module; const def = R.getDef(module.type); const data = module.data || {};
+      const group = { name: "板块 " + (index + 1) + " · " + def.label, children: [] };
+      const cardLeft = px(item.x + 18); const cardW = px(item.w - 36);
+      const headY = px(item.y + item.head);
+      const title = textLayer((data.sectionTitle || def.label) + " · 可编辑 H2", data.sectionTitle || def.label, px(item.x + item.w / 2), headY, 58, "center");
+      if (title) group.children.push(title);
+      if (module.type === "cover") {
+        const h1 = textLayer("主标题 · 可编辑文字", data.title, cardLeft, px(headY + 60), 74, "left"); if (h1) group.children.push(h1);
+        const sub = textLayer("副标题 · 可编辑文字", data.subtitle, cardLeft, px(headY + 150), 34, "left"); if (sub) group.children.push(sub);
+      } else if (module.type === "announcement") {
+        const body = textLayer("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 80), 34, "left"); if (body) group.children.push(body);
+      } else if (module.type === "freeText") {
+        const item2 = textLayer("自由文本 · 可编辑文字", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), data.align); if (item2) group.children.push(item2);
+      } else if (module.type === "programList") {
+        (data.items || []).forEach(function (it, i) { const row = textLayer("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 34, "left"); if (row) group.children.push(row); });
+      } else if (module.type === "footer") {
+        const f = textLayer("页脚内容 · 可编辑文字", (data.items || []).map(function (it) { return it.text; }).filter(Boolean).join("  ·  "), cardLeft, px(headY + 70), 34, "left"); if (f) group.children.push(f);
+      } else if (module.type === "divider") {
+        const d = textLayer("分隔线备注 · 可编辑文字", data.sectionTitle || def.label, px(item.x + item.w / 2), px(headY + 30), 34, "center"); if (d) group.children.push(d);
+      }
+      void cardW;
+      children.push(group);
+    });
+    try { const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: size.pageHeight, children: children }, { generateThumbnail: true }); downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + (activePageIndex() + 1) + ".psd"); } catch (error) { global.alert("PSD 导出失败：" + error.message); }
+  }
+
+  function saveDraft() { downloadText(JSON.stringify(M.toJSON(state.doc), null, 2), "only-box-banner-draft.json"); }
+  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
+
+  function bindEvents() {
+    els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
+    els.screenModeGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-screen]"); if (!button) return; state.doc.screenMode = button.dataset.screen; renderAll(); });
+    els.addPageBtn.addEventListener("click", function () {
+      const page = M.addPage(state.doc); state.activePageId = page.id; state.selectedModuleId = null; renderAll();
+      if (continuousMode()) scrollCanvasToBottom();
+    });
+    els.backgroundInput.addEventListener("change", function () {
+      const file = this.files && this.files[0];
+      if (!file) return;
+      const value = { url: URL.createObjectURL(file), name: file.name, type: file.type };
+      if (els.backgroundScope.value === "page") activePage().backgroundImage = value;
+      else state.doc.backgroundImage = value;
+      renderAll();
+      this.value = "";
+    });
+    els.themeSelect.addEventListener("change", function () { state.doc.theme = this.value; renderAll(); });
+    els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; ensureFont(state.doc.fontFamily); renderAll(); });
+    els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.25, state.zoom - .05); renderToolbar(); renderCanvas(); });
+    els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(.9, state.zoom + .05); renderToolbar(); renderCanvas(); });
+    els.zoomFitBtn.addEventListener("click", function () { state.zoom = .46; renderToolbar(); renderCanvas(); });
+    els.exportPngBtn.addEventListener("click", function () { exportPng(false); });
+    els.exportAllBtn.addEventListener("click", function () { exportPng(true); });
+    els.exportStripBtn.addEventListener("click", exportStripPng);
+    els.exportPsdBtn.addEventListener("click", exportPsd);
+    els.saveDraftBtn.addEventListener("click", saveDraft);
+    els.loadDraftInput.addEventListener("change", function () { if (this.files && this.files[0]) loadDraft(this.files[0]); this.value = ""; });
+    els.libraryList.addEventListener("click", function (event) { const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView(); });
+    els.myTplList.addEventListener("click", function (event) { const del = event.target.closest("[data-action='tpl-del']"); if (del) { deleteMyTemplate(del.dataset.tplId); return; } const add = event.target.closest("[data-action='tpl-add']"); if (add) addTemplateToPage(add.dataset.tplId); });
+    els.panelBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action='save-tpl']"); if (target) saveSelectedModuleAsTemplate(); });
+    els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
+  }
+
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd }; }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+})(window);
