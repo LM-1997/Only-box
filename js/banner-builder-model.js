@@ -25,6 +25,8 @@
       ratio: C.CANVAS_PRESETS[ratio] ? ratio : C.DEFAULT_RATIO,
       theme: "forest",
       fontFamily: "sans",
+      headingFont: "",
+      bodyFont: "",
       screenMode: "split",
       backgroundColor: "#ffffff",
       backgroundImage: imageValue(),

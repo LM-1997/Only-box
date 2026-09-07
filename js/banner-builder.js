@@ -28,15 +28,26 @@
     });
   }
 
+  function showFontFallbackNotice(family) {
+    if (document.getElementById("bb-font-notice")) return;
+    const bar = document.createElement("div");
+    bar.id = "bb-font-notice";
+    bar.style.cssText = "margin:10px 0 0;padding:9px 13px;border:1px solid #e0c07a;border-radius:9px;background:#faf3df;color:#715b1e;font-size:12px;font-weight:700";
+    bar.textContent = "在线字体（" + family + "）加载失败，已回退系统近似字体，导出效果可能与选择不符；网络恢复后可重新选择字体。";
+    const shell = document.querySelector(".bb-shell");
+    if (shell && shell.parentNode) shell.parentNode.insertBefore(bar, shell);
+  }
+
   async function readyFontForText(key, text) {
     const f = C.FONTS[key] || C.FONTS.sans;
     ensureFont(key);
     if (!document.fonts || typeof document.fonts.load !== "function") return;
     const payload = String(text || "Only-box 活动宣传长条 0123456789");
     try {
-      await document.fonts.load("400 24px \"" + f.family + "\"", payload);
+      const faces = await document.fonts.load("400 24px \"" + f.family + "\"", payload);
       await document.fonts.load("700 24px \"" + f.family + "\"", payload);
       if (f.css.length > 3) await document.fonts.load("900 24px \"" + f.family + "\"", payload);
+      if (!faces || !faces.length) showFontFallbackNotice(f.family);
     } catch (error) { /* 字体加载失败时使用回退字体渲染 */ }
   }
 
@@ -81,6 +92,21 @@
 
   function continuousMode() {
     return (state.doc.screenMode || "split") === "continuous";
+  }
+
+  /* 主题变量内联写入（单一数据源 = C.THEMES）。
+     旧实现依赖 [data-theme=...] CSS 规则，新增主题没写规则时会回落站点默认色（切主题失效）。
+     现在所有主题一律走这里，CSS 规则保留仅为兜底。 */
+  function applyThemeVars(rootEl) {
+    if (!rootEl || !rootEl.style) return;
+    const theme = C.THEMES[state.doc.theme] || C.THEMES.forest;
+    rootEl.style.setProperty("--ob-primary", theme.primary);
+    rootEl.style.setProperty("--ob-primary-dark", theme.primaryDark);
+    rootEl.style.setProperty("--ob-primary-soft", theme.primarySoft);
+    rootEl.style.setProperty("--ob-accent", theme.accent);
+    rootEl.style.setProperty("--ob-accent-soft", theme.accentSoft);
+    rootEl.style.setProperty("--bb-line", theme.line);
+    rootEl.style.setProperty("--bb-soft", theme.soft);
   }
 
   function docBackgroundStyle(value) {
@@ -741,7 +767,10 @@
     const canvas = el("div", "bb-page-canvas"); canvas.dataset.action = "page-pick"; canvas.dataset.pageId = page.id; canvas.style.aspectRatio = pageSize().pageWidth + " / " + pageSize().pageHeight;
     if (continuous) { if (isActive) canvas.classList.add("is-active"); canvas.style.width = "100%"; }
     else canvas.style.width = Math.round(state.zoom * 100) + "%";
-    canvas.dataset.theme = state.doc.theme || "forest"; canvas.style.fontFamily = C.fontStack(state.doc.fontFamily || "sans");
+    canvas.dataset.theme = state.doc.theme || "forest";
+    applyThemeVars(canvas);
+    canvas.style.setProperty("--bb-font-heading", C.headingFontStack(state.doc));
+    canvas.style.setProperty("--bb-font-body", C.bodyFontStack(state.doc));
     if (continuous) {
       if (page.backgroundColor) canvas.style.backgroundColor = page.backgroundColor;
       if (page.backgroundImage && page.backgroundImage.url) { canvas.style.backgroundImage = docBackgroundStyle(page.backgroundImage); canvas.style.backgroundSize = "cover"; }
@@ -783,6 +812,7 @@
       strip.style.backgroundColor = state.doc.backgroundColor || "#ffffff";
       if (state.doc.backgroundImage && state.doc.backgroundImage.url) { strip.style.backgroundImage = docBackgroundStyle(state.doc.backgroundImage); strip.style.backgroundSize = "cover"; }
       state.doc.pages.forEach(function (page, index) { strip.appendChild(buildPage(page, index, true)); });
+      applyThemeVars(strip);
       frag.appendChild(strip);
     } else {
       state.doc.pages.forEach(function (page, index) { frag.appendChild(buildPage(page, index, false)); });
@@ -795,7 +825,7 @@
     const size = pageSize(); els.sizeReadout.textContent = size.pageWidth + " × " + size.pageHeight + " px";
     Array.prototype.forEach.call(els.ratioGroup.querySelectorAll("[data-ratio]"), function (button) { const active = button.dataset.ratio === state.doc.ratio; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     els.zoomValue.textContent = Math.round(state.zoom * 100) + "%"; els.stats.textContent = state.doc.pages.length + " 屏 · " + M.countModules(state.doc) + " 个板块";
-    els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans";
+    els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans"; els.headingFontSelect.value = state.doc.headingFont || ""; els.bodyFontSelect.value = state.doc.bodyFont || "";
     Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
   }
 
@@ -894,8 +924,16 @@
   function downloadBlob(blob, name) { const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000); }
   function downloadText(content, name) { downloadBlob(new Blob([content], { type: "application/json;charset=utf-8" }), name); }
 
-  function wrapLines(ctx, value, maxWidth) { const result = []; String(value || "").split("\n").forEach(function (line) { let current = ""; Array.from(line).forEach(function (char) { const next = current + char; if (ctx.measureText(next).width > maxWidth && current) { result.push(current); current = char; } else current = next; }); result.push(current); }); return result; }
-  function drawText(ctx, value, x, y, maxWidth, size, color, weight, align) { ctx.font = (weight || 400) + " " + size + "px " + C.fontStack(docFontFamily()); ctx.fillStyle = color || "#18221d"; ctx.textAlign = align || "left"; wrapLines(ctx, value, maxWidth).forEach(function (line, index) { ctx.fillText(line, x, y + index * Math.round(size * 1.45)); }); return y + Math.max(1, wrapLines(ctx, value, maxWidth).length) * Math.round(size * 1.45); }
+  const wrapCache = new Map();
+  function wrapLines(ctx, value, maxWidth) {
+    const key = ctx.font + "|" + Math.round(maxWidth) + "|" + value;
+    const hit = wrapCache.get(key);
+    if (hit) return hit;
+    const result = []; String(value || "").split("\n").forEach(function (line) { let current = ""; Array.from(line).forEach(function (char) { const next = current + char; if (ctx.measureText(next).width > maxWidth && current) { result.push(current); current = char; } else current = next; }); result.push(current); });
+    if (wrapCache.size > 4000) wrapCache.clear();
+    wrapCache.set(key, result);
+    return result;
+  }
 
   function loadImage(value) { return new Promise(function (resolve) { if (!imageSrc(value)) return resolve(null); const image = new Image(); image.onload = function () { resolve(image); }; image.onerror = function () { resolve(null); }; image.src = imageSrc(value); }); }
 
@@ -1894,19 +1932,32 @@
     const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
     const radius = Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 13)));
     const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
-    const maxH = 2800;
     const w = area.w;
-    const scratch = document.createElement("canvas");
+    const silence = [];
+    let scratch = document.createElement("canvas");
     scratch.width = Math.max(1, Math.round(w));
-    scratch.height = maxH;
-    const sctx = scratch.getContext("2d");
+    scratch.height = 2800;
+    let sctx = scratch.getContext("2d");
     let cursor = pad;
     if (module.type !== "divider" || module.data.sectionTitle) {
       cursor = paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
     }
-    const contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
-    const usedH = Math.min(maxH, Math.max(pad * 2 + 40, contentEnd + pad));
+    let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    /* 内容实测高度超出临时画布时，重建更大画布完整重绘，不再截断（审计 P1）。 */
+    if (contentEnd + pad > 2800) {
+      scratch = document.createElement("canvas");
+      scratch.width = Math.max(1, Math.round(w));
+      scratch.height = Math.ceil(contentEnd + pad + 64);
+      sctx = scratch.getContext("2d");
+      cursor = pad;
+      if (module.type !== "divider" || module.data.sectionTitle) {
+        cursor = paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+      }
+      contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    }
+    const usedH = Math.max(pad * 2 + 40, contentEnd + pad);
     const bg = data.blockBgImage && data.blockBgImage.url ? await loadImage(data.blockBgImage) : null;
+    if (!bg && data.blockBgImage && data.blockBgImage.url) silence.push({ type: "block-image", module: (data.sectionTitle || (def && def.label) || "未知板块") });
     const P = artTheme();
     /* 1) 卡片投影 */
     ctx.save();
@@ -1936,7 +1987,7 @@
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
-    return { h: usedH };
+    return { h: usedH, silence: silence };
   }
 
   /* 测量单个模块卡片的真实高度与「标题基线」相对卡片顶的偏移，供排版与 PSD 对齐共用。
@@ -1946,19 +1997,32 @@
     const def = R.getDef(module.type);
     const data = module.data || {};
     const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
-    const maxH = 2800;
-    const scratch = document.createElement("canvas");
+    let scratch = document.createElement("canvas");
     scratch.width = Math.max(1, Math.round(w));
-    scratch.height = maxH;
-    const sctx = scratch.getContext("2d");
+    scratch.height = 2800;
+    let sctx = scratch.getContext("2d");
     let cursor = pad;
     let headBaseline = pad;
     if (module.type !== "divider" || data.sectionTitle) {
       headBaseline = pad + Math.round(58 * 0.92);
       cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
     }
-    const contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
-    const usedH = Math.min(maxH, Math.max(pad * 2 + 40, contentEnd + pad));
+    let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    /* 内容实测高度超出临时画布时重建更大画布重测，保证测量与绘制一致（审计 P1）。 */
+    if (contentEnd + pad > 2800) {
+      scratch = document.createElement("canvas");
+      scratch.width = Math.max(1, Math.round(w));
+      scratch.height = Math.ceil(contentEnd + pad + 64);
+      sctx = scratch.getContext("2d");
+      cursor = pad;
+      headBaseline = pad;
+      if (module.type !== "divider" || data.sectionTitle) {
+        headBaseline = pad + Math.round(58 * 0.92);
+        cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+      }
+      contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
+    }
+    const usedH = Math.max(pad * 2 + 40, contentEnd + pad);
     return { h: usedH, pad: pad, headBaseline: headBaseline, w: w };
   }
 
@@ -1979,14 +2043,14 @@
         const halfW = (w - gap) / 2;
         const left = await measureCardLayout(list[0], halfW, page.modules.indexOf(list[0]) + 1);
         const right = await measureCardLayout(list[1], halfW, page.modules.indexOf(list[1]) + 1);
-        out.push({ module: list[0], x: x, y: y, w: halfW, serial: page.modules.indexOf(list[0]) + 1, head: left.headBaseline });
-        out.push({ module: list[1], x: x + halfW + gap, y: y, w: halfW, serial: page.modules.indexOf(list[1]) + 1, head: right.headBaseline });
+        out.push({ module: list[0], x: x, y: y, w: halfW, serial: page.modules.indexOf(list[0]) + 1, head: left.headBaseline, h: left.h });
+        out.push({ module: list[1], x: x + halfW + gap, y: y, w: halfW, serial: page.modules.indexOf(list[1]) + 1, head: right.headBaseline, h: right.h });
         const mb = Math.max(px2(Number(list[0].data && list[0].data.marginBottom) || 18), px2(Number(list[1].data && list[1].data.marginBottom) || 18));
         y += Math.max(left.h, right.h) + Math.max(mb, 44);
       } else {
         const module = list[0];
         const meas = await measureCardLayout(module, w, page.modules.indexOf(module) + 1);
-        out.push({ module: module, x: x, y: y, w: w, serial: page.modules.indexOf(module) + 1, head: meas.headBaseline });
+        out.push({ module: module, x: x, y: y, w: w, serial: page.modules.indexOf(module) + 1, head: meas.headBaseline, h: meas.h });
         const mb = px2(Number(module.data && module.data.marginBottom) || 18);
         y += meas.h + Math.max(mb, 44);
       }
@@ -1994,12 +2058,15 @@
     return out;
   }
 
-  async function drawModuleStack(ctx, page, offsetY) {
-    const layout = await measurePageLayout(page, offsetY);
+  async function drawModuleStack(ctx, page, offsetY, preLayout) {
+    const layout = preLayout || await measurePageLayout(page, offsetY);
+    const silence = [];
     for (let i = 0; i < layout.length; i += 1) {
       const item = layout[i];
-      await drawModuleCard(ctx, item.module, { x: item.x, y: item.y, w: item.w }, item.serial);
+      const card = await drawModuleCard(ctx, item.module, { x: item.x, y: item.y, w: item.w }, item.serial);
+      if (card && card.silence && card.silence.length) silence.push.apply(silence, card.silence);
     }
+    return silence;
   }
 
   async function drawPageToCanvas(page) {
@@ -2011,46 +2078,132 @@
     return canvas;
   }
 
-  async function exportPng(allPages) { const pages = allPages ? state.doc.pages : [activePage()]; for (let i = 0; i < pages.length; i += 1) { const canvas = await drawPageToCanvas(pages[i]); canvas.toBlob(function (blob) { downloadBlob(blob, "only-box-banner-" + String(state.doc.pages.indexOf(pages[i]) + 1).padStart(2, "0") + ".png"); }, "image/png"); } }
+  /* 导出统一走「实测排版高度」：画布高度 = max(屏高, 内容总高 + 底距)。
+     内容超屏时导出画布自动加高，不再静默截断（审计 P1）。
+     背景图统一 coverDraw 等比裁切（与预览 background-size:cover 一致，审计 P3）；
+     连续长图的整条背景向下锚定，保证跨屏衔接连续。 */
+  function auditSilence(silence, pageLabel) {
+    if (!silence || !silence.length) return;
+    const lines = silence.slice(0, 8).map(function (row) {
+      const kind = row.type === "page-background" ? "本屏背景" : row.type === "doc-background" ? "整条背景" : "板块配图";
+      const where = row.page ? "第 " + row.page + " 屏 " : (pageLabel || "");
+      return where + "「" + (row.module || "未知板块") + "」的" + kind + "引用已失效，该处按占位底色导出";
+    });
+    if (silence.length > 8) lines.push("……等共 " + silence.length + " 处");
+    if (global.alert) global.alert("导出完成，但以下图片未能加载（刷新后旧图片引用会过期）：\n" + lines.join("\n") + "\n\n重新插入图片后再次导出即可还原。");
+  }
 
-  /* 连续长图：所有屏拼成一张 PNG。整条背景按「总高」cover 跨屏连续铺满；
-     某屏自带背景时，仅该屏切片用本屏背景覆盖（与分屏单屏导出一致）。 */
+  /* 整条背景（连续长图）：等比 cover、水平居中、顶对齐向下延展。 */
+  function coverDownDraw(ctx, image, x, y, w, h) {
+    if (!image || !w || !h) return;
+    const scale = Math.max(w / image.width, h / image.height);
+    ctx.drawImage(image, x + (w - image.width * scale) / 2, y, image.width * scale, image.height * scale);
+  }
+
+  async function drawPageToCanvas(page, opts) {
+    const options = opts || {};
+    const size = pageSize();
+    wrapCache.clear();
+    const layout = await measurePageLayout(page, 0);
+    const contentBottom = layout.reduce(function (max, item) { return Math.max(max, item.y + (item.h || 0)); }, 0);
+    const height = Math.max(size.pageHeight, Math.ceil(contentBottom + 64));
+    const canvas = document.createElement("canvas"); canvas.width = size.pageWidth; canvas.height = height; const ctx = canvas.getContext("2d");
+    await readyFontForText(docFontFamily(), collectPageText(page));
+    const silence = [];
+    if (options.forStrip) {
+      if (page.backgroundColor) { ctx.fillStyle = page.backgroundColor; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      if (page.backgroundImage && page.backgroundImage.url) {
+        const pageBg = await loadImage(page.backgroundImage);
+        if (pageBg) coverDraw(ctx, pageBg, 0, 0, canvas.width, canvas.height);
+        else silence.push({ type: "page-background", module: "本屏背景", page: (state.doc.pages || []).indexOf(page) + 1 });
+      }
+    } else {
+      ctx.fillStyle = page.backgroundColor || state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const bgRef = page.backgroundImage || state.doc.backgroundImage;
+      const background = await loadImage(bgRef);
+      if (background) coverDraw(ctx, background, 0, 0, canvas.width, canvas.height);
+      else if (imageSrc(bgRef)) silence.push({ type: page.backgroundImage ? "page-background" : "doc-background", module: page.backgroundImage ? "本屏背景" : "整条背景" });
+    }
+    silence.push.apply(silence, await drawModuleStack(ctx, page, 0, layout));
+    return { canvas: canvas, layout: layout, silence: silence, contentHeight: height };
+  }
+
+  async function exportPng(allPages) {
+    const pages = allPages ? state.doc.pages : [activePage()];
+    const allSilence = [];
+    const pageNo = function (page) { return String(state.doc.pages.indexOf(page) + 1).padStart(2, "0"); };
+    for (let i = 0; i < pages.length; i += 1) {
+      const page = pages[i];
+      const result = await drawPageToCanvas(page);
+      await new Promise(function (resolve) {
+        result.canvas.toBlob(function (blob) {
+          if (blob) downloadBlob(blob, "only-box-banner-" + pageNo(page) + ".png");
+          else if (global.alert) global.alert("导出失败：PNG 编码返回空（画布可能过大，请尝试减少板块内容）。");
+          resolve();
+        }, "image/png");
+      });
+      result.silence.forEach(function (row) { allSilence.push({ type: row.type, module: row.module, page: state.doc.pages.indexOf(page) + 1 }); });
+      /* 多屏连下需要间隔，避免被浏览器「多文件下载」策略拦截（审计 P4）。 */
+      if (i < pages.length - 1) await new Promise(function (resolve) { setTimeout(resolve, 320); });
+    }
+    auditSilence(allSilence);
+    return { pages: pages.length };
+  }
+
+  /* 连续长图：逐屏按实测高度渲染后纵向拼接；整条背景 cover 向下锚定跨屏连续。 */
   async function exportStripPng() {
-    const pages = state.doc.pages || []; if (!pages.length) return;
-    const size = pageSize(); const width = size.pageWidth; const height = size.pageHeight; const total = height * pages.length;
-    const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = total; const ctx = canvas.getContext("2d");
+    const pages = state.doc.pages || []; if (!pages.length) return null;
+    const size = pageSize(); const width = size.pageWidth;
     await readyFontForText(docFontFamily(), pages.map(collectPageText).join(" "));
+    const rendered = [];
+    let total = 0;
+    for (let i = 0; i < pages.length; i += 1) {
+      const one = await drawPageToCanvas(pages[i], { forStrip: true });
+      rendered.push(one); total += one.canvas.height;
+    }
+    const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = total; const ctx = canvas.getContext("2d");
     ctx.fillStyle = state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, width, total);
     const docImage = await loadImage(state.doc.backgroundImage);
-    if (docImage) { const scale = Math.max(width / docImage.width, total / docImage.height); ctx.drawImage(docImage, (width - docImage.width * scale) / 2, (total - docImage.height * scale) / 2, docImage.width * scale, docImage.height * scale); }
-    for (let i = 0; i < pages.length; i += 1) {
-      const page = pages[i]; const y0 = i * height;
-      ctx.save();
-      ctx.beginPath(); ctx.rect(0, y0, width, height); ctx.clip();
-      if (page.backgroundColor) { ctx.fillStyle = page.backgroundColor; ctx.fillRect(0, y0, width, height); }
-      if (page.backgroundImage && page.backgroundImage.url) {
-        const image = await loadImage(page.backgroundImage);
-        if (image) { const s = Math.max(width / image.width, height / image.height); ctx.drawImage(image, (width - image.width * s) / 2, y0 + (height - image.height * s) / 2, image.width * s, image.height * s); }
-      }
-      await drawModuleStack(ctx, page, y0);
+    if (docImage) coverDownDraw(ctx, docImage, 0, 0, width, total);
+    else if (imageSrc(state.doc.backgroundImage)) auditSilence([{ type: "doc-background", module: "整条背景" }], "连续长图 ");
+    let y0 = 0; const silence = [];
+    for (let i = 0; i < rendered.length; i += 1) {
+      const h = rendered[i].canvas.height;
+      ctx.save(); ctx.beginPath(); ctx.rect(0, y0, width, h); ctx.clip();
+      ctx.drawImage(rendered[i].canvas, 0, y0);
       ctx.restore();
+      rendered[i].silence.forEach(function (row) { silence.push({ page: i + 1, type: row.type, module: row.module }); });
+      y0 += h;
     }
-    canvas.toBlob(function (blob) { downloadBlob(blob, "only-box-banner-continuous.png"); }, "image/png");
+    auditSilence(silence);
+    canvas.toBlob(function (blob) { if (blob) downloadBlob(blob, "only-box-banner-continuous.png"); else if (global.alert) global.alert("长图导出失败：PNG 编码返回空（内容可能过大）。"); }, "image/png");
+    return { width: width, height: total, pages: rendered.length, silence: silence.length };
   }
 
   function psFontName() {
     const f = C.FONTS[docFontFamily()] || C.FONTS.sans;
     return f.family.replace(/ /g, "");
   }
+  /* PSD 文字层字体名：标题层用标题字体，正文层用正文字体（分角色设置同步到 PS）。 */
+  function psFontNameFor(scope) {
+    const key = scope === "body"
+      ? (state.doc.bodyFont || state.doc.headingFont || state.doc.fontFamily || "sans")
+      : (state.doc.headingFont || state.doc.fontFamily || "sans");
+    const f = C.FONTS[key] || C.FONTS.sans;
+    return f.family.replace(/ /g, "");
+  }
 
-  function textLayer(name, value, x, y, size, align) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontName() }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
+  function textLayer(name, value, x, y, size, align) { return textLayerScope(name, value, x, y, size, align, null); }
+  function textLayerScope(name, value, x, y, size, align, scope) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
 
   async function exportPsd() {
-    if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return; }
+    if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return null; }
     const page = activePage(); const size = pageSize();
-    const composite = await drawPageToCanvas(page);
+    const result = await drawPageToCanvas(page);
+    const composite = result.canvas;
+    const layout = result.layout;
+    const silence = result.silence || [];
     /* 用与合成预览一致的排版坐标放置可编辑文字层，保证在 PS 里文字与位图参考对齐。 */
-    const layout = await measurePageLayout(page, 0);
     const children = [{ name: "合成预览（位图参考）", canvas: composite }];
     const px = function (n) { return Math.round(n); };
     layout.forEach(function (item, index) {
@@ -2064,24 +2217,59 @@
         const h1 = textLayer("主标题 · 可编辑文字", data.title, cardLeft, px(headY + 60), 74, "left"); if (h1) group.children.push(h1);
         const sub = textLayer("副标题 · 可编辑文字", data.subtitle, cardLeft, px(headY + 150), 34, "left"); if (sub) group.children.push(sub);
       } else if (module.type === "announcement") {
-        const body = textLayer("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 80), 34, "left"); if (body) group.children.push(body);
+        const body = textLayerScope("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 80), 34, "left", "body"); if (body) group.children.push(body);
       } else if (module.type === "freeText") {
         const item2 = textLayer("自由文本 · 可编辑文字", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), data.align); if (item2) group.children.push(item2);
       } else if (module.type === "programList") {
-        (data.items || []).forEach(function (it, i) { const row = textLayer("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 34, "left"); if (row) group.children.push(row); });
+        (data.items || []).forEach(function (it, i) { const row = textLayerScope("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 34, "left", "body"); if (row) group.children.push(row); });
       } else if (module.type === "footer") {
-        const f = textLayer("页脚内容 · 可编辑文字", (data.items || []).map(function (it) { return it.text; }).filter(Boolean).join("  ·  "), cardLeft, px(headY + 70), 34, "left"); if (f) group.children.push(f);
+        /* 页脚数据字段是 lines（字符串数组），此前误用 items 导致内容层永不生成（审计 P5）。 */
+        const f = textLayerScope("页脚内容 · 可编辑文字", (data.lines || []).filter(Boolean).join("  ·  "), cardLeft, px(headY + 70), 34, "left", "body"); if (f) group.children.push(f);
       } else if (module.type === "divider") {
         const d = textLayer("分隔线备注 · 可编辑文字", data.sectionTitle || def.label, px(item.x + item.w / 2), px(headY + 30), 34, "center"); if (d) group.children.push(d);
       }
       void cardW;
       children.push(group);
     });
-    try { const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: size.pageHeight, children: children }, { generateThumbnail: true }); downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + (activePageIndex() + 1) + ".psd"); } catch (error) { global.alert("PSD 导出失败：" + error.message); }
+    try {
+      const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: composite.height, children: children }, { generateThumbnail: true });
+      downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + (activePageIndex() + 1) + ".psd");
+      auditSilence(silence, "PSD 第 " + (activePageIndex() + 1) + " 屏 ");
+      return { layers: children.length, silence: silence.length };
+    } catch (error) { global.alert("PSD 导出失败：" + error.message); return null; }
   }
 
-  function saveDraft() { downloadText(JSON.stringify(M.toJSON(state.doc), null, 2), "only-box-banner-draft.json"); }
-  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
+  /* 草稿图片持久化（审计 P6）：保存前用「我的模板」同款 snapshotData 把所有 blob: 引用
+     转成 dataURL 写进 JSON；恢复时再把 dataURL 还原为 blob:，会话内行为与手选图片一致。
+     还原只处理 <32MB 的 dataURL，超大的保留原样（canvas 可直接加载 data:）。 */
+  function dataUrlToBlobRecord(value) {
+    try {
+      const parts = String(value.url).split(",");
+      if (!parts[1] || parts[1].length > 32000000) return value;
+      const meta = parts[0].match(/^data:([^;]+)/);
+      const mime = meta ? meta[1] : "image/png";
+      const bin = atob(parts[1]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), name: value.name, type: mime };
+    } catch (error) { return value; }
+  }
+  function restoreDraftImages(value) {
+    if (Array.isArray(value)) { for (let i = 0; i < value.length; i += 1) value[i] = restoreDraftImages(value[i]); return value; }
+    if (!value || typeof value !== "object") return value;
+    if (typeof value.url === "string" && value.url.indexOf("data:") === 0 && typeof value.name === "string") return dataUrlToBlobRecord(value);
+    Object.keys(value).forEach(function (key) { value[key] = restoreDraftImages(value[key]); });
+    return value;
+  }
+  async function saveDraft() {
+    const tpl = global.BannerBuilderMyTemplates;
+    if (!tpl || typeof tpl.snapshotData !== "function") { downloadText(JSON.stringify(M.toJSON(state.doc), null, 2), "only-box-banner-draft.json"); return; }
+    try {
+      const snap = await tpl.snapshotData(M.toJSON(state.doc));
+      downloadText(JSON.stringify(snap, null, 2), "only-box-banner-draft.json");
+    } catch (error) { global.alert("草稿保存失败：" + ((error && error.message) || error)); }
+  }
+  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
 
   function bindEvents() {
     els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
@@ -2101,6 +2289,8 @@
     });
     els.themeSelect.addEventListener("change", function () { state.doc.theme = this.value; renderAll(); });
     els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; ensureFont(state.doc.fontFamily); renderAll(); });
+    els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
+    els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
     els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.25, state.zoom - .05); renderToolbar(); renderCanvas(); });
     els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(.9, state.zoom + .05); renderToolbar(); renderCanvas(); });
     els.zoomFitBtn.addEventListener("click", function () { state.zoom = .46; renderToolbar(); renderCanvas(); });
@@ -2116,6 +2306,6 @@
     els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd }; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);
