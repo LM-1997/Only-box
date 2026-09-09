@@ -1,0 +1,338 @@
+{
+  "startedAt": "2026-09-07T00:33:39.083Z",
+  "phases": [
+    {
+      "name": "env",
+      "data": {
+        "themeForest": "森林绿",
+        "modules": 15,
+        "agPsd": true
+      },
+      "at": "2026-09-07T00:33:39.882Z"
+    },
+    {
+      "name": "built",
+      "data": {
+        "pages": 3,
+        "modules": 10
+      },
+      "at": "2026-09-07T00:33:40.309Z"
+    },
+    {
+      "name": "png-page1",
+      "data": {
+        "ms": 423,
+        "err": null,
+        "w": 1242,
+        "h": 2208,
+        "bytes": 985125
+      },
+      "at": "2026-09-07T00:33:40.739Z"
+    },
+    {
+      "name": "png-page2",
+      "data": {
+        "ms": 250,
+        "err": null,
+        "w": 1242,
+        "h": 2208,
+        "bytes": 193322
+      },
+      "at": "2026-09-07T00:33:40.992Z"
+    },
+    {
+      "name": "png-page3",
+      "data": {
+        "ms": 261,
+        "err": null,
+        "w": 1242,
+        "h": 2208,
+        "bytes": 238255
+      },
+      "at": "2026-09-07T00:33:41.256Z"
+    },
+    {
+      "name": "exportAllBtn",
+      "data": {
+        "ms": 495,
+        "files": [
+          {
+            "w": 1242,
+            "h": 2208,
+            "bytes": 985125
+          },
+          {
+            "w": 1242,
+            "h": 2208,
+            "bytes": 193322
+          },
+          {
+            "w": 1242,
+            "h": 2208,
+            "bytes": 238255
+          }
+        ]
+      },
+      "at": "2026-09-07T00:33:41.753Z"
+    },
+    {
+      "name": "exportStrip",
+      "data": {
+        "ms": 1441,
+        "w": 1242,
+        "h": 6624,
+        "bytes": 1417161
+      },
+      "at": "2026-09-07T00:33:43.196Z"
+    },
+    {
+      "name": "psd-page1",
+      "data": {
+        "ms": 262,
+        "sig": "8BPS",
+        "bytes": 1808092
+      },
+      "at": "2026-09-07T00:33:43.461Z"
+    },
+    {
+      "name": "psd-page2",
+      "data": {
+        "ms": 342,
+        "sig": "8BPS",
+        "bytes": 858140
+      },
+      "at": "2026-09-07T00:33:43.806Z"
+    },
+    {
+      "name": "psd-page3",
+      "data": {
+        "ms": 391,
+        "sig": "8BPS",
+        "bytes": 957368
+      },
+      "at": "2026-09-07T00:33:44.201Z"
+    },
+    {
+      "name": "psd-parse",
+      "data": {
+        "p1-rich.psd": {
+          "ok": true,
+          "w": 1242,
+          "h": 2208,
+          "layerCount": 8,
+          "textLayers": [
+            {
+              "depth": 1,
+              "name": "封面 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "封面",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "主标题 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "第一届 Only-box 同人祭◎特别场",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "副标题 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "2026.10.01 · 上海 · 世界会展城 3 号馆",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "情报公告文本块 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "情报公告文本块",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "公告正文 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "本活动实行实名制入场，请携带身份证原件与电子票二维码排队核验。场内禁止携带外食饮料与专业摄影设备，Cosplay 道具需",
+                "itemsCount": "none"
+              }
+            }
+          ]
+        },
+        "p2-rich.psd": {
+          "ok": true,
+          "w": 1242,
+          "h": 2208,
+          "layerCount": 8,
+          "textLayers": [
+            {
+              "depth": 1,
+              "name": "活动时间轴 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "活动时间轴",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "票务信息 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "票务信息",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "· 休 息 一 下 · · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "· 休 息 一 下 ·",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "分隔线备注 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "· 休 息 一 下 ·",
+                "itemsCount": "none"
+              }
+            }
+          ]
+        },
+        "p3-rich.psd": {
+          "ok": true,
+          "w": 1242,
+          "h": 2208,
+          "layerCount": 14,
+          "textLayers": [
+            {
+              "depth": 1,
+              "name": "自由图片框（也用于场地平面图等复杂手绘图） · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "自由图片框（也用于场地平面图等复杂手绘图）",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "节目单列表 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "节目单列表",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "节目条目 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "10:00  开幕巡游  中央大道集合",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "节目条目 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "16:00  闭幕合影  主舞台前",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "页脚/更多信息 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "页脚/更多信息",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "自由文本框 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "自由文本框",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "自由文本 · 可编辑文字",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "半宽文本块：欢迎来到 Only-box！",
+                "itemsCount": "none"
+              }
+            },
+            {
+              "depth": 1,
+              "name": "物料监修 · 可编辑 H2",
+              "textDump": {
+                "innerType": "string",
+                "innerPreview": "物料监修",
+                "itemsCount": "none"
+              }
+            }
+          ]
+        }
+      },
+      "at": "2026-09-07T00:33:44.484Z"
+    },
+    {
+      "name": "psd-text-roundtrip",
+      "data": {
+        "innerText": "你好ABC123",
+        "innerType": "string",
+        "itemsCount": "none"
+      },
+      "at": "2026-09-07T00:33:44.489Z"
+    },
+    {
+      "name": "psd-raw-text-bytes",
+      "data": {
+        "p1_utf16_editable": 5,
+        "p1_utf16_title": 2,
+        "p3_utf16_footer": 0
+      },
+      "at": "2026-09-07T00:33:44.516Z"
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED"
+  ],
+  "dialogs": [],
+  "downloads": [
+    "only-box-banner-01.png",
+    "only-box-banner-02.png",
+    "only-box-banner-03.png",
+    "only-box-banner-01.png",
+    "only-box-banner-02.png",
+    "only-box-banner-03.png",
+    "only-box-banner-continuous.png",
+    "only-box-banner-page-1.psd",
+    "only-box-banner-page-2.psd",
+    "only-box-banner-page-3.psd",
+    "only-box-banner-03.png"
+  ],
+  "fatal": "Error: download timeout: only-box-banner-01.png | queue=[\"only-box-banner-03.png\"] | all=only-box-banner-01.png,only-box-banner-02.png,only-box-banner-03.png,only-box-banner-01.png,only-box-banner-02.png,only-box-banner-03.png,only-box-banner-continuous.png,only-box-banner-page-1.psd,only-box-banner-page-2.psd,only-box-banner-page-3.psd,only-box-banner-03.png\n    at take (C:\\Users\\LM_wo\\.openclaw-autoclaw\\workspace\\.openclaw\\tmp\\bb-audit\\run-audit3.js:33:11)\n    at async C:\\Users\\LM_wo\\.openclaw-autoclaw\\workspace\\.openclaw\\tmp\\bb-audit\\run-audit3.js:242:27"
+}

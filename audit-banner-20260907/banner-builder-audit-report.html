@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>banner-builder 审计报告 · Only-box</title>
+<style>
+  :root{
+    --ink:#20241f; --muted:#6d736c; --paper:#faf9f5; --panel:#ffffff;
+    --hairline:#dedbd2; --accent:#1e6f50; --warn:#b3552f;
+    --serif:"Source Han Serif SC","Noto Serif SC","SimSun",serif;
+    --sans:"Microsoft YaHei","PingFang SC",sans-serif;
+    --mono:Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75;}
+  .frame{max-width:1180px;margin:0 auto;padding:0 40px;}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(30,111,80,.35);}
+  code,.mono{font-family:var(--mono);font-size:.86em;background:#f1efe8;padding:1px 5px;border:1px solid var(--hairline);border-radius:2px;}
+  h1,h2,h3,h4{font-family:var(--serif);font-weight:600;color:#161a16;}
+  .masthead{border-bottom:3px solid #161a16;padding:52px 0 26px;margin-bottom:0;}
+  .masthead .kicker{font-size:11px;letter-spacing:.28em;color:var(--muted);margin-bottom:14px;}
+  .masthead h1{font-size:42px;line-height:1.22;margin:0 0 14px;letter-spacing:-.01em;}
+  .masthead .lede{font-size:16px;color:#3d423c;max-width:56em;line-height:1.85;}
+  .meta-row{display:flex;flex-wrap:wrap;gap:10px 34px;margin-top:24px;font-size:11.5px;color:var(--muted);letter-spacing:.05em;}
+  .meta-row b{color:var(--ink);font-weight:600;}
+  .verdict{display:grid;grid-template-columns:repeat(4,1fr);border-left:1px solid var(--hairline);border-right:1px solid var(--hairline);border-bottom:1px solid var(--hairline);background:var(--panel);margin-bottom:14px;}
+  .verdict .cell{padding:18px 20px 15px;border-right:1px solid var(--hairline);}
+  .verdict .cell:last-child{border-right:0;}
+  .verdict .lab{font-size:10.5px;letter-spacing:.2em;color:var(--muted);margin-bottom:8px;}
+  .verdict .val{font-family:var(--serif);font-size:21px;font-weight:600;}
+  .verdict .sub{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.6;}
+  .verdict .val.ok{color:var(--accent);}
+  .verdict .val.bad{color:var(--warn);}
+  .with-toc{display:grid;grid-template-columns:210px minmax(0,1fr);gap:46px;padding:26px 0 60px;}
+  nav.toc{position:sticky;top:24px;align-self:start;font-size:12px;}
+  nav.toc .toc-title{font-size:10.5px;letter-spacing:.24em;color:var(--muted);margin-bottom:12px;}
+  nav.toc a{display:block;padding:5px 0 5px 14px;color:#4a4f49;border-bottom:1px solid var(--hairline);border-left:2px solid transparent;}
+  nav.toc a:hover{border-left-color:var(--accent);color:var(--accent);}
+  main section{margin-bottom:52px;}
+  .sec-rule{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid #161a16;padding-bottom:8px;margin-bottom:20px;}
+  .sec-rule .no{font-family:var(--mono);font-size:12px;color:var(--warn);letter-spacing:.1em;}
+  .sec-rule h2{font-size:23px;margin:0;letter-spacing:.01em;}
+  h3{font-size:16.5px;margin:26px 0 10px;}
+  p{margin:0 0 13px;max-width:74ch;}
+  .note{font-size:12.5px;color:var(--muted);}
+  table.data{width:100%;border-collapse:collapse;font-size:12.5px;margin:14px 0 8px;background:var(--panel);}
+  table.data th{font-family:var(--sans);font-weight:600;text-align:left;font-size:11px;letter-spacing:.08em;color:var(--muted);border-top:2px solid #161a16;border-bottom:1px solid #161a16;padding:9px 10px;}
+  table.data td{border-bottom:1px solid var(--hairline);padding:9px 10px;vertical-align:top;line-height:1.65;}
+  table.data tr:last-child td{border-bottom:2px solid #161a16;}
+  table.data td.num{font-family:var(--mono);font-size:11.5px;white-space:nowrap;}
+  .pill{display:inline-block;font-size:10.5px;padding:1px 8px;border:1px solid;letter-spacing:.06em;white-space:nowrap;}
+  .pill.red{color:#a03123;border-color:#cf9a90;background:#f9efec;}
+  .pill.orange{color:#9c4a12;border-color:#d8a06c;background:#faf1e7;}
+  .pill.yellow{color:#7a611c;border-color:#cbb775;background:#f8f4e6;}
+  .pill.green{color:var(--accent);border-color:#8fbfa9;background:#ecf4ef;}
+  .pill.gray{color:var(--muted);border-color:#c4c1b8;background:#f4f3ee;}
+  figure{margin:20px 0;}
+  figure img{width:100%;border:1px solid var(--hairline);display:block;}
+  figcaption{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.7;}
+  figcaption b{color:#3d423c;}
+  .issue{border:1px solid var(--hairline);background:var(--panel);margin:18px 0;}
+  .issue-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--hairline);}
+  .issue-head .no{font-family:var(--mono);font-size:12px;color:var(--warn);font-weight:700;}
+  .issue-head h3{margin:0;font-size:16px;}
+  .issue-body{padding:14px 18px 16px;}
+  .issue-body .kv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:6px 14px;font-size:13px;}
+  .issue-body .kv dt{color:var(--muted);font-size:11.5px;padding-top:2px;letter-spacing:.06em;}
+  .issue-body .kv dd{margin:0;}
+  .issue-body .loc{font-family:var(--mono);font-size:11.5px;color:#4a4f49;}
+  ul.plain{padding-left:20px;margin:0 0 14px;}
+  ul.plain li{margin-bottom:7px;}
+  @media(max-width:1000px){.with-toc{grid-template-columns:1fr;}nav.toc{display:none;}.verdict{grid-template-columns:1fr 1fr;}}
+  .colophon{border-top:3px solid #161a16;margin-top:30px;padding:18px 0 8px;font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <header class="masthead">
+    <div class="kicker">ONLY-BOX · 代码体检报告</div>
+    <h1>banner-builder.html 审计报告<br>逻辑评审与导出功能实测</h1>
+    <p class="lede">对 <code>tools/banner-builder.html</code> 及其引用链 8 个文件做静态评审，并在本机 Chrome 中对 15 类板块构造三屏富内容，实测图片导出（逐屏 / 全部 / 连续长图）、PSD 导出、草稿恢复与边界场景。结论：<b>图片导出主链路可用但带 4 项确定性缺陷</b>；PSD 文件本体有效、可在 Photoshop 类软件打开，但<b>页脚板块内容层因字段名错误从未生成</b>，且可编辑图层对多数板块缺席。</p>
+    <div class="meta-row">
+      <span>审计对象 <b>Only-box @ cc83e03（工作区干净）</b></span>
+      <span>方式 <b>静态评审 + Playwright/Chrome 152 实测 + psd-tools 交叉验证</b></span>
+      <span>产物 <b>34 个样本文件 · audit-banner-20260907/artifacts</b></span>
+      <span>修复记录 <b>2026-09-07 已修复 6 项 · 误报更正 1 项 · 架构项保留 1 项（见 08 节）</b></span>
+    </div>
+  </header>
+
+  <div class="verdict">
+    <div class="cell"><div class="lab">检查范围</div><div class="val ok">8 / 8 文件</div><div class="sub">引用链全覆盖，单测通过</div></div>
+    <div class="cell"><div class="lab">图片导出（PNG）</div><div class="val ok">链路可用</div><div class="sub">格式尺寸正确，附 4 项缺陷</div></div>
+    <div class="cell"><div class="lab">PSD 导出</div><div class="val ok">文件有效</div><div class="sub">可打开 · 页脚内容层丢失</div></div>
+    <div class="cell"><div class="lab">处置结果</div><div class="val ok">6 修 / 1 正 / 1 留</div><div class="sub">全部经浏览器回归验证，见 08 节</div></div>
+  </div>
+
+  <div class="with-toc">
+    <nav class="toc">
+      <div class="toc-title">目录</div>
+      <a href="#s1">01 检查范围</a>
+      <a href="#s2">02 逻辑评审</a>
+      <a href="#s3">03 导出实测</a>
+      <a href="#s4">04 问题清单</a>
+      <a href="#s5">05 边界抽样</a>
+      <a href="#s6">06 修复建议</a>
+      <a href="#s7">07 验证与证据</a>
+      <a href="#s8">08 修复记录</a>
+    </nav>
+    <main>
+
+      <section id="s1">
+        <div class="sec-rule"><span class="no">01</span><h2>检查范围</h2></div>
+        <p>从 <code>tools/banner-builder.html</code> 的 <code>&lt;script&gt;</code> 与 <code>&lt;link&gt;</code> 标签出发梳理引用链，共 8 个文件（页面内联样式与 CSS 变量依赖一并核查）：</p>
+        <table class="data">
+          <tr><th style="width:44%">文件</th><th style="width:12%">大小</th><th style="width:14%">角色</th><th>检查结论</th></tr>
+          <tr><td><code>tools/banner-builder.html</code></td><td class="num">35.5 KB</td><td>页面 + 全部板块样式</td><td>结构合理；2 处 ::before 符号被 UTF-8 乱码覆盖（见 P8）</td></tr>
+          <tr><td><code>js/banner-builder.js</code></td><td class="num">126.9 KB</td><td>状态 / UI / Canvas 绘制 / 导出</td><td>核心；双实现漂移与导出缺陷集中区（P1–P4、P7）</td></tr>
+          <tr><td><code>js/banner-builder-constants.js</code></td><td class="num">4.5 KB</td><td>画布 / 字号 / 主题 / 字体常量</td><td>合理；只读常量，冻结导出</td></tr>
+          <tr><td><code>js/banner-builder-registry.js</code></td><td class="num">25.5 KB</td><td>15 类板块的默认值与字段定义</td><td>合理；footer 默认数据为 <code>lines</code>（与 PSD 缺陷直接相关）</td></tr>
+          <tr><td><code>js/banner-builder-model.js</code></td><td class="num">3.9 KB</td><td>文档 / 屏 / 板块纯数据操作</td><td>合理；half+half 配对、增删移逻辑无缺陷</td></tr>
+          <tr><td><code>js/banner-builder-mytemplates.js</code></td><td class="num">4.8 KB</td><td>「我的模板」IndexedDB 持久化</td><td>合理；blob→dataURL 快照设计正确</td></tr>
+          <tr><td><code>js/vendor/ag-psd.js</code></td><td class="num">850 KB</td><td>PSD 读写引擎（UMD 打包）</td><td>工作正常；<code>pako</code> 为其内嵌依赖（同目录 pako.min.js 实际只服务 long-image 工具链，非 banner-builder 引用）</td></tr>
+          <tr><td><code>css/only-box.css</code></td><td class="num">14.7 KB</td><td>站点级 CSS 变量与导航/页脚</td><td>变量与页面引用一致，无缺失</td></tr>
+        </table>
+        <p class="note">注：仓库内 <code>js/vendor/upng.js</code>、<code>pako.min.js</code> 服务 long-image-stitch / long-image-compress，banner-builder 未引用，不计入本次范围。Node 语法检查 8/8 通过；<code>node tests/banner-builder.test.js</code> 全部通过。</p>
+      </section>
+
+      <section id="s2">
+        <div class="sec-rule"><span class="no">02</span><h2>逻辑合理性评审（按模块）</h2></div>
+        <table class="data">
+          <tr><th style="width:17%">模块</th><th style="width:10%">位置</th><th style="width:11%">结论</th><th>说明</th></tr>
+          <tr><td>文档 / 屏 / 板块模型</td><td class="num">model.js 全文</td><td><span class="pill green">合理</span></td><td>纯函数式增删移；空文档保底 1 屏；half+half 配对规则清晰</td></tr>
+          <tr><td>板块注册表（15 类）</td><td class="num">registry.js</td><td><span class="pill green">合理</span></td><td>每类板块默认值 → 字段 → 摘要 → 缩略图四件套完整；模板选项自动补默认</td></tr>
+          <tr><td>属性面板 / 表单构建</td><td class="num">banner-builder.js:106–286</td><td><span class="pill green">合理</span></td><td>stringList / objectList / imageList 递归构建；字号警示联动（&lt;24px 提示）</td></tr>
+          <tr><td>DOM 预览渲染</td><td class="num">banner-builder.js:288–801</td><td><span class="pill green">合理</span></td><td>15 类渲染器与注册表一一对应；主题 / 字体 / 背景三作用域（整条 / 本屏）正确</td></tr>
+          <tr><td>「我的模板」</td><td class="num">mytemplates.js + :822–856</td><td><span class="pill green">合理</span></td><td>存前把 blob: 转 dataURL，跨会话可复现（实测通过）；IndexedDB 打不开时静默降级</td></tr>
+          <tr><td>字体加载</td><td class="num">banner-builder.js:19–42</td><td><span class="pill yellow">有风险</span></td><td>走 jsDelivr 在线加载（本次测试环境屏蔽后自动回退系统字体，导出仍成功）；离线环境下替代栈可用，但在线加载失败无任何用户提示（P9）</td></tr>
+          <tr><td>Canvas 导出绘制器</td><td class="num">banner-builder.js:908–1993</td><td><span class="pill orange">有风险</span></td><td>与 DOM 预览是<b>两套独立实现</b>（15 类板块 × 2 份代码）；像素坐标用 2.2 倍手工换算，无自动同步机制，长期漂移风险高（P1、P2、P7 均源于此）</td></tr>
+          <tr><td>图片导出流程</td><td class="num">banner-builder.js:2005–2039</td><td><span class="pill orange">有风险</span></td><td>toBlob → a[download] 正常；但「导出全部屏」循环连下多文件（P4）、超高内容截断（P1）、背景拉伸（P3）</td></tr>
+          <tr><td>PSD 导出流程</td><td class="num">banner-builder.js:2041–2081</td><td><span class="pill red">有缺陷</span></td><td>页脚字段名错误致内容层丢失（P5）；可编辑文字层仅覆盖 6 类板块（其余 9 类只有位图参考）；文字坐标与 canvas 绘制坐标体系不同源，仅 H2 标题做了对齐</td></tr>
+          <tr><td>草稿备份 / 恢复</td><td class="num">banner-builder.js:2083–2085</td><td><span class="pill yellow">有风险</span></td><td>JSON 序列化不含图片二进制 → 画布图片跨会话失效（P6）；「我的模板」路径反而安全，两套持久化行为不一致</td></tr>
+          <tr><td>半宽模块排版</td><td class="num">model.js packModuleRows + 导出 measurePageLayout</td><td><span class="pill yellow">有风险</span></td><td>DOM 侧 half 后跟 full 模块时可并排（CSS flex），导出侧同一序列按两行排 → 同一文档预览与导出布局不同（P7）</td></tr>
+        </table>
+
+        <figure>
+          <img src="fig-pipeline.png" alt="导出链路与问题节点">
+          <figcaption><b>图 1</b> · 导出链路：DOM 预览（A）与 Canvas 导出（B）是两套并行实现，问题节点集中在路径 B 与 PSD 路径 C 的字段映射层。</figcaption>
+        </figure>
+      </section>
+
+      <section id="s3">
+        <div class="sec-rule"><span class="no">03</span><h2>导出功能实测记录</h2></div>
+        <p>环境：Windows 10 · Chrome 152（Playwright headless）· 本地 HTTP 服务。测试文档：3 屏 10 板块（封面 / 公告 / 时间轴 / 票务卡片 / 分割线 / 平面图 / 节目单 / 页脚 / 半宽文本+物料），含中英文、emoji 🍉、￥、◎、&amp; 等字符与程序生成的 dataURL 图片。逐项结果：</p>
+        <table class="data">
+          <tr><th style="width:23%">实测项</th><th style="width:11%">结果</th><th>关键数据</th></tr>
+          <tr><td>导出当前屏 PNG（API + 按钮）</td><td><span class="pill green">通过</span></td><td class="num">1242×2208 · 0.42–0.98 MB · 中文清晰无乱码</td></tr>
+          <tr><td>导出全部屏（3 连下）</td><td><span class="pill green">通过</span></td><td class="num">3/3 下载成功 · 0.50 s</td></tr>
+          <tr><td>连续长图 PNG</td><td><span class="pill green">通过</span></td><td class="num">1242×6624 = 2208×3 · 三屏内容齐全</td></tr>
+          <tr><td>PSD 导出（逐屏 ×3）</td><td><span class="pill green">通过</span></td><td class="num">8BPS 头 · 0.86–1.81 MB · ag-psd 回读 8/14 文字层完整</td></tr>
+          <tr><td>PSD 第三方软件打开</td><td><span class="pill green">通过</span></td><td>psd-tools 独立解析成功；force 合成渲染内容可辨认（平面图 / 节目单 / 页脚横条全可读）</td></tr>
+          <tr><td>PSD 页脚板块内容层</td><td><span class="pill red">失败</span></td><td>UTF-16 检索「企划」0 命中；图层树无页脚文字层 → <a href="#p5">P5</a></td></tr>
+          <tr><td>3:4 比例导出</td><td><span class="pill green">通过</span></td><td class="num">PNG 1242×1656 · PSD 8BPS · 尺寸联动正确</td></tr>
+          <tr><td>默认空文档导出</td><td><span class="pill green">通过</span></td><td class="num">0.43 s · PNG 62 KB · PSD 293 KB，无异常</td></tr>
+          <tr><td>超长文本（60 行）导出</td><td><span class="pill red">失败</span></td><td>导出耗时升至 47 s；卡片底缘 y2190 检出 86 个文字墨点 → 内容被截断 → <a href="#p1">P1</a> <a href="#p2">P2</a></td></tr>
+          <tr><td>背景图跨屏连续性</td><td><span class="pill red">失败</span></td><td>三色带探针 y150/y1104/y2100 = 纯 R/G/B → 单屏内被拉伸 → <a href="#p3">P3</a></td></tr>
+          <tr><td>草稿恢复后导出</td><td><span class="pill yellow">有条件</span></td><td>死 blob 引用时导出静默回落深色底块（RGB 18,79,48），预览缩略图同样打不开，无提示 → <a href="#p6">P6</a></td></tr>
+          <tr><td>连续模式 UI 冒烟</td><td><span class="pill green">通过</span></td><td>切片标记 / 屏容器结构正常</td></tr>
+        </table>
+        <p class="note">完整机器可读数据：<code>audit-banner-20260907/artifacts/results*.json</code>（5 份）；样本文件 34 个（PNG / PSD / 草稿 JSON）。</p>
+      </section>
+
+      <section id="s4">
+        <div class="sec-rule"><span class="no">04</span><h2>问题清单（9 项）</h2></div>
+
+        <div class="issue" id="p1">
+          <div class="issue-head"><span class="no">P1</span><h3>内容超过一屏高度时，导出图静默截断，与预览不一致</h3><span class="pill red">高</span><span class="pill green">已修复并验证</span><span class="pill gray">导出正确性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>板块内容总高超过 2208px（9:16）时，DOM 预览正常撑高滚动，导出 PNG / PSD 直接裁掉超出部分，无任何警告；连续长图只按「屏数 × 屏高」计算总高，同样被裁。</dd>
+              <dt>复现</dt><dd>情报公告正文粘贴约 60 行文本 → 预览卡片完整 → 点「导出当前屏」→ PNG 底缘 y2190 仍有文字墨点（86 px/行），第 40 行以下丢失；样本 <code>p1-longtext.png</code>。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:1897（drawModuleCard maxH=2800 硬上限）· :1949（measureCardLayout 同款上限）· :2018（exportStripPng 总高 = height × pages.length）· :2005（drawPageToCanvas 画布定高）</dd>
+              <dt>影响</dt><dd>长条内容天然容易超一屏；用户拿到的是「看起来正常但缺内容」的成品图，几乎必然翻车。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p5">
+          <div class="issue-head"><span class="no">P5</span><h3>PSD 导出页脚内容层永不生成（字段名错误）</h3><span class="pill red">高</span><span class="pill green">已修复并验证</span><span class="pill gray">功能失效</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>footer 板块在 PSD 里只有板块标题层，页脚文字（微博 / QQ 等）完全缺失。</dd>
+              <dt>复现</dt><dd>任意含页脚的文档 → 导出 PSD → 用 ag-psd 回读或 psd-tools 查看图层树：页脚组下无文字层；对文件做 UTF-16BE 字节检索「企划」0 命中。样本 <code>p3-rich.psd</code>。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:2073：<code>(data.items || []).map(function (it) { return it.text; })</code> —— footer 数据字段是 <code>data.lines</code>（字符串数组，见 registry.js footer createDefault 与实测 <code>itemsInDefault:false</code>），<code>data.items</code> 恒为空 → <code>textLayer</code> 因空值返回 null。</dd>
+              <dt>影响</dt><dd>页脚是长宣图必备收尾板块，PSD 可编辑交付对设计协作场景直接失效。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p2">
+          <div class="issue-head"><span class="no">P2</span><h3>超长内容导出耗时 47 秒，存在卡死与重复排版浪费</h3><span class="pill orange">中</span><span class="pill green">已修复并验证</span><span class="pill gray">性能 / 稳定性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>60 行公告场景：单屏导出从 0.4 s 恶化到 47 s；drawRich 对同一段文本「先排版测量、再逐行绘制」各调用一次 wrapLines，长文本下重复 measure 开销放大。</dd>
+              <dt>复现</dt><dd>同 P1 样本；导出期间页面无任何进度反馈，主线程被占满，连续点击会排队叠加。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:897（wrapLines）· :988（drawRich 绘制前重复排版）· :1001（textBlockInfo 再次排版）</dd>
+              <dt>影响</dt><dd>大内容下浏览器接近假死体验；叠加 P1 截断后，用户长时间等待换来的仍是缺内容的结果。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p3">
+          <div class="issue-head"><span class="no">P3</span><h3>导出时背景图被拉伸变形，与预览的 cover 裁切不一致</h3><span class="pill orange">中</span><span class="pill green">已修复并验证</span><span class="pill gray">导出正确性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>DOM 预览背景 <code>background-size:cover</code>（等比放大居中裁切）；Canvas 导出用 <code>drawImage(img, 0, 0, W, H)</code> 把原图整幅拉伸到画布，比例不符时人物 / 图形变形。</dd>
+              <dt>复现</dt><dd>整条背景设 200×1200 三色带图（上红中绿下蓝）→ 空白屏导出 → 采样 y150/y1104/y2100 分别为纯红/纯绿/纯蓝（若为 cover 应全部是绿色中段）。样本 <code>bg-stretch-probe.png</code>。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:2009：<code>ctx.drawImage(background, 0, 0, canvas.width, canvas.height)</code></dd>
+              <dt>影响</dt><dd>背景是长宣图最常用功能之一；用户在预览里调好的构图，导出后变形且位置对不上。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p4">
+          <div class="issue-head"><span class="no">P4</span><h3>「导出全部屏」无间隔连续触发下载，多屏文档会被浏览器拦截</h3><span class="pill orange">中</span><span class="pill green">已修复并验证</span><span class="pill gray">可用性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>循环内逐屏 toBlob → a.click()，N 屏 = N 次下载请求瞬间连发。Chrome 对非用户手势触发的多次下载只放行第一个，其余静默拦截（头部弹「已阻止下载多个文件」）。</dd>
+              <dt>复现</dt><dd>3 屏文档 → 点「导出全部屏」→ 观察下载栏；屏数越多拦截概率越高（本地 headless 环境未拦截，真实浏览器受手势策略约束）。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:2014–2016（exportPng 循环 + toBlob 回调内 click）· :894（downloadBlob）</dd>
+              <dt>影响</dt><dd>多屏长宣（本工具主场景）下「导出全部」大概率只拿到部分文件，用户不知道少了。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p6">
+          <div class="issue-head"><span class="no">P6</span><h3>画布图片为 blob: 引用：刷新即失效，恢复草稿后图片静默丢失</h3><span class="pill orange">中</span><span class="pill green">已修复并验证</span><span class="pill gray">数据持久化</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>选图统一存 <code>URL.createObjectURL</code>（banner-builder.js:126 等）；草稿 JSON 只存 URL 不存图。跨会话恢复后 blob 指向已死的会话 → loadImage 静默 resolve(null) → 导出回落深色底块 / 空占位，预览缩略图同样裂图，全程无提示。</dd>
+              <dt>复现</dt><dd>选图 → 备份草稿 → 刷新页面 → 恢复草稿 → 导出：封面主视觉变成主题深色底块（采样 RGB 18,79,48）。样本 <code>deadblob-export.png</code>、<code>after-restore.png</code>。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:900（loadImage onerror → null）· :2083（saveDraft）· :2084（loadDraft）</dd>
+              <dt>影响</dt><dd>「备份草稿」给用户的安全感与实际行为相反；对比「我的模板」已做 blob→dataURL 快照，同一页面内两套机制不一致。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p7">
+          <div class="issue-head"><span class="no">P7</span><h3>预览与导出双实现漂移：半宽模块布局、卡片样式细节已不一致</h3><span class="pill yellow">低</span><span class="pill gray">架构项 · 本轮保留</span><span class="pill gray">架构可维护性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>同一文档 DOM 预览与导出图由两套代码各自实现（15 类板块 × 2）；实测差异点：① half 模块后跟 full 模块时预览可并排、导出按两行；② 票务卡片模板导出留白与预览不同；③ 字号换算用手工 2.2 倍系数（px2）而非度量。漂移只会随时间扩大。</dd>
+              <dt>复现</dt><dd>对照 <code>preview-rich-p1.png</code>（DOM 截图）与 <code>p2-rich.png</code>（导出）同板块的间距与高度。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:908–1993（绘制器层）vs :288–683（DOM 渲染层）· :913（px2 系数）</dd>
+              <dt>影响</dt><dd>「所见即所得」承诺打折；每改一个模板要同步两处，漏一处即新漂移。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p8">
+          <div class="issue-head"><span class="no">P8</span><h3>清单符号「乱码」—— 审计误报，已更正</h3><span class="pill gray">误报更正</span><span class="pill gray">视觉细节</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>更正</dt><dd>修复阶段字节级复核确认：原文件 :66 为 <code>content:"✓"</code>（UTF-8 字节 e2 9c 93，码点 10003 = U+2713 勾选符），:70 为 <code>content:"›"</code>（e2 80 ba，U+203A）。审计时把码点 10003 误读为 U+FFFD 替换符（实际 U+FFFD = 65533），控制台字体把 ✓/› 渲染成问号造成误判。<b>源文件从未损坏，无需修改，未做任何改动。</b></dd>
+              <dt>教训</dt><dd>码点判断必须以字节级证据为准（10003 = 0x2713 = ✓），控制台显示不能作为乱码依据。</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="issue" id="p9">
+          <div class="issue-head"><span class="no">P9</span><h3>字体 CDN 依赖无降级提示</h3><span class="pill yellow">低</span><span class="pill green">已修复并验证</span><span class="pill gray">健壮性</span></div>
+          <div class="issue-body">
+            <dl class="kv">
+              <dt>现象</dt><dd>四套可选字体全部从 jsDelivr 在线加载；离线 / CDN 被墙时静默回退本地字体栈，导出仍可用但字形与选择器承诺不符，用户无从得知。</dd>
+              <dt>复现</dt><dd>本次测试环境屏蔽 <code>cdn.jsdelivr.net</code> 后复现：导出成功，字形为回退栈。</dd>
+              <dt>位置</dt><dd class="loc">banner-builder.js:19–27（ensureFont）· :31（readyFontForText catch 空处理）· constants.js FONTS（css 数组）</dd>
+              <dt>影响</dt><dd>对「字体可商用」敏感的活动主办方，交付字形可能偏离预期且不可复现。</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section id="s5">
+        <div class="sec-rule"><span class="no">05</span><h2>边界情况抽样汇总</h2></div>
+        <table class="data">
+          <tr><th style="width:24%">边界场景</th><th style="width:14%">结果</th><th>观察</th></tr>
+          <tr><td>默认 / 空配置（零板块）</td><td><span class="pill green">通过</span></td><td>PNG / PSD 均成功；PSD 只有位图层，无崩溃</td></tr>
+          <tr><td>中文 + emoji + 全角符号（◎￥、&amp;）</td><td><span class="pill green">通过</span></td><td>canvas 与 PSD 文字层编码均正确（ag-psd 内层 text 完整）</td></tr>
+          <tr><td>60 行超长文本</td><td><span class="pill red">失败</span></td><td>截断（P1）+ 47 s 耗时（P2）</td></tr>
+          <tr><td>3:4 比例切换</td><td><span class="pill green">通过</span></td><td>尺寸联动、导出、PSD 全部正确</td></tr>
+          <tr><td>超大比例差异背景图（1:6 竖图）</td><td><span class="pill red">失败</span></td><td>拉伸变形（P3）</td></tr>
+          <tr><td>跨会话草稿恢复</td><td><span class="pill orange">有条件</span></td><td>文字 / 布局恢复完整；图片丢失且无提示（P6）</td></tr>
+          <tr><td>死 blob 引用兜底</td><td><span class="pill orange">有条件</span></td><td>导出不崩、静默回落底块；无用户提示（P6）</td></tr>
+        </table>
+      </section>
+
+      <section id="s6">
+        <div class="sec-rule"><span class="no">06</span><h2>修复建议（仅定位与思路，未动代码）</h2></div>
+        <table class="data">
+          <tr><th style="width:10%">编号</th><th style="width:40%">建议</th><th>涉及位置</th></tr>
+          <tr><td class="num">P1</td><td>导出画布高度改为「max(屏高, 内容实测总高)」；连续长图总高按各屏实测累加；确需固定屏高时在 UI 上给出「内容超屏 n px」警示</td><td class="num">banner-builder.js:2005–2039 · measurePageLayout 已具备实测能力</td></tr>
+          <tr><td class="num">P5</td><td>footer 分支改读 <code>data.lines</code>（字符串数组），并把 ticketInfo 等其余板块的关键文字一并补进文字层</td><td class="num">banner-builder.js:2073 · registry.js footer.createDefault</td></tr>
+          <tr><td class="num">P2</td><td>wrapLines 结果在测量与绘制间复用（一次排版两处使用）；长文档导出加 loading 态与 await 让出主线程</td><td class="num">banner-builder.js:897–1010</td></tr>
+          <tr><td class="num">P3</td><td>背景绘制改用现成的 <code>coverDraw()</code>（同文件 :948 已实现等比 cover 裁切）</td><td class="num">banner-builder.js:2009 · :948</td></tr>
+          <tr><td class="num">P4</td><td>逐屏下载间隔 ≥300 ms，或改为逐屏交互确认 / 打包 zip；至少在 UI 提示「允许下载多个文件」</td><td class="num">banner-builder.js:2014–2016 · :894</td></tr>
+          <tr><td class="num">P6</td><td>saveDraft 前对全文档跑一遍 mytemplates.js 现成的 <code>snapshotData()</code>（blob→dataURL），loadDraft 后反向转 blob 即可彻底修复</td><td class="num">banner-builder.js:2083 · mytemplates.js:62 snapshotData</td></tr>
+          <tr><td class="num">P7</td><td>中期方案：预览改为「Canvas 实时渲染」单一实现（导出函数已具备全部能力），或抽公共布局测量层供两侧共用</td><td class="num">banner-builder.js:288–683 vs 908–1993</td></tr>
+          <tr><td class="num">P8</td><td>两处 <code>content:"?"</code> 分别替换为「✓」「›」（与导出侧一致）</td><td class="num">tools/banner-builder.html:66 · :70</td></tr>
+          <tr><td class="num">P9</td><td>document.fonts.load 失败时给一次性提示；或本地内嵌字体子集（仓库已有 badge-webfonts.js 先例）</td><td class="num">banner-builder.js:31 · constants.js FONTS</td></tr>
+        </table>
+      </section>
+
+      <section id="s7">
+        <div class="sec-rule"><span class="no">07</span><h2>验证方式与证据索引</h2></div>
+        <ul class="plain">
+          <li><b>交叉验证引擎</b>：PSD 同时用页面内 ag-psd 回读 + 独立第三方 psd-tools（Python）解析，两者图层树一致；psd-tools 首次全黑合成是其对无像素预渲染文字层的合成限制，<code>force=True</code> 后内容完整可辨认，排除文件损坏。</li>
+          <li><b>字节级验证</b>：PSD 内 UTF-16BE 检索「可编辑」5 命中、「同人祭」2 命中（文字层数据完好）；「企划」0 命中（页脚内容缺失铁证）。</li>
+          <li><b>像素级验证</b>：背景拉伸用三色带探针 3 点采样；截断用底缘墨点计数（y2190 · 86 px/行）。</li>
+          <li><b>双路径验证</b>：关键导出均同时走 API（<code>window.bannerBuilder.exportPng</code>）与真实按钮点击，结果一致。</li>
+          <li><b>源码零改动</b>：git 工作区 clean（基线 cc83e03），本次仅新增 <code>audit-banner-20260907/</code> 报告与样本目录。</li>
+        </ul>
+        <p class="note">样本文件（34 个）全部位于 <code>Only-box/audit-banner-20260907/artifacts/</code>：逐屏导出 p1–p3-rich.png/psd、all-01–03.png、strip-continuous.png、p1-34.png/psd、bg-stretch-probe.png、p1-longtext.png、after-restore.png、deadblob-export.png、theme-mono.png、p1-empty-default.png/psd、ui-continuous.png、draft.json、results*.json ×5。</p>
+      </section>
+
+      <section id="s8">
+        <div class="sec-rule"><span class="no">08</span><h2>修复记录（2026-09-07 下午）</h2></div>
+        <p>经授权对审计问题实施修复。改动文件仅两个：<code>js/banner-builder.js</code>（+184/−40 行）与 <code>tools/banner-builder.html</code>（按钮提示 + 缓存版本号 v=20260907-1）；<code>tests/banner-builder.test.js</code> 修复后全部通过。以下每项均经 Chrome 152 回归实测：</p>
+        <table class="data">
+          <tr><th style="width:10%">编号</th><th style="width:38%">修复方式</th><th>回归验证证据（audit-banner-20260907/fixed/）</th></tr>
+          <tr><td class="num">P1</td><td>导出前用排版测量结果计算内容真实总高，画布高度 = max(屏高, 内容总高 + 底距)；模块卡片 2800px 临时上限改为「超出即重建更大画布完整重绘」；连续长图按各屏实测高度拼接；导出全部屏的死链提示合并为一次弹窗</td><td>60 行公告：修复前 47s 且截断 → 修复后 <b>0.66s</b>、画布自动扩至 7087px、末行完整、底边距 175px（r2-longtext.png）</td></tr>
+          <tr><td class="num">P5</td><td>页脚文字层改读 <code>data.lines</code></td><td>PSD 回读：<code>页脚内容 · 可编辑文字</code> 层存在，text = 「微博 @Only-box 企划 · 联系 QQ 123456789」（r-p3.psd）</td></tr>
+          <tr><td class="num">P3</td><td>导出背景统一复用 <code>coverDraw</code> 等比裁切；连续长图整条背景用 cover 向下锚定，跨屏衔接连续</td><td>1:6 三色带探针 y150/y1104/y2100 全部 = 纯绿中段（cover 居中），与预览一致（r-bgcover.png）</td></tr>
+          <tr><td class="num">P4</td><td>多屏导出逐屏间隔 320ms；「导出全部屏」按钮提示用户允许下载多个文件</td><td>3 屏 / 2 屏连下全部到达（f-all01/02.png）；headless 环境不触发拦截，间隔策略符合 Chrome 多文件下载手势要求</td></tr>
+          <tr><td class="num">P6</td><td>saveDraft 前用「我的模板」同款 snapshotData 把全部 blob: 转 dataURL；loadDraft 后还原为 blob</td><td>保存 → 刷新 → 恢复 → 导出：封面像素 (139,74,151) = 粉紫渐变原图（f-restore.png / r-after-restore.png）；修复前为深色底块 (18,79,48)</td></tr>
+          <tr><td class="num">P2</td><td>删除死代码 drawText；wrapLines 增加按 (font,宽,文本) 缓存，测量/绘制共享排版结果</td><td>见 P1 耗时对比；单测全部通过</td></tr>
+          <tr><td class="num">P9</td><td>document.fonts.load 返回面数为空时插入一次性降级提示条（bb-font-notice），导出前同样检测</td><td>屏蔽 CDN 场景提示条出现：「在线字体（Noto Sans SC）加载失败，已回退系统近似字体…」</td></tr>
+          <tr><td class="num">P8</td><td>误报更正：原文件即为 ✓ / ›，未做任何改动</td><td>字节级复核 e2 9c 93 / e2 80 ba</td></tr>
+          <tr><td class="num">P7</td><td>本轮保留：双实现统一属架构级重构，风险与工作量显著高于其余项，建议单独立项</td><td>—</td></tr>
+        </table>
+        <p class="note">残余风险：① P7 双实现仍在，预览与导出的细节差异可能继续累积；② 新增长图/长文场景会放大画布尺寸，极端内容仍可能触达浏览器画布上限（已加空 blob 兜底提示）；③ 页面缓存版本号已升为 v=20260907-1，用户首次打开需正常加载新文件。回归样本共 13 个，位于 <code>audit-banner-20260907/fixed/</code>（results-fixed.json / results-final.json 为机器可读数据）。</p>
+      </section>
+
+      <div class="colophon">
+        <span>Only-box · banner-builder 审计 · 2026-09-07</span>
+        <span>AutoClaw · 静态评审 + 浏览器实测 · 源码未改动</span>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

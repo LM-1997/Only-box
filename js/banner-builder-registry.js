@@ -27,6 +27,9 @@
     opt("wave", "波浪线"),
     opt("dots", "圆点"),
     opt("line", "直线"),
+    opt("glitch", "故障线"),
+    opt("thread", "缝线"),
+    opt("dashed", "虚线"),
   ];
 
   const ALIGN_OPTIONS = [
@@ -132,7 +135,7 @@
     programList: [opt("program-list", "节目列表"), opt("program-cards", "节目卡片"), opt("program-compact", "紧凑双栏")],
     performerCard: [opt("performer-side", "人物侧栏"), opt("performer-poster", "人物海报"), opt("performer-grid", "双图资料")],
     boothList: [opt("booth-grid", "摊位网格"), opt("booth-cards", "摊位卡片"), opt("booth-list", "摊位名单")],
-    divider: [opt("wave", "波浪分隔"), opt("dots", "圆点分隔"), opt("line", "直线分隔")],
+    divider: [opt("wave", "波浪分隔"), opt("dots", "圆点分隔"), opt("line", "直线分隔"), opt("glitch", "故障分隔"), opt("thread", "缝线分隔"), opt("dashed", "虚线分隔")],
     footer: [opt("footer-simple", "简洁页脚"), opt("footer-center", "居中页脚"), opt("footer-banner", "信息条"), opt("footer-pills", "胶囊页脚")],
     freeText: [opt("text-basic", "基础文字"), opt("text-highlight", "重点文字"), opt("text-note", "注释文字"), opt("text-card", "白底卡片")],
     freeImageBox: [opt("image-focus", "主图"), opt("image-card", "图片卡片"), opt("image-caption", "图注图片")],

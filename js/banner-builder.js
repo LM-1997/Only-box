@@ -51,6 +51,24 @@
     } catch (error) { /* 字体加载失败时使用回退字体渲染 */ }
   }
 
+  /* 导出字体门禁：标题/正文两种角色的 webfont 全部就绪（含中文分片按需命中）才开始导出。 */
+  async function readyFontsForPage(page) {
+    if (!document.fonts || typeof document.fonts.load !== "function") return;
+    const headingKey = state.doc.headingFont || state.doc.fontFamily || "sans";
+    const bodyKey = state.doc.bodyFont || headingKey;
+    const payload = ((state.doc.pages || []).map(collectPageText).join(" ") + " " + collectPageText(page) + " 0123456789").slice(0, 4000);
+    const jobs = [];
+    [headingKey, bodyKey].forEach(function (key) {
+      const f = C.FONTS[key];
+      if (!f) return;
+      ensureFont(key);
+      ["400", "700", "900"].forEach(function (weight) {
+        try { jobs.push(document.fonts.load(weight + ' 24px "' + f.family + '"', payload)); } catch (error) { /* 忽略单档失败 */ }
+      });
+    });
+    try { await Promise.all(jobs); if (document.fonts.ready) await document.fonts.ready; } catch (error) { /* 超时/失败时按已就绪字体导出 */ }
+  }
+
   function collectPageText(page) {
     const parts = [];
     (page.modules || []).forEach(function (module) {
@@ -652,7 +670,9 @@
   }
 
   function renderDivider(box, data, tpl) {
-    const style = tpl === "dots" ? "dots" : tpl === "line" ? "line" : "wave";
+    const themeDiv = artTheme().divider || "wave";
+    const raw = (tpl === "wave" && themeDiv !== "wave") ? themeDiv : (tpl || themeDiv);
+    const style = ["dots", "line", "glitch", "thread", "dashed"].indexOf(raw) >= 0 ? raw : "wave";
     box.appendChild(el("div", "bb-art-divider " + style, ""));
   }
 
@@ -716,15 +736,32 @@
 
   function applyBlockSurface(box, data) {
     const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : .94;
-    box.style.padding = Math.max(0, Number(data.padding) || 16) + "px";
-    box.style.marginBottom = Math.max(0, Number(data.marginBottom) || 18) + "px";
-    box.style.borderRadius = Math.max(0, Number(data.radius) || 0) + "px";
-    box.style.borderColor = data.blockBorderColor || "";
+    const st = artTheme();
+    box.style.padding = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), st) + "px";
+    box.style.marginBottom = Math.max(px2(Number(data.marginBottom) || 18), 24) + "px";
+    box.style.borderRadius = cardRadius(data, st) + "px";
     box.style.textAlign = data.contentAlign || "center";
-    box.style.backgroundColor = data.blockBgColor ? (hexToRgba(data.blockBgColor, opacity) || data.blockBgColor) : "rgba(255,255,255," + opacity + ")";
+    box.style.backgroundColor = cardBaseFill(st, data, opacity);
+    box.style.borderStyle = st.cardStyle === "ticket" ? "dashed" : "solid";
+    box.style.borderWidth = (st.cardStyle === "panel" ? 2.5 : st.cardStyle === "sticker" ? 7 : st.cardStyle === "glass" ? 1.5 : st.cardStyle === "ink" ? 2 : 2) + "px";
+    box.style.borderColor = data.blockBorderColor || (st.cardStyle === "panel" ? st.primaryDark : st.cardStyle === "sticker" ? alphaColor(st.primary, 0.9) : st.cardStyle === "glass" ? alphaColor("#ffffff", 0.7) : st.cardStyle === "ink" ? alphaColor(st.primaryDark, 0.75) : st.cardStyle === "ticket" ? alphaColor(st.primary, 0.45) : alphaColor(st.primary, 0.16));
+    let domShadow = st.shadow === "hard" ? "6px 7px 0 " + alphaColor(st.primaryDark, 0.85)
+      : st.shadow === "glow" ? "0 4px 22px " + alphaColor(st.primary, 0.5)
+      : st.shadow === "none" ? "none"
+      : "0 12px 26px rgba(38,65,51,.15)";
+    if (st.cardStyle === "sticker") domShadow += ", inset 0 0 0 3px #ffffff";
+    if (st.cardStyle === "ink") domShadow += ", inset 0 0 0 1px " + alphaColor(st.primary, 0.35);
+    box.style.boxShadow = domShadow;
+    box.classList.remove("bb-card-card", "bb-card-panel", "bb-card-glass", "bb-card-ink", "bb-card-ticket", "bb-card-sticker");
+    box.classList.add("bb-card-" + (st.cardStyle || "card"));
     if (data.blockBgImage && data.blockBgImage.url) { box.style.backgroundImage = "url(\"" + data.blockBgImage.url + "\")"; box.style.backgroundSize = "cover"; box.style.backgroundPosition = "center"; }
     box.dataset.imageRatio = data.imageRatio || "auto";
     box.dataset.imageFit = data.imageFit || "cover";
+  }
+
+  function applyBodyFontScope(rootEl) {
+    if (!rootEl) return;
+    rootEl.style.fontFamily = C.bodyFontStack(state.doc);
   }
 
   function buildModule(page, module, index) {
@@ -740,11 +777,13 @@
     title.appendChild(el("strong", "bb-art-h2", moduleTitle(module, def)));
     head.appendChild(title);
     const actions = el("div", "bb-art-actions");
+    actions.style.setProperty("--bb-btn-comp", String(1 / Math.max(0.05, state.zoom || 1)));
     const up = el("button", "bb-icon-btn", "↑"); up.type = "button"; up.title = "上移"; up.disabled = index === 0; up.dataset.action = "module-up"; up.dataset.moduleId = module.id;
     const down = el("button", "bb-icon-btn", "↓"); down.type = "button"; down.title = "下移"; down.disabled = index === page.modules.length - 1; down.dataset.action = "module-down"; down.dataset.moduleId = module.id;
     const remove = el("button", "bb-icon-btn danger", "×"); remove.type = "button"; remove.title = "删除模块"; remove.dataset.action = "module-del"; remove.dataset.moduleId = module.id;
     actions.appendChild(up); actions.appendChild(down); actions.appendChild(remove); head.appendChild(actions); box.appendChild(head);
     addVisualBody(box, module);
+    box.querySelectorAll(".bb-art-body,.bb-art-caption,.bb-setlist-item,.bb-cover-qq,.bb-quote-source,.bb-art-free-text,.bb-art-info,.bb-art-subtitle").forEach(applyBodyFontScope);
     box.querySelectorAll("img").forEach(function (image) {
       image.style.objectFit = dataImageFit(module.data);
       if (module.data.imageRatio && module.data.imageRatio !== "auto") image.style.aspectRatio = module.data.imageRatio.replace(":", " / ");
@@ -766,11 +805,14 @@
     }
     const canvas = el("div", "bb-page-canvas"); canvas.dataset.action = "page-pick"; canvas.dataset.pageId = page.id; canvas.style.aspectRatio = pageSize().pageWidth + " / " + pageSize().pageHeight;
     if (continuous) { if (isActive) canvas.classList.add("is-active"); canvas.style.width = "100%"; }
-    else canvas.style.width = Math.round(state.zoom * 100) + "%";
+    else { canvas.style.width = pageSize().pageWidth + "px"; canvas.style.zoom = state.zoom; }
     canvas.dataset.theme = state.doc.theme || "forest";
+    canvas.style.fontFamily = C.headingFontStack(state.doc);
     applyThemeVars(canvas);
     canvas.style.setProperty("--bb-font-heading", C.headingFontStack(state.doc));
     canvas.style.setProperty("--bb-font-body", C.bodyFontStack(state.doc));
+    canvas.style.setProperty("--bb-page-bg", page.backgroundColor || state.doc.backgroundColor || "#ffffff");
+    canvas.classList.add("bb-pattern-" + (artTheme().pattern || "none"));
     if (continuous) {
       if (page.backgroundColor) canvas.style.backgroundColor = page.backgroundColor;
       if (page.backgroundImage && page.backgroundImage.url) { canvas.style.backgroundImage = docBackgroundStyle(page.backgroundImage); canvas.style.backgroundSize = "cover"; }
@@ -780,7 +822,7 @@
       const pageImage = page.backgroundImage || state.doc.backgroundImage;
       if (pageImage && pageImage.url) { canvas.style.backgroundImage = docBackgroundStyle(pageImage); canvas.style.backgroundSize = "cover"; }
     }
-    if (!page.modules.length) canvas.appendChild(el("div", "bb-page-empty", "从左侧添加第一个板块，开始制作真实长条。"));
+    if (!page.modules.length) { const emptyTip = el("div", "bb-page-empty bb-dom-only", "从左侧添加第一个板块，开始制作真实长条。"); canvas.appendChild(emptyTip); }
     else {
       const rows = M.packModuleRows(page.modules);
       rows.forEach(function (row) {
@@ -808,15 +850,18 @@
     const keep = els.canvasBody.scrollTop; const frag = document.createDocumentFragment();
     if (continuousMode()) {
       const strip = el("div", "bb-strip");
-      strip.style.width = Math.round(state.zoom * 100) + "%";
+      strip.style.width = pageSize().pageWidth + "px"; strip.style.zoom = state.zoom;
       strip.style.backgroundColor = state.doc.backgroundColor || "#ffffff";
       if (state.doc.backgroundImage && state.doc.backgroundImage.url) { strip.style.backgroundImage = docBackgroundStyle(state.doc.backgroundImage); strip.style.backgroundSize = "cover"; }
       state.doc.pages.forEach(function (page, index) { strip.appendChild(buildPage(page, index, true)); });
+      strip.style.fontFamily = C.headingFontStack(state.doc);
       applyThemeVars(strip);
+      strip.classList.add("bb-pattern-" + (artTheme().pattern || "none"));
       frag.appendChild(strip);
     } else {
       state.doc.pages.forEach(function (page, index) { frag.appendChild(buildPage(page, index, false)); });
     }
+    els.canvasBody.style.setProperty("--bb-view-zoom", String(state.zoom || 1));
     els.canvasBody.classList.toggle("bb-continuous", continuousMode());
     els.canvasBody.textContent = ""; els.canvasBody.appendChild(frag); els.canvasBody.scrollTop = keep;
   }
@@ -902,7 +947,19 @@
     (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type)); });
   }
 
-  function renderAll() { renderToolbar(); renderLibrary(); renderCanvas(); renderPanel(); }
+  function renderAll() {
+    try {
+      renderToolbar(); renderLibrary(); renderCanvas(); renderPanel();
+    } catch (error) {
+      try {
+        els.canvasBody.textContent = "";
+        const bug = el("div", "bb-page-empty", "界面渲染出现异常：" + (error && error.message || error) + "。请刷新页面重试；若反复出现请导出草稿反馈。");
+        bug.classList.add("bb-dom-only");
+        els.canvasBody.appendChild(bug);
+      } catch (_) {}
+      if (global.console && global.console.error) global.console.error("renderAll error:", error);
+    }
+  }
   /* 连续模式跟随：新增屏后让新屏顶部对齐可视区上沿（新屏在最下）。 */
   function scrollCanvasToBottom() {
     const target = document.querySelector("#canvasBody .bb-page-canvas.is-active") || document.querySelector(".bb-strip");
@@ -944,12 +1001,151 @@
 
   /* 主题色：与 DOM 预览同源（C.THEMES[theme]），保证导出观感随主题变化。 */
   function artTheme() {
-    return C.THEMES[state.doc.theme] || C.THEMES.forest;
+    return C.themeStyle(state.doc.theme);
   }
-  /* 把 CSS px 手感换算成 1242 设计宽下的像素（预览列 ≈ 宽度的一半显示，
-     因此导出文字/间距需比 DOM CSS px 放大 ~2.2 倍才与预览等观感）。 */
+
+  /* ===== 主题风格绘制辅助（卡片骨架/形状/底纹），DOM 与 Canvas 双侧共用同名概念 ===== */
+  let pageBgColorForHoles = "#ffffff";
+  let noiseCanvas = null;
+  function noisePattern(ctx) {
+    if (!noiseCanvas) {
+      noiseCanvas = document.createElement("canvas"); noiseCanvas.width = 64; noiseCanvas.height = 64;
+      const nc = noiseCanvas.getContext("2d");
+      const img = nc.createImageData(64, 64);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = 110 + Math.floor(Math.random() * 130);
+        img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = 255;
+      }
+      nc.putImageData(img, 0, 0);
+    }
+    return ctx.createPattern(noiseCanvas, "repeat");
+  }
+  function cardRadius(data, st) {
+    const user = Number(data.radius);
+    const base = (user === 13 || !Number.isFinite(user)) ? (st.radius != null ? st.radius : 27) : user;
+    return Math.max(0, Math.round(base));
+  }
+  function cardRadiusDom(data, st) {
+    return cardRadius(data, st);
+  }
+  function styleCardPad(base, st) {
+    if (st.cardStyle === "ticket") return base + 20;
+    if (st.cardStyle === "panel") return base + 2;
+    return base;
+  }
+  function cardBaseFill(st, data, opacity) {
+    if (data.blockBgColor) return hexToRgba(data.blockBgColor, opacity) || data.blockBgColor;
+    switch (st.cardStyle) {
+      case "glass": return alphaColor("#ffffff", Math.min(0.62, opacity * 0.66));
+      case "ink": return alphaColor(st.soft, 0.97);
+      case "panel": return alphaColor("#ffffff", 0.94);
+      case "ticket": return alphaColor("#ffffff", 0.97);
+      case "sticker": return alphaColor("#ffffff", 0.96);
+      default: return cardFillStyle(data, "#ffffff");
+    }
+  }
+  function drawCardBase(ctx, x, y, w, h, r, st, data, opacity) {
+    ctx.save();
+    if (st.shadow === "hard") {
+      ctx.fillStyle = alphaColor(st.primaryDark, 0.85);
+      roundRectPath(ctx, x + 6, y + 7, w, h, r); ctx.fill();
+    } else if (st.shadow === "glow") {
+      ctx.shadowColor = alphaColor(st.primary, 0.5); ctx.shadowBlur = 22; ctx.shadowOffsetY = 4;
+    } else if (st.shadow === "soft") {
+      ctx.shadowColor = "rgba(38,65,51,.15)"; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12;
+    }
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.fillStyle = cardBaseFill(st, data, opacity);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawCardBorder(ctx, x, y, w, h, r, st, data) {
+    ctx.save();
+    const userColor = data.blockBorderColor || "";
+    if (st.cardStyle === "panel") {
+      ctx.strokeStyle = userColor || st.primaryDark; ctx.lineWidth = 2.5;
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+    } else if (st.cardStyle === "glass") {
+      ctx.strokeStyle = userColor || alphaColor("#ffffff", 0.7); ctx.lineWidth = 1.5;
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+      ctx.strokeStyle = alphaColor(st.primary, 0.35); ctx.lineWidth = 1;
+      roundRectPath(ctx, x + 2, y + 2, w - 4, h - 4, Math.max(1, r - 2)); ctx.stroke();
+    } else if (st.cardStyle === "ink") {
+      ctx.strokeStyle = userColor || alphaColor(st.primaryDark, 0.75); ctx.lineWidth = 2;
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+      ctx.strokeStyle = alphaColor(st.primary, 0.5); ctx.lineWidth = 1;
+      roundRectPath(ctx, x + 8, y + 8, w - 16, h - 16, Math.max(1, r - 7)); ctx.stroke();
+    } else if (st.cardStyle === "ticket") {
+      ctx.strokeStyle = userColor || alphaColor(st.primary, 0.45); ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 7]);
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (st.cardStyle === "sticker") {
+      ctx.strokeStyle = userColor || alphaColor(st.primary, 0.9); ctx.lineWidth = 7;
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
+      roundRectPath(ctx, x + 5, y + 5, w - 10, h - 10, Math.max(1, r - 4)); ctx.stroke();
+    } else {
+      ctx.strokeStyle = userColor || alphaColor(st.primary, 0.16); ctx.lineWidth = 2;
+      roundRectPath(ctx, x, y, w, h, r); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawCardDecor(ctx, x, y, w, h, r, st) {
+    ctx.save();
+    if (st.cardStyle === "panel") {
+      roundRectPath(ctx, x, y, w, h, r); ctx.clip();
+      ctx.fillStyle = st.accent; ctx.fillRect(x, y, 26, 26);
+      ctx.restore(); ctx.save();
+    }
+    if (st.cardStyle === "ticket") {
+      const r0 = 13;
+      const holes = [{ cx: x, cy: y + h / 2 }, { cx: x + w, cy: y + h / 2 }];
+      holes.forEach(function (pos) {
+        ctx.beginPath(); ctx.arc(pos.cx, pos.cy, r0, 0, Math.PI * 2);
+        ctx.fillStyle = pageBgColorForHoles || "#ffffff"; ctx.fill();
+        ctx.strokeStyle = alphaColor(st.primary, 0.4); ctx.lineWidth = 1.5; ctx.stroke();
+      });
+    }
+    ctx.restore();
+  }
+  function drawPatternOverlay(ctx, w, h, st) {
+    ctx.save();
+    if (st.pattern === "grid") {
+      ctx.globalAlpha = 0.05; ctx.strokeStyle = st.primaryDark; ctx.lineWidth = 1;
+      for (let gx = 0; gx <= w; gx += 48) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
+      for (let gy = 0; gy <= h; gy += 48) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+    } else if (st.pattern === "dots") {
+      ctx.globalAlpha = 0.06; ctx.fillStyle = st.primary;
+      for (let gy = 18; gy < h; gy += 36) for (let gx = 18; gx < w; gx += 36) { ctx.beginPath(); ctx.arc(gx, gy, 2, 0, Math.PI * 2); ctx.fill(); }
+    } else if (st.pattern === "stripes") {
+      ctx.globalAlpha = 0.04; ctx.strokeStyle = st.primary; ctx.lineWidth = 5;
+      for (let gx = -h; gx < w; gx += 56) { ctx.beginPath(); ctx.moveTo(gx, h); ctx.lineTo(gx + h, 0); ctx.stroke(); }
+    } else if (st.pattern === "noise") {
+      const nz = noisePattern(ctx);
+      if (nz) { ctx.globalAlpha = 0.04; ctx.fillStyle = nz; ctx.fillRect(0, 0, w, h); }
+    } else if (st.pattern === "paper") {
+      ctx.globalAlpha = 0.035; ctx.strokeStyle = st.primaryDark; ctx.lineWidth = 1;
+      for (let gx = -h; gx < w; gx += 90) { ctx.beginPath(); ctx.moveTo(gx, h); ctx.lineTo(gx + h, 0); ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+  function chipPath(ctx, x, y, bw, bh, size, shape) {
+    if (shape === "tag") {
+      const sl = Math.round(bh * 0.35);
+      ctx.beginPath();
+      ctx.moveTo(x + sl, y);
+      ctx.lineTo(x + bw, y);
+      ctx.lineTo(x + bw - sl, y + bh);
+      ctx.lineTo(x, y + bh);
+      ctx.closePath();
+    } else {
+      roundRectPath(ctx, x, y, bw, bh, shape === "squared" ? Math.round(size * 0.18) : Math.round(bh / 2));
+    }
+  }
+  /* 750 设计宽度空间：导出坐标与预览 CSS px 同一单位（px2 保留为兼容别名）。 */
   function px2(v) {
-    return Math.max(1, Math.round((Number(v) || 0) * 2.2));
+    return Math.max(1, Math.round((Number(v) || 0) * 2.08));
   }
   /* canvas 只认 100 一档的 numeric font-weight，兜底 clamp 到最接近档位。 */
   function artWeight(v) {
@@ -1064,7 +1260,8 @@
   function drawChips(ctx, items, x, y, maxWidth, opt) {
     if (!items || !items.length) return y;
     const o = opt || {};
-    const size = o.size || 27;
+    const shape = o.shape || artTheme().chips || "pill";
+    const size = o.size || 23;
     const gap = Math.round(size * 0.6);
     const padX = Math.round(size * 0.95);
     const lh = Math.round(size * 1.85);
@@ -1088,8 +1285,8 @@
       rowsLayout.forEach(function (line) {
         let sx = x - line.width / 2;
         line.row.forEach(function (chip) {
-          if (o.fill) { ctx.fillStyle = o.fill; roundRectPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.fill(); }
-          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; roundRectPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.stroke(); }
+          if (o.fill) { ctx.fillStyle = o.fill; chipPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), size, shape); ctx.fill(); }
+          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; chipPath(ctx, sx, cy - padTop, chip.bw, Math.round(size * 1.5), size, shape); ctx.stroke(); }
           ctx.fillStyle = o.color || artInk();
           ctx.fillText(chip.label, sx + padX, cy + Math.round(size * 0.32));
           sx += chip.bw + gap;
@@ -1100,8 +1297,8 @@
       let cx = x;
       rowsLayout.forEach(function (line) {
         line.row.forEach(function (chip) {
-          if (o.fill) { ctx.fillStyle = o.fill; roundRectPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.fill(); }
-          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; roundRectPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), Math.round(size * 0.75)); ctx.stroke(); }
+          if (o.fill) { ctx.fillStyle = o.fill; chipPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), size, shape); ctx.fill(); }
+          if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = o.lw || 2; chipPath(ctx, cx, cy - padTop, chip.bw, Math.round(size * 1.5), size, shape); ctx.stroke(); }
           ctx.fillStyle = o.color || artInk();
           ctx.fillText(chip.label, cx + padX, cy + Math.round(size * 0.32));
           cx += chip.bw + gap;
@@ -1132,21 +1329,39 @@
     return rows * Math.round(size * 1.85);
   }
   function drawDividerShape(ctx, data, x, y, w, color) {
-    const style = data.template === "dots" ? "dots" : data.template === "line" ? "line" : "wave";
+    const themeDiv = artTheme().divider || "wave";
+    const raw = (data.template === "wave" && themeDiv !== "wave") ? themeDiv : (data.template || themeDiv);
+    const style = ["dots", "line", "glitch", "thread", "dashed"].indexOf(raw) >= 0 ? raw : "wave";
     ctx.save();
-    const cy = y + Math.round(22);
-    if (style === "line") {
-      ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + w, cy); ctx.stroke();
+    const cy = y + Math.round(19);
+    if (style === "glitch") {
+      ctx.strokeStyle = color; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x, cy - 4); ctx.lineTo(x + Math.round(w * 0.72), cy - 4); ctx.stroke();
+      ctx.strokeStyle = alphaColor(artTheme().accent, 0.9); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x + Math.round(w * 0.28), cy + 4); ctx.lineTo(x + w, cy + 4); ctx.stroke();
+      ctx.fillStyle = color; ctx.fillRect(x + Math.round(w * 0.4), cy - 2, 10, 10);
+    } else if (style === "thread") {
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([10, 7]);
+      ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + w, cy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.fillRect(x + Math.round(w * 0.5) - 5, cy - 5, 10, 10);
+    } else if (style === "dashed") {
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([11, 9]);
+      ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + w, cy); ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (style === "line") {
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + w, cy); ctx.stroke();
     } else if (style === "dots") {
-      ctx.fillStyle = color; const d = 9; const gap = Math.round(26);
+      ctx.fillStyle = color; const d = 6; const gap = Math.round(16);
       const count = Math.max(1, Math.floor((w - d) / (d + gap)));
       const start = x + (w - (count * d + (count - 1) * gap)) / 2;
       for (let i = 0; i < count; i += 1) { ctx.beginPath(); ctx.arc(start + i * (d + gap) + d / 2, cy, d / 2, 0, Math.PI * 2); ctx.fill(); }
     } else {
       ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.lineCap = "round";
       ctx.beginPath();
-      const seg = Math.max(1, Math.floor(w / 64));
-      const amp = 12;
+      const seg = Math.max(1, Math.floor(w / 40));
+      const amp = 8;
       for (let i = 0; i <= seg; i += 1) {
         const px = x + (w * i) / seg;
         const py = cy + (i % 2 === 0 ? -amp : amp);
@@ -1183,19 +1398,19 @@
     const subtitle = data.subtitle;
     const infoLines = (data.infoLines || []).slice(0, 6).filter(Boolean);
     const qqText = data.qqGroupNumber ? "QQ 群：" + data.qqGroupNumber : "";
-    const chipPlain = { size: 28, color: ink, border: alphaColor(P.primary, 0.35), fill: "#ffffff", lw: 2 };
-    const chipCenter = { size: 28, color: P.primaryDark, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2, center: true };
+    const chipPlain = { size: 23, color: ink, border: alphaColor(P.primary, 0.35), fill: "#ffffff", lw: 2 };
+    const chipCenter = { size: 23, color: P.primaryDark, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2, center: true };
     const drawInfoCopy = function (yy, centered) {
       let c = yy;
-      c = drawRich(ctx, title, centered ? x0 + w / 2 : x0, c, w, 82, 900, P.primaryDark, centered ? "center" : "left", 1.2) + 16;
-      if (subtitle) c = drawRich(ctx, subtitle, centered ? x0 + w / 2 : x0, c, w, 35, 500, artMuted(), centered ? "center" : "left") + 14;
+      c = drawRich(ctx, title, centered ? x0 + w / 2 : x0, c, w, 65, 900, P.primaryDark, centered ? "center" : "left", 1.2) + 19;
+      if (subtitle) c = drawRich(ctx, subtitle, centered ? x0 + w / 2 : x0, c, w, 29, 500, artMuted(), centered ? "center" : "left") + 17;
       c = drawChips(ctx, infoLines, centered ? x0 + w / 2 : x0, c + 4, w, centered ? chipCenter : chipPlain);
-      if (qqText) c = drawRich(ctx, qqText, centered ? x0 + w / 2 : x0, c + 10, w, 27, 500, artMuted(), centered ? "center" : "left") + 8;
+      if (qqText) c = drawRich(ctx, qqText, centered ? x0 + w / 2 : x0, c + 13, w, 23, 500, artMuted(), centered ? "center" : "left") + 10;
       return c;
     };
     if (tpl === "info") {
       let y = y0;
-      if (img) { const h = Math.min(Math.round(w * 0.6), 860); ctx.save(); roundRectPath(ctx, x0, y, w, h, 24); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 34; }
+      if (img) { const h = Math.min(Math.round(w * 0.6), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 71; }
       return drawInfoCopy(y, false);
     }
     if (tpl === "minimal") {
@@ -1203,28 +1418,28 @@
     }
     if (tpl === "split") {
       let y = y0;
-      if (img) { const h = Math.min(Math.round(w * 0.64), 940); ctx.save(); roundRectPath(ctx, x0, y, w, h, 24); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 36; }
-      else { ctx.save(); roundRectPath(ctx, x0, y, w, 300, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore(); y += 340; }
+      if (img) { const h = Math.min(Math.round(w * 0.64), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 75; }
+      else { ctx.save(); roundRectPath(ctx, x0, y, w, 354, 21); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore(); y += 400; }
       return drawInfoCopy(y, false);
     }
     /* immersive 沉浸封面：主图整幅 + 底部渐变信息带（从下往上锚定）。 */
-    const heroH = img ? Math.round(w * 0.94) : Math.round(w * 0.6);
+    const heroH = img ? Math.round(w * 0.85) : Math.round(w * 0.6);
     if (img) { ctx.save(); roundRectPath(ctx, x0, y0, w, heroH, 26); ctx.clip(); coverDraw(ctx, img, x0, y0, w, heroH); ctx.restore(); }
     else { ctx.save(); roundRectPath(ctx, x0, y0, w, heroH, 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
     drawGradientOverlay(ctx, x0, y0 + Math.round(heroH * 0.42), w, heroH - Math.round(heroH * 0.42), P.primaryDark, 0.05, 0.88);
     const cx = x0 + w / 2;
-    const cw = w - 70;
-    let bottom = y0 + heroH - 46;
+    const cw = w - 40;
+    let bottom = y0 + heroH - 26;
     const infoShown = infoLines.slice(0, 3);
     for (let i = infoShown.length - 1; i >= 0; i -= 1) {
       if (!infoShown[i]) continue;
-      bottom = paintUpText(ctx, infoShown[i], cx, bottom - 6, cw, 26, 500, "rgba(255,255,255,.85)", "center", 1.55);
-      bottom -= 18;
+      bottom = paintUpText(ctx, infoShown[i], cx, bottom - 4, cw, 11, 500, "rgba(255,255,255,.85)", "center", 1.55);
+      bottom -= 10;
     }
-    if (subtitle) { bottom = paintUpText(ctx, subtitle, cx, bottom - 6, cw, 34, 600, "rgba(255,255,255,.96)", "center", 1.45); bottom -= 22; }
-    paintUpText(ctx, title, cx, bottom - 4, cw, 88, 900, "#ffffff", "center", 1.22);
+    if (subtitle) { bottom = paintUpText(ctx, subtitle, cx, bottom - 8, cw, 29, 600, "rgba(255,255,255,.96)", "center", 1.45); bottom -= 25; }
+    paintUpText(ctx, title, cx, bottom - 6, cw, 65, 900, "#ffffff", "center", 1.22);
     let y = y0 + heroH;
-    if (qqText) y = drawRich(ctx, qqText, cx, y + 28, w, 28, 500, artMuted(), "center") + 10;
+    if (qqText) y = drawRich(ctx, qqText, cx, y + 33, w, 23, 500, artMuted(), "center") + 13;
     return y;
   }
 
@@ -1234,7 +1449,7 @@
     const bodyValue = data.body || "在这里填写活动公告、入场须知或情报说明。";
     const heading = data.heading || "";
     const align = data.bodyAlign === "right" ? "right" : data.bodyAlign === "center" ? "center" : "left";
-    const bodySize = 34; const bodyMul = 1.62; const headSize = 44;
+    const bodySize = 29; const bodyMul = 1.7; const headSize = 29;
     const anchor = function (leftX, width) {
       return { x: align === "center" ? leftX + width / 2 : align === "right" ? leftX + width : leftX };
     };
@@ -1245,17 +1460,17 @@
       y = drawRich(ctx, bodyValue, a.x, y, w, bodySize, 400, ink, align, bodyMul);
       return y;
     }
-    const padX = 38;
+    const padX = 30;
     const innerLeft = x0 + padX;
     const innerW = Math.max(60, w - padX * 2);
     const a = anchor(innerLeft, innerW);
     const headInfo = heading ? textBlockInfo(ctx, heading, innerW, headSize, 800, 1.35) : { height: 0 };
     const bodyInfo = textBlockInfo(ctx, bodyValue, innerW, bodySize, 400, bodyMul);
     if (tpl === "boxed") {
-      const padY = 32;
+      const padY = 20;
       const paneH = padY * 2 + headInfo.height + (heading ? 12 : 0) + bodyInfo.height;
       let y = y0 + padY + Math.round(headSize * 0.2);
-      if (heading) y = drawRich(ctx, heading, a.x, y, innerW, headSize, 800, P.primaryDark, align, 1.35) + 12;
+      if (heading) y = drawRich(ctx, heading, a.x, y, innerW, headSize, 800, P.primaryDark, align, 1.35) + 13;
       drawRich(ctx, bodyValue, a.x, y, innerW, bodySize, 400, ink, align, bodyMul);
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.primary, 0.42); ctx.lineWidth = 3; ctx.setLineDash([2, 16]); ctx.stroke(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.accent, 0.9); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
@@ -1263,21 +1478,21 @@
     }
     /* notice / quote：内衬面板 */
     let innerH = bodyInfo.height;
-    if (heading) innerH += headInfo.height + 12;
-    if (tpl === "quote") innerH = Math.max(innerH, 170);
+    if (heading) innerH += headInfo.height + 7;
+    if (tpl === "quote") innerH = Math.max(innerH, 100);
     const padTop = 30; const padBottom = 30;
     const paneH = padTop + innerH + padBottom;
     let bodyLeft = innerLeft;
     let bodyTopPad = 0;
     if (tpl === "quote") {
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
-      ctx.save(); artFont(ctx, 104, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.fillText("“", x0 + 24, y0 + padTop + 120); ctx.restore();
-      bodyLeft = x0 + 116;
+      ctx.save(); artFont(ctx, 71, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.fillText("“", x0 + 18, y0 + padTop + 78); ctx.restore();
+      bodyLeft = x0 + 66;
       bodyTopPad = 4;
     } else {
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = alphaColor(P.primary, 0.07); ctx.fill(); ctx.restore();
-      ctx.save(); roundRectPath(ctx, x0, y0 + 10, 12, paneH - 20, 6); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
-      bodyLeft = innerLeft + 14;
+      ctx.save(); roundRectPath(ctx, x0, y0 + 6, 9, paneH - 12, 4); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
+      bodyLeft = innerLeft + 10;
       bodyTopPad = 0;
     }
     const bodyW = Math.max(60, w - (bodyLeft - x0) - padX);
@@ -1286,12 +1501,12 @@
     if (heading && tpl !== "quote") {
       const headLeft = x0 + padX;
       const ha = anchor(headLeft, bodyW);
-      y = drawRich(ctx, heading, ha.x, y, bodyW, headSize, 800, P.primaryDark, align, 1.35) + 12;
+      y = drawRich(ctx, heading, ha.x, y, bodyW, headSize, 800, P.primaryDark, align, 1.35) + 13;
     }
-    y = y0 + padTop + Math.round(bodySize * 0.2) + (heading && tpl !== "quote" ? headInfo.height + 12 : 0) + bodyTopPad;
+    y = y0 + padTop + Math.round(bodySize * 0.2) + (heading && tpl !== "quote" ? headInfo.height + 13 : 0) + bodyTopPad;
     if (tpl === "quote") {
       drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 700, "#20251f", align, bodyMul);
-      if (heading) drawRich(ctx, heading, x0 + w - padX, y0 + paneH - padBottom + 10, innerW, 26, 600, P.primaryDark, "right", 1.4);
+      if (heading) drawRich(ctx, heading, x0 + w - padX, y0 + paneH - padBottom + 12, innerW, 23, 600, P.primaryDark, "right", 1.4);
     } else {
       drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 400, ink, align, bodyMul);
     }
@@ -1303,7 +1518,7 @@
     const tiers = (data.tiers || []).filter(function (t) { return t && (t.label || t.price); });
     const qr = await loadImage(data.qrImage);
     const tpl = data.template || "qr-side";
-    const qrSize = Math.round(w * 0.2);
+    const qrSize = Math.round(w * 0.32);
     if (tpl === "ticket-focus" || tpl === "ticket-hero") {
       const first = tiers[0];
       const bandH = Math.round(w * 0.42);
@@ -1314,20 +1529,20 @@
       }
       if (first) {
         ctx.fillStyle = "#ffffff"; ctx.textAlign = "left";
-        y = drawRich(ctx, text(first.price, "价格"), x0 + 36, y + Math.round(bandH * 0.34), w * 0.6, 108, 900, "#ffffff", "left", 1) + 4;
-        if (first.label) y = drawRich(ctx, first.label, x0 + 36, y + 6, w * 0.6, 30, 600, "rgba(255,255,255,.9)", "left") + 6;
-      } else y = drawRich(ctx, "价格", x0 + 36, y + Math.round(bandH * 0.4), w * 0.6, 96, 900, "#ffffff", "left") + 4;
+        y = drawRich(ctx, text(first.price, "价格"), x0 + 22, y + Math.round(bandH * 0.34), w * 0.6, 71, 900, "#ffffff", "left", 1) + 6;
+        if (first.label) y = drawRich(ctx, first.label, x0 + 22, y + 8, w * 0.6, 27, 600, "rgba(255,255,255,.9)", "left") + 8;
+      } else y = drawRich(ctx, "价格", x0 + 22, y + Math.round(bandH * 0.4), w * 0.6, 71, 900, "#ffffff", "left") + 6;
       y += Math.round(bandH * 0.18);
       const rest = tiers.slice(1);
-      if (rest.length) y = drawChips(ctx, rest.map(function (t) { return [t.label, t.price].filter(Boolean).join("　"); }), x0, y + 14, w, { size: 27, color: ink, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2 });
+      if (rest.length) y = drawChips(ctx, rest.map(function (t) { return [t.label, t.price].filter(Boolean).join("　"); }), x0, y + 14, w, { size: 25, color: ink, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2 });
       if (qr && tpl === "ticket-hero") {
         y += 24;
-        const qw = qrSize + 44; const qh = qrSize + 44;
+        const qw = qrSize + 24; const qh = qrSize + 24;
         ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.fill(); ctx.restore();
-        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 22, y + 22, qrSize, qrSize); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 12, y + 12, qrSize, qrSize); ctx.restore();
         y += qh + 8;
       }
-      if (data.note) y = drawRich(ctx, data.note, x0, y + 12, w, 26, 500, artMuted(), "left", 1.5) + 8;
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 15, w, 23, 500, artMuted(), "left", 1.5) + 10;
       return y;
     }
     if (tpl === "ticket-cards") {
@@ -1340,16 +1555,16 @@
         const cx = x0 + col * (cw + gap); const cy = y + row * (ch + gap);
         ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 24); ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.restore();
         ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 24); ctx.strokeStyle = alphaColor(P.primary, 0.22); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-        drawRich(ctx, text(tier.price, "价格"), cx + cw / 2, cy + Math.round(ch * 0.4), cw - 20, 62, 900, P.accent, "center", 1);
-        drawRich(ctx, text(tier.label, "票档"), cx + cw / 2, cy + Math.round(ch * 0.4) + 76, cw - 20, 27, 600, artMuted(), "center", 1);
+        drawRich(ctx, text(tier.price, "价格"), cx + cw / 2, cy + Math.round(ch * 0.4), cw - 20, 46, 900, P.accent, "center", 1);
+        drawRich(ctx, text(tier.label, "票档"), cx + cw / 2, cy + Math.round(ch * 0.4) + 48, cw - 20, 23, 600, artMuted(), "center", 1);
       });
-      if (!tiers.length) { ctx.save(); roundRectPath(ctx, x0, y, w, 140, 24); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); drawRich(ctx, "暂无票档", x0 + w / 2, y + 88, w, 30, 600, artMuted(), "center", 1); y += 170; }
+      if (!tiers.length) { ctx.save(); roundRectPath(ctx, x0, y, w, 140, 24); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); drawRich(ctx, "暂无票档", x0 + w / 2, y + 30, w, 27, 600, artMuted(), "center", 1); y += 60; }
       else y += Math.ceil(Math.min(tiers.length, 6) / cols) * (ch + gap) - gap;
-      if (data.note) y = drawRich(ctx, data.note, x0, y + 18, w, 26, 500, artMuted(), "left", 1.5) + 12;
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 21, w, 23, 500, artMuted(), "left", 1.5) + 14;
       if (qr) {
-        y += 18; const qw = qrSize + 60; const qh = qrSize + 60;
+        y += 18; const qw = qrSize + 32; const qh = qrSize + 32;
         ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.fill(); ctx.restore();
-        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 30, y + 30, qrSize, qrSize); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 16, y + 16, qrSize, qrSize); ctx.restore();
         y += qh + 6;
       }
       return y;
@@ -1359,12 +1574,12 @@
     const qrSide = qr ? qrSize + 40 : 0;
     const leftW = qrSide ? w - qrSide - splitGap : w;
     let ly = y;
-    if (!tiers.length) { drawRich(ctx, "暂无票档", x0, ly + 6, leftW, 30, 600, artMuted(), "left", 1); ly += 60; }
+    if (!tiers.length) { drawRich(ctx, "暂无票档", x0, ly + 8, leftW, 27, 600, artMuted(), "left", 1); ly += 50; }
     tiers.slice(0, 8).forEach(function (tier) {
       const rowY = ly + 8;
-      drawRich(ctx, text(tier.label, "票档"), x0, rowY, leftW * 0.62, 33, 600, ink, "left", 1);
-      drawRich(ctx, text(tier.price, "价格"), x0 + leftW, rowY, leftW * 0.38, 33, 900, P.accent, "right", 1);
-      ly += 66;
+      drawRich(ctx, text(tier.label, "票档"), x0, rowY, leftW * 0.62, 27, 600, ink, "left", 1);
+      drawRich(ctx, text(tier.price, "价格"), x0 + leftW, rowY, leftW * 0.38, 27, 900, P.accent, "right", 1);
+      ly += 63;
       drawLine(ctx, x0, ly, x0 + leftW, ly, alphaColor(P.primary, 0.14), 2);
     });
     if (qr) {
@@ -1373,7 +1588,7 @@
       ctx.save(); roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.clip(); containDraw(ctx, qr, qx + 20, y + 20, qrSize, qrSize); ctx.restore();
     }
     y = Math.max(ly, qr ? y + qrSide : ly);
-    if (data.note) y = drawRich(ctx, data.note, x0, y + 16, w, 26, 500, artMuted(), "left", 1.5) + 8;
+    if (data.note) y = drawRich(ctx, data.note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5) + 10;
     return y;
   }
 
@@ -1386,23 +1601,23 @@
     let y = y0;
     if (tpl === "checklist") {
       for (const item of list) {
-        drawRich(ctx, "✓", x0, y + 46, 70, 36, 900, P.accent, "left", 1);
-        drawRich(ctx, text(item.label, "物料条目"), x0 + 64, y + 40, w - 64, 31, 500, ink, "left", 1);
-        y += 76;
+        drawRich(ctx, "✓", x0 + 17, y + 36, 40, 27, 900, P.accent, "left", 1);
+        drawRich(ctx, text(item.label, "物料条目"), x0 + 54, y + 30, w - 54, 27, 500, ink, "left", 1);
+        y += 71;
       }
-      if (!items.length) y -= 26;
-      if (note) y = drawRich(ctx, note, x0, y + 14, w, 26, 500, artMuted(), "left", 1.5) + 10;
+      if (!items.length) y -= 29;
+      if (note) y = drawRich(ctx, note, x0, y + 17, w, 23, 500, artMuted(), "left", 1.5) + 12;
       return y;
     }
     if (tpl === "notice-strip") {
       const stripH = 64;
       list.forEach(function (item, index) {
         ctx.save(); roundRectPath(ctx, x0, y, w, stripH, 18); ctx.fillStyle = index % 2 === 0 ? P.accent : P.primary; ctx.fill(); ctx.restore();
-        drawRich(ctx, text(item.label, "物料条目"), x0 + w / 2, y + stripH - 24, w - 30, 28, 700, "#ffffff", "center", 1);
+        drawRich(ctx, text(item.label, "物料条目"), x0 + w / 2, y + stripH - 22, w - 30, 25, 700, "#ffffff", "center", 1);
         y += stripH + 16;
       });
-      if (!items.length) y -= 44;
-      if (note) y = drawRich(ctx, note, x0, y + 12, w, 26, 500, artMuted(), "left", 1.5) + 8;
+      if (!items.length) y -= 50;
+      if (note) y = drawRich(ctx, note, x0, y + 7, w, 11, 500, artMuted(), "left", 1.5) + 5;
       return y;
     }
     /* icon-grid：图标圆角块 + 说明文字 */
@@ -1411,7 +1626,7 @@
     const gap = 20;
     const cw = (w - gap * (cols - 1)) / cols;
     const cellH = Math.round(cw * 1.15);
-    const iconBox = Math.min(150, Math.round(cw * 0.7));
+    const iconBox = Math.min(104, Math.round(cw * 0.7));
     const count = Math.max(1, items.length);
     for (let i = 0; i < count; i += 1) {
       const item = items[i] || {};
@@ -1421,10 +1636,10 @@
       ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.14); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
       const img = icons[i];
       if (img) { ctx.save(); roundRectPath(ctx, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox, 24); ctx.clip(); coverDraw(ctx, img, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox); ctx.restore(); }
-      drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 42, cw - 12, 27, 600, ink, "center", 1.35);
+      drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 34, cw - 16, 25, 600, ink, "center", 1.35);
     }
     y += Math.ceil(count / cols) * (cellH + gap) - gap;
-    if (note) y = drawRich(ctx, note, x0, y + 16, w, 26, 500, artMuted(), "left", 1.5) + 8;
+    if (note) y = drawRich(ctx, note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5) + 10;
     return y;
   }
 
@@ -1433,33 +1648,33 @@
     const icon = await loadImage(data.icon);
     const tpl = data.template || "promo-card";
     const value = data.text || "联动推广文案";
-    const padY = 44;
+    const padY = 24;
     let innerH = 0;
     if (tpl === "promo-centered") {
-      const info = textBlockInfo(ctx, value, w - 70, 32, 600, 1.7);
-      innerH = (icon ? Math.round(w * 0.24) + 34 : 0) + info.height + padY * 2 - 30;
+      const info = textBlockInfo(ctx, value, w - 60, 29, 600, 1.7);
+      innerH = (icon ? Math.round(w * 0.24) + 38 : 0) + info.height + padY * 2 - 30;
       ctx.save(); roundRectPath(ctx, x0, y0, w, innerH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
-      let y = y0 + 40;
+      let y = y0 + 36;
       if (icon) {
-        const iw = Math.min(160, Math.round(w * 0.22)); const ih = iw;
+        const iw = Math.min(104, Math.round(w * 0.22)); const ih = iw;
         const ix = x0 + (w - iw) / 2;
         ctx.save(); roundRectPath(ctx, ix, y, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, y, iw, ih); ctx.restore();
-        y += ih + 30;
+        y += ih + 33;
       }
-      y = drawRich(ctx, value, x0 + w / 2, y, w - 70, 32, 600, ink, "center", 1.7);
+      y = drawRich(ctx, value, x0 + w / 2, y, w - 60, 29, 600, ink, "center", 1.7);
       return y0 + innerH;
     }
-    const side = icon ? Math.min(230, Math.round(w * 0.26)) : 0;
-    const textInfo = textBlockInfo(ctx, value, w - side - (icon ? 90 : 0), 32, 600, 1.68);
-    const bandH = Math.max(200, padY * 2 + textInfo.height);
+    const side = icon ? Math.min(163, Math.round(w * 0.26)) : 0;
+    const textInfo = textBlockInfo(ctx, value, w - side - (icon ? 60 : 0), 29, 600, 1.68);
+    const bandH = Math.max(100, padY * 2 + textInfo.height);
     ctx.save(); roundRectPath(ctx, x0, y0, w, bandH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
     if (icon) {
-      const iw = Math.min(150, side - 40); const ih = iw;
+      const iw = Math.min(104, side - 36); const ih = iw;
       const ix = x0 + (side - iw) / 2; const iy = y0 + (bandH - ih) / 2;
       ctx.save(); roundRectPath(ctx, ix, iy, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, iy, iw, ih); ctx.restore();
-      drawRich(ctx, value, x0 + side + 22, y0 + (bandH - textInfo.height) / 2 + 26, w - side - 46, 32, 600, ink, "left", 1.68);
+      drawRich(ctx, value, x0 + side + 19, y0 + (bandH - textInfo.height) / 2 + 20, w - side - 40, 29, 600, ink, "left", 1.68);
     } else {
-      drawRich(ctx, value, x0 + w / 2, y0 + (bandH - textInfo.height) / 2 + 26, w - 90, 33, 600, ink, "center", 1.68);
+      drawRich(ctx, value, x0 + w / 2, y0 + (bandH - textInfo.height) / 2 + 20, w - 60, 29, 600, ink, "center", 1.68);
     }
     return y0 + bandH;
   }
@@ -1472,44 +1687,44 @@
       const rows = group.rows || [];
       if (!rows.length) continue;
       if (tpl === "schedule-table") {
-        const headH = 66;
+        const headH = 84;
         ctx.save(); roundRectPath(ctx, x0, y, w, headH, 18); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
-        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 24, y + 42, w - 48, 34, 800, P.primaryDark, "left", 1);
+        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 22, y + 52, w - 44, 33, 800, P.primaryDark, "left", 1);
         y += headH;
         rows.forEach(function (row, ri) {
           if (ri > 0) drawLine(ctx, x0, y, x0 + w, y, P.line, 2);
-          drawRich(ctx, text(row.time, "00:00"), x0 + 24, y + 46, w * 0.22, 30, 700, P.accent, "left", 1);
-          drawRich(ctx, text(row.name, "环节"), x0 + w * 0.22 + 24, y + 46, w * 0.72, 30, 500, ink, "left", 1);
-          y += 64;
+          drawRich(ctx, text(row.time, "00:00"), x0 + 22, y + 40, w * 0.22, 25, 700, P.accent, "left", 1);
+          drawRich(ctx, text(row.name, "环节"), x0 + w * 0.22 + 22, y + 40, w * 0.72, 27, 500, ink, "left", 1);
+          y += 92;
         });
-        y += 12;
+        y += 25;
       } else if (tpl === "schedule-cards") {
-        ctx.save(); roundRectPath(ctx, x0, y, w, 96, 24); ctx.fillStyle = alphaColor("#ffffff", 0.78); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0, y, w, 84, 21); ctx.fillStyle = alphaColor("#ffffff", 0.78); ctx.fill(); ctx.restore();
         ctx.save(); roundRectPath(ctx, x0, y, w, 96, 24); ctx.strokeStyle = alphaColor(P.primary, 0.2); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 24, y + 60, w - 48, 36, 800, P.primaryDark, "left", 1);
-        y += 96;
+        drawRich(ctx, text(group.groupName, "活动时间"), x0 + 22, y + 52, w - 44, 33, 800, P.primaryDark, "left", 1);
+        y += 84;
         rows.forEach(function (row, ri) {
           if (ri > 0) drawLine(ctx, x0 + 20, y - 6, x0 + w - 20, y - 6, alphaColor(P.primary, 0.12), 2);
-          drawRich(ctx, text(row.name, "环节"), x0 + 24, y + 48, w * 0.62, 30, 500, ink, "left", 1);
-          drawRich(ctx, text(row.time, "00:00"), x0 + w - 24, y + 48, w * 0.3, 30, 800, P.accent, "right", 1);
-          y += 66;
+          drawRich(ctx, text(row.name, "环节"), x0 + 22, y + 40, w * 0.62, 27, 500, ink, "left", 1);
+          drawRich(ctx, text(row.time, "00:00"), x0 + w - 22, y + 40, w * 0.3, 25, 800, P.accent, "right", 1);
+          y += 61;
         });
-        y += 12;
+        y += 25;
       } else {
-        drawRich(ctx, text(group.groupName, "活动时间"), x0, y, w, 44, 800, P.primaryDark, "left", 1.35);
-        y += 20;
+        drawRich(ctx, text(group.groupName, "活动时间"), x0, y, w, 33, 800, P.primaryDark, "left", 1.35);
+        y += 25;
         rows.forEach(function (row) {
-          ctx.save(); ctx.fillStyle = P.accent; ctx.beginPath(); ctx.arc(x0 + 16, y + 24, 9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-          drawRich(ctx, text(row.time, "00:00"), x0 + 52, y + 22, w * 0.2, 30, 700, P.accent, "left", 1);
-          drawRich(ctx, text(row.name, "环节"), x0 + 52 + w * 0.2 + 18, y + 22, w * 0.72, 30, 500, ink, "left", 1.7);
-          y += 62;
+          ctx.save(); ctx.fillStyle = P.accent; ctx.beginPath(); ctx.arc(x0 + 13, y + 20, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+          drawRich(ctx, text(row.time, "00:00"), x0 + 42, y + 22, w * 0.2, 25, 700, P.accent, "left", 1);
+          drawRich(ctx, text(row.name, "环节"), x0 + 42 + w * 0.2 + 17, y + 22, w * 0.72, 27, 500, ink, "left", 1.7);
+          y += 59;
         });
         y += 14;
       }
     }
     if (!groups.length || !groups.some(function (g) { return (g.rows || []).length; })) {
-      drawRich(ctx, "暂无时间安排", x0 + w / 2, y + 54, w, 30, 600, artMuted(), "center", 1);
-      y += 110;
+      drawRich(ctx, "暂无时间安排", x0 + w / 2, y + 32, w, 27, 600, artMuted(), "center", 1);
+      y += 66;
     }
     return y;
   }
@@ -1519,38 +1734,38 @@
     const tags = (data.tags || []).filter(Boolean);
     const img = await loadImage(data.photo);
     const tpl = data.template || "venue-side";
-    const chipsOpt = { size: 27, color: P.primaryDark, border: alphaColor(P.primary, 0.3), fill: P.primarySoft, lw: 2 };
+    const chipsOpt = { size: 23, color: P.primaryDark, border: alphaColor(P.primary, 0.3), fill: P.primarySoft, lw: 2 };
     if (tpl === "venue-focus") {
       let y = y0;
-      if (img) { const h = Math.min(620, Math.round(w * 0.5)); ctx.save(); roundRectPath(ctx, x0, y, w, h, 26); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 30; }
-      y = drawRich(ctx, data.description || "场地描述", x0, y, w, 32, 400, ink, "left", 1.68) + 8;
+      if (img) { const h = Math.min(396, Math.round(w * 0.5)); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 44; }
+      y = drawRich(ctx, data.description || "场地描述", x0, y, w, 29, 400, ink, "left", 1.68) + 10;
       if (tags.length) y = drawChips(ctx, tags, x0, y, w, chipsOpt) + 8;
       return y;
     }
     if (tpl === "venue-map") {
-      const pad = 40;
-      const textH = textBlockInfo(ctx, data.description || "场地描述", w - pad * 2, 32, 400, 1.68).height;
-      const chipsH = tags.length ? chipRowCount(ctx, tags, w - pad * 2, 27) : 0;
+      const pad = 25;
+      const textH = textBlockInfo(ctx, data.description || "场地描述", w - pad * 2, 29, 400, 1.68).height;
+      const chipsH = tags.length ? chipRowCount(ctx, tags, w - pad * 2, 23) : 0;
       const paneH = pad + textH + 24 + (tags.length ? chipsH + 14 : 0) + pad - 20;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.strokeStyle = alphaColor(P.accent, 0.75); ctx.lineWidth = 3; ctx.setLineDash([14, 14]); ctx.stroke(); ctx.restore();
-      let y = y0 + pad - 10;
-      y = drawRich(ctx, data.description || "场地描述", x0 + pad, y, w - pad * 2, 32, 400, ink, "left", 1.68) + 8;
+      let y = y0 + pad - 8;
+      y = drawRich(ctx, data.description || "场地描述", x0 + pad, y, w - pad * 2, 29, 400, ink, "left", 1.68) + 10;
       if (tags.length) drawChips(ctx, tags, x0 + pad, y, w - pad * 2, chipsOpt);
       return y0 + paneH;
     }
     /* venue-side：左描述 + 右侧场地照片 */
-    const side = img ? Math.min(430, Math.round(w * 0.4)) : 0;
+    const side = img ? Math.min(163, Math.round(w * 0.4)) : 0;
     const textW = side ? w - side - 34 : w;
-    const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 32, 400, 1.68).height;
-    const chipsH = tags.length ? chipRowCount(ctx, tags, textW, 27) : 0;
+    const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 29, 400, 1.68).height;
+    const chipsH = tags.length ? chipRowCount(ctx, tags, textW, 23) : 0;
     const copyH = textH + (tags.length ? chipsH + 16 : 0);
-    const imgH = Math.max(Math.round(w * 0.48), copyH + 30);
-    if (img) { ctx.save(); roundRectPath(ctx, x0 + textW + 34, y0, side, imgH, 26); ctx.clip(); coverDraw(ctx, img, x0 + textW + 34, y0, side, imgH); ctx.restore(); }
+    const imgH = Math.max(Math.round(w * 0.48), copyH + 20);
+    if (img) { ctx.save(); roundRectPath(ctx, x0 + textW + 19, y0, side, imgH, 21); ctx.clip(); coverDraw(ctx, img, x0 + textW + 19, y0, side, imgH); ctx.restore(); }
     let y = y0;
-    y = drawRich(ctx, data.description || "场地描述", x0, y, textW, 32, 400, ink, "left", 1.68) + 8;
+    y = drawRich(ctx, data.description || "场地描述", x0, y, textW, 29, 400, ink, "left", 1.68) + 10;
     if (tags.length) y = drawChips(ctx, tags, x0, y, textW, chipsOpt);
-    return Math.max(y + 10, img ? y0 + imgH : y + 10);
+    return Math.max(y + 12, img ? y0 + imgH : y + 12);
   }
 
   async function paintRoute(ctx, data, x0, y0, w) {
@@ -1560,34 +1775,34 @@
     let y = y0;
     if (tpl === "route-focus") {
       if (lines[0]) {
-        ctx.save(); roundRectPath(ctx, x0, y, w, 100, 24); ctx.fillStyle = P.primary; ctx.fill(); ctx.restore();
-        drawRich(ctx, lines[0], x0 + w / 2, y + 64, w - 56, 31, 700, "#ffffff", "center", 1.5);
-        y += 100 + 24;
+        ctx.save(); roundRectPath(ctx, x0, y, w, 100, 21); ctx.fillStyle = P.primary; ctx.fill(); ctx.restore();
+        drawRich(ctx, lines[0], x0 + w / 2, y + 60, w - 44, 29, 700, "#ffffff", "center", 1.5);
+        y += 100 + 21;
       }
       for (const line of lines.slice(1)) {
-        drawRich(ctx, "›", x0, y + 40, 44, 34, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 56, y + 36, w - 56, 30, 500, ink, "left", 1.6);
-        y += 66;
+        drawRich(ctx, "›", x0, y + 34, 40, 28, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 48, y + 30, w - 48, 27, 500, ink, "left", 1.6);
+        y += 92;
       }
-      if (!lines.length) { drawRich(ctx, "暂无路线", x0, y + 44, w, 30, 600, artMuted(), "left", 1); y += 88; }
+      if (!lines.length) { drawRich(ctx, "暂无路线", x0, y + 34, w, 27, 600, artMuted(), "left", 1); y += 60; }
       return y;
     }
     const showLines = lines.length ? lines : [""];
     for (let i = 0; i < showLines.length; i += 1) {
       const line = showLines[i];
       if (tpl === "route-list") {
-        ctx.save(); roundRectPath(ctx, x0, y, w, 76, 18); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
-        drawRich(ctx, "›", x0 + 26, y + 48, 40, 34, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 62, y + 46, w - 76, 30, 500, ink, "left", 1);
-        y += 92;
+        ctx.save(); roundRectPath(ctx, x0, y, w, 62, 17); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
+        drawRich(ctx, "›", x0 + 20, y + 40, 30, 28, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 46, y + 38, w - 62, 27, 500, ink, "left", 1);
+        y += 78;
       } else {
         const num = String(i + 1).padStart(2, "0");
-        drawRich(ctx, num, x0, y + 42, 96, 38, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 108, y + 42, w - 108, 30, 600, ink, "left", 1.35);
-        y += 120;
+        drawRich(ctx, num, x0, y + 34, 76, 30, 900, P.accent, "left", 1);
+        drawRich(ctx, line, x0 + 86, y + 34, w - 86, 27, 600, ink, "left", 1.35);
+        y += 92;
       }
     }
-    if (!lines.length) y -= 32;
+    if (!lines.length) y -= 26;
     return y;
   }
 
@@ -1612,23 +1827,23 @@
         const itemImg = item.image && item.image.url ? await loadImage(item.image) : null;
         if (itemImg) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, itemImg, cx, cy, cw, imgH); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
-        if (item.tag) drawRich(ctx, item.tag, cx + 18, cy + imgH + 42, cw - 34, 25, 800, P.accent, "left", 1);
-        drawRich(ctx, text(item.title, "节目标题"), cx + 18, cy + imgH + 76, cw - 34, 29, 700, ink, "left", 1.35);
-        if (item.subtitle) drawRich(ctx, item.subtitle, cx + 18, cy + imgH + 112, cw - 34, 24, 500, artMuted(), "left", 1.3);
+        if (item.tag) drawRich(ctx, item.tag, cx + 14, cy + imgH + 30, cw - 26, 21, 800, P.accent, "left", 1);
+        drawRich(ctx, text(item.title, "节目标题"), cx + 14, cy + imgH + 58, cw - 26, 27, 700, ink, "left", 1.35);
+        if (item.subtitle) drawRich(ctx, item.subtitle, cx + 14, cy + imgH + 88, cw - 26, 23, 500, artMuted(), "left", 1.3);
       }
       y += Math.ceil(count / cols) * (cardH + gap) - gap;
       return y;
     }
     if (tpl === "program-compact") {
-      const cols = 2; const gap = 22; const cw = (w - gap) / 2; const ch = 130;
+      const cols = 2; const gap = 17; const cw = (w - gap) / 2; const ch = 100;
       const list = items.length ? items : [{ tag: "", title: "" }];
       list.forEach(function (item, index) {
         const cx = x0 + (index % cols) * (cw + gap);
         const cy = y + Math.floor(index / cols) * (ch + gap);
         ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 20); ctx.fillStyle = alphaColor("#ffffff", 0.75); ctx.fill(); ctx.restore();
         ctx.save(); roundRectPath(ctx, cx, cy, cw, ch, 20); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-        if (item.tag) drawRich(ctx, item.tag, cx + 18, cy + 44, cw - 34, 25, 800, P.accent, "left", 1);
-        drawRich(ctx, text(item.title, "节目标题"), cx + 18, cy + 88, cw - 34, 29, 700, ink, "left", 1.2);
+        if (item.tag) drawRich(ctx, item.tag, cx + 14, cy + 36, cw - 26, 21, 800, P.accent, "left", 1);
+        drawRich(ctx, text(item.title, "节目标题"), cx + 14, cy + 66, cw - 26, 27, 700, ink, "left", 1.2);
       });
       y += Math.ceil(Math.max(items.length, 1) / cols) * (ch + gap) - gap;
       return y;
@@ -1639,26 +1854,26 @@
       const img = item.image && item.image.url ? await loadImage(item.image) : null;
       if (img) {
         const thumb = Math.round(w * 0.28);
-        const th = Math.min(240, Math.round(thumb * 0.74));
+        const th = Math.min(200, Math.round(thumb * 0.74));
         const ix = item.mediaSide === "left" ? x0 : x0 + w - thumb;
         ctx.save(); roundRectPath(ctx, ix, y + 8, thumb, th, 18); ctx.clip(); coverDraw(ctx, img, ix, y + 8, thumb, th); ctx.restore();
         const textX = item.mediaSide === "left" ? x0 + thumb + 30 : x0;
         const textW = w - thumb - 30;
-        let cy = y + 34;
-        if (item.tag) cy = drawRich(ctx, item.tag, textX, cy, textW, 28, 800, P.accent, "left", 1) + 8;
-        cy = drawRich(ctx, text(item.title, "节目标题"), textX, cy, textW, 34, 700, ink, "left", 1.3) + 6;
-        if (item.subtitle) cy = drawRich(ctx, item.subtitle, textX, cy, textW, 27, 500, artMuted(), "left", 1.4);
-        y += Math.max(th + 28, cy - y + 20);
+        let cy = y + 28;
+        if (item.tag) cy = drawRich(ctx, item.tag, textX, cy, textW, 21, 800, P.accent, "left", 1) + 10;
+        cy = drawRich(ctx, text(item.title, "节目标题"), textX, cy, textW, 27, 700, ink, "left", 1.3) + 8;
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, textX, cy, textW, 23, 500, artMuted(), "left", 1.4);
+        y += Math.max(th + 24, cy - y + 17);
       } else {
-        let cy = y + 36;
-        if (item.tag) cy = drawRich(ctx, item.tag, x0, cy, w, 28, 800, P.accent, "left", 1) + 8;
-        cy = drawRich(ctx, text(item.title, "节目标题"), x0, cy, w, 36, 700, ink, "left", 1.3) + 6;
-        if (item.subtitle) cy = drawRich(ctx, item.subtitle, x0, cy, w, 27, 500, artMuted(), "left", 1.4);
-        y = cy + 24;
+        let cy = y + 28;
+        if (item.tag) cy = drawRich(ctx, item.tag, x0, cy, w, 21, 800, P.accent, "left", 1) + 10;
+        cy = drawRich(ctx, text(item.title, "节目标题"), x0, cy, w, 27, 700, ink, "left", 1.3) + 8;
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, x0, cy, w, 23, 500, artMuted(), "left", 1.4);
+        y = cy + 19;
       }
       drawLine(ctx, x0, y - 10, x0 + w, y - 10, alphaColor(P.primary, 0.12), 2);
     }
-    if (!items.length) { drawRich(ctx, "暂无节目", x0 + w / 2, y + 60, w, 30, 600, artMuted(), "center", 1); y += 100; }
+    if (!items.length) { drawRich(ctx, "暂无节目", x0 + w / 2, y + 34, w, 27, 600, artMuted(), "center", 1); y += 60; }
     return y;
   }
 
@@ -1671,9 +1886,9 @@
     const setlist = (data.setlist || []).filter(Boolean);
     const drawCopy = function (yy, width) {
       let cy = yy;
-      cy = drawRich(ctx, name, x0, cy, width, 46, 800, P.primaryDark, "left", 1.3) + 10;
-      cy = drawRich(ctx, bio, x0, cy, width, 30, 400, ink, "left", 1.62) + 8;
-      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 27, 600, P.accent, "left", 1.5); }
+      cy = drawRich(ctx, name, x0, cy, width, 33, 800, P.primaryDark, "left", 1.3) + 12;
+      cy = drawRich(ctx, bio, x0, cy, width, 27, 400, ink, "left", 1.62) + 10;
+      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 23, 600, P.accent, "left", 1.5); }
       return cy;
     };
     if (tpl === "performer-poster") {
@@ -1685,22 +1900,22 @@
         ctx.restore();
         drawGradientOverlay(ctx, x0, y0 + Math.round(ph * 0.44), w, ph - Math.round(ph * 0.44), P.primaryDark, 0.02, 0.9);
       } else { ctx.save(); roundRectPath(ctx, x0, y0, w, Math.round(ph * 0.56), 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
-      const cx = x0 + w / 2; const cw = w - 70; const photoH = portraits.length ? ph : Math.round(ph * 0.56);
-      let bottom = y0 + photoH - 44;
-      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 6, cw, 28, 500, "rgba(255,255,255,.92)", "center", 1.55); bottom -= 22; }
-      paintUpText(ctx, name, cx, bottom - 4, cw, 56, 900, "#ffffff", "center", 1.3);
+      const cx = x0 + w / 2; const cw = w - 66; const photoH = portraits.length ? ph : Math.round(ph * 0.56);
+      let bottom = y0 + photoH - 33;
+      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 8, cw, 25, 500, "rgba(255,255,255,.92)", "center", 1.55); bottom -= 21; }
+      paintUpText(ctx, name, cx, bottom - 5, cw, 54, 900, "#ffffff", "center", 1.3);
       return y0 + photoH + 24;
     }
     if (portraits.length) {
-      const side = Math.min(Math.round(w * 0.4), 400);
+      const side = Math.min(Math.round(w * 0.4), 210);
       const ph = Math.round(side * 0.74);
       portraits.slice(0, 2).forEach(function (img, i) {
-        ctx.save(); roundRectPath(ctx, x0, y0 + i * (ph + 22), side, ph, 24); ctx.clip(); coverDraw(ctx, img, x0, y0 + i * (ph + 22), side, ph); ctx.restore();
+        ctx.save(); roundRectPath(ctx, x0, y0 + i * (ph + 12), side, ph, 14); ctx.clip(); coverDraw(ctx, img, x0, y0 + i * (ph + 12), side, ph); ctx.restore();
       });
       const tx = x0 + side + 34;
-      const copyTop = Math.min(Math.round(portraits.length * (ph + 22) * 0.16), 60);
+      const copyTop = Math.min(Math.round(portraits.length * (ph + 12) * 0.16), 33);
       const copyEnd = drawCopy(y0 + copyTop, w - side - 34);
-      return Math.max(y0 + portraits.length * (ph + 22) - 22, copyEnd + 20);
+      return Math.max(y0 + portraits.length * (ph + 12) - 12, copyEnd + 12);
     }
     return drawCopy(y0, w);
   }
@@ -1714,27 +1929,27 @@
       const list = items.length ? items : [{}];
       for (const item of list) {
         const img = item.image && item.image.url ? await loadImage(item.image) : null;
-        const imgW = Math.round(w * 0.15);
-        const rowH = Math.max(170, imgW * 1.3);
+        const imgW = Math.min(150, Math.round(w * 0.2));
+        const rowH = Math.max(130, imgW + 48);
         if (img) { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.clip(); coverDraw(ctx, img, x0 + 20, y + 24, imgW, imgW); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
-        drawRich(ctx, text(item.name, "摊位"), x0 + imgW + 64, y + 72, w - imgW - 80, 36, 800, ink, "left", 1);
-        if (item.desc) drawRich(ctx, item.desc, x0 + imgW + 64, y + 120, w - imgW - 80, 27, 500, artMuted(), "left", 1.5);
+        drawRich(ctx, text(item.name, "摊位"), x0 + imgW + 23, y + 58, w - imgW - 40, 27, 800, ink, "left", 1);
+        if (item.desc) drawRich(ctx, item.desc, x0 + imgW + 23, y + 96, w - imgW - 40, 23, 500, artMuted(), "left", 1.5);
         ctx.save(); roundRectPath(ctx, x0, y, w, rowH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-        y += rowH + 22;
+        y += rowH + 21;
       }
-      if (!items.length) y -= 42;
+      if (!items.length) y -= 50;
       return y;
     }
     if (tpl === "booth-list") {
       const list = items.length ? items : [{}];
       for (const item of list) {
-        drawRich(ctx, text(item.name, "摊位"), x0, y + 54, w * 0.52, 33, 700, ink, "left", 1);
-        if (item.desc) drawRich(ctx, item.desc, x0 + w * 0.5, y + 50, w * 0.5, 27, 500, artMuted(), "right", 1);
-        y += 70;
+        drawRich(ctx, text(item.name, "摊位"), x0, y + 42, w * 0.52, 27, 700, ink, "left", 1);
+        if (item.desc) drawRich(ctx, item.desc, x0 + w * 0.5, y + 39, w * 0.5, 23, 500, artMuted(), "right", 1);
+        y += 68;
         drawLine(ctx, x0, y - 8, x0 + w, y - 8, alphaColor(P.primary, 0.14), 2);
       }
-      if (!items.length) { drawRich(ctx, "暂无摊位", x0 + w / 2, y + 40, w, 30, 600, artMuted(), "center", 1); y += 90; }
+      if (!items.length) { drawRich(ctx, "暂无摊位", x0 + w / 2, y + 30, w, 27, 600, artMuted(), "center", 1); y += 62; }
       return y;
     }
     /* booth-grid 默认：摊位名/简介网格（有图则图上文下） */
@@ -1756,8 +1971,8 @@
         const imgH = Math.round(cw * 0.52);
         if (img) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, img, cx, cy, cw, imgH); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
-        drawRich(ctx, text(item.name, "摊位"), cx + 14, cy + imgH + 46, cw - 28, 27, 700, ink, "left", 1.3);
-        if (item.desc) drawRich(ctx, capText(item.desc, 26), cx + 14, cy + imgH + 84, cw - 28, 24, 500, artMuted(), "left", 1.35);
+        drawRich(ctx, text(item.name, "摊位"), cx + 12, cy + imgH + 36, cw - 22, 27, 700, ink, "left", 1.3);
+        if (item.desc) drawRich(ctx, capText(item.desc, 26), cx + 12, cy + imgH + 66, cw - 22, 23, 500, artMuted(), "left", 1.35);
       } else {
         drawRich(ctx, text(item.name, "摊位"), cx + cw / 2, cy + 54, cw - 24, 30, 700, ink, "center", 1.3);
         if (item.desc) drawRich(ctx, capText(item.desc, 30), cx + cw / 2, cy + 102, cw - 24, 25, 500, artMuted(), "center", 1.35);
@@ -1768,8 +1983,8 @@
   }
   function paintDivider(ctx, data, x0, y0, w) {
     const P = artTheme();
-    drawDividerShape(ctx, data, x0, y0 + 34, w, alphaColor(P.primary, 0.75));
-    return y0 + 96;
+    drawDividerShape(ctx, data, x0, y0 + 26, w, alphaColor(P.primary, 0.75));
+    return y0 + 80;
   }
 
   function paintFooter(ctx, data, x0, y0, w) {
@@ -1779,21 +1994,21 @@
     let y = y0;
     if (tpl === "footer-banner") {
       const items = lines.length ? lines : ["主办：Only-box 企划"];
-      const size = 30; const gap = 26; const rowH = 46;
+      const size = 25; const gap = 21; const rowH = 52;
       ctx.save(); artFont(ctx, size, 600);
       let rows = 1; let rowW = 0;
       const widths = items.map(function (line) { const tw = ctx.measureText(String(line)).width; return { line: line, tw: tw }; });
       const fitted = [];
       let current = []; let cw2 = 0;
       widths.forEach(function (it) {
-        if (current.length && cw2 + it.tw + gap > w - 80) { fitted.push(current); current = []; cw2 = 0; }
+        if (current.length && cw2 + it.tw + gap > w - 58) { fitted.push(current); current = []; cw2 = 0; }
         current.push(it); cw2 += it.tw + (current.length > 1 ? gap : 0);
       });
       if (current.length) fitted.push(current);
       ctx.restore();
-      const boxH = 44 + fitted.length * rowH + 26;
-      ctx.save(); roundRectPath(ctx, x0, y, w, boxH, 24); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore();
-      let by = y + 46;
+      const boxH = 40 + fitted.length * rowH + 24;
+      ctx.save(); roundRectPath(ctx, x0, y, w, boxH, 21); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore();
+      let by = y + 44;
       fitted.forEach(function (rowItems) {
         let cx = x0 + w / 2 - (rowItems.reduce(function (s, it) { return s + it.tw; }, 0) + (rowItems.length - 1) * gap) / 2;
         rowItems.forEach(function (it) {
@@ -1806,17 +2021,17 @@
     }
     if (tpl === "footer-center") {
       (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
-        y = drawRich(ctx, line, x0 + w / 2, y, w, 28, 500, artMuted(), "center", 1.6) + 6;
+        y = drawRich(ctx, line, x0 + w / 2, y, w, 23, 500, artMuted(), "center", 1.6) + 8;
       });
       return y;
     }
     if (tpl === "footer-pills") {
       const items = lines.length ? lines : ["主办：Only-box 企划"];
-      y = drawChips(ctx, items, x0 + w / 2, y, w, { size: 27, color: P.primaryDark, border: alphaColor(P.primary, 0.35), fill: P.primarySoft, lw: 2, center: true });
+      y = drawChips(ctx, items, x0 + w / 2, y, w, { size: 23, color: P.primaryDark, border: alphaColor(P.primary, 0.35), fill: P.primarySoft, lw: 2, center: true });
       return y + 10;
     }
     (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
-      y = drawRich(ctx, line, x0, y, w, 29, 500, ink, "left", 1.5) + 4;
+      y = drawRich(ctx, line, x0, y, w, 23, 500, ink, "left", 1.5) + 6;
     });
     return y;
   }
@@ -1824,7 +2039,7 @@
   function paintFreeText(ctx, data, x0, y0, w) {
     const P = artTheme(); const ink = artInk();
     const level = data.level || "body";
-    const size = C.fontSizePx(level, 1242);
+    const size = C.fontSizePx(level, 750);
     const align = data.align === "center" ? "center" : data.align === "right" ? "right" : "left";
     const tx = align === "center" ? x0 + w / 2 : align === "right" ? x0 + w : x0;
     const tpl = data.template || "text-basic";
@@ -1833,17 +2048,17 @@
       return drawRich(ctx, value, tx, y, maxW || w, sizePx, weight, color || ink, align, mul || 1.66);
     };
     if (tpl === "text-highlight") {
-      const padX = 34; const padY = 34;
-      const innerW = w - padX * 2 - 22;
+      const padX = 31; const padY = 27;
+      const innerW = w - padX * 2 - 18;
       const info = textBlockInfo(ctx, value, innerW, size, 600, 1.7);
       const paneH = padY * 2 + info.height;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
-      ctx.save(); roundRectPath(ctx, x0 + 16, y0 + 16, 9, paneH - 32, 5); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, x0 + 13, y0 + 13, 9, paneH - 26, 5); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
       drawTxt(y0 + padY + Math.round(size * 0.2), size, 600, ink, 1.7, innerW);
       return y0 + paneH;
     }
     if (tpl === "text-card") {
-      const padX = 40; const padY = 34;
+      const padX = 33; const padY = 29;
       const info = textBlockInfo(ctx, value, w - padX * 2, size, 500, 1.66);
       const paneH = padY * 2 + info.height;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.82); ctx.fill(); ctx.restore();
@@ -1851,8 +2066,9 @@
       drawTxt(y0 + padY + Math.round(size * 0.2), size, 500, ink, 1.66, w - padX * 2);
       return y0 + paneH;
     }
-    if (tpl === "text-note") return drawTxt(y0, 26, 400, artMuted(), 1.75);
-    return drawTxt(y0, size, 400, ink, 1.66);
+    if (tpl === "text-note") return drawTxt(y0, 23, 400, artMuted(), 1.75);
+    const weight = level === "h1" || level === "h2" ? 800 : level === "h3" ? 700 : 400;
+    return drawTxt(y0, size, weight, ink, 1.66);
   }
 
   function ratioNumber(raw) {
@@ -1866,7 +2082,7 @@
     const tpl = data.template || "image-focus";
     const fit = dataImageFit(data);
     const isCard = tpl === "image-card";
-    const defaultRadius = isCard ? 30 : Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 0)));
+    const defaultRadius = isCard ? 21 : Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 0)));
     const ratio = data.ratio && data.ratio !== "auto" ? ratioNumber(data.ratio) : 0;
     let y = y0;
     let h = 0;
@@ -1914,29 +2130,41 @@
   /* 板块标题头（序号 + 大标题），返回含头间距后的 y。 */
   function paintModuleHead(ctx, module, def, x0, y0, w, serial) {
     const P = artTheme();
-    const title = moduleTitle(module, def);
-    const kicker = String(serial).padStart(2, "0");
+    const rawTitle = moduleTitle(module, def);
+    const title = P.titleDecor === "bracket" ? "「" + rawTitle + "」" : rawTitle;
+    const kickerText = P.titleDecor === "kicker" ? "/ " + String(serial).padStart(2, "0") : String(serial).padStart(2, "0");
     /* 标题基线需下移一个「字身顶部」的高度，否则 58px 大标题的上半截会被卡片顶边裁掉。
        基线 = y0 + 0.92 * size，使字形顶(≈基线-0.88*size)恰好落在卡片 y0 附近。 */
-    const headBaseline = y0 + Math.round(58 * 0.92);
-    ctx.save(); artFont(ctx, 27, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-    ctx.fillText(kicker, x0, y0 + 30);
+    const headBaseline = y0 + Math.round(54 * 0.92);
+    ctx.save(); artFont(ctx, 23, 900); ctx.fillStyle = P.accent; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(kickerText, x0, y0 + 26);
     ctx.restore();
-    const y = drawRich(ctx, title, x0 + w / 2, headBaseline, w - 80, 58, 850, P.primaryDark, "center", 1.22);
-    return y + 34;
+    if (P.titleDecor === "bar") {
+      ctx.save(); ctx.fillStyle = P.accent;
+      ctx.fillRect(x0 - 12, y0 + 2, 6, 62);
+      ctx.restore();
+    }
+    const y = drawRich(ctx, title, x0 + w / 2, headBaseline, w - 60, 54, 800, P.primaryDark, "center", 1.22);
+    if (P.titleDecor === "stitch") {
+      ctx.save(); ctx.strokeStyle = alphaColor(P.accent, 0.75); ctx.lineWidth = 2; ctx.setLineDash([9, 7]);
+      ctx.beginPath(); ctx.moveTo(x0, y + 2); ctx.lineTo(x0 + w, y + 2); ctx.stroke();
+      ctx.restore();
+    }
+    return y + 20;
   }
 
   async function drawModuleCard(ctx, module, area, serial) {
     const def = R.getDef(module.type);
     const data = module.data || {};
-    const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
-    const radius = Math.max(0, Math.round(px2(Number(data.radius) != null ? Number(data.radius) : 13)));
+    const st = artTheme();
+    const pad = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), st);
+    const radius = cardRadius(data, st);
     const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
     const w = area.w;
     const silence = [];
     let scratch = document.createElement("canvas");
     scratch.width = Math.max(1, Math.round(w));
-    scratch.height = 2800;
+    scratch.height = 3400;
     let sctx = scratch.getContext("2d");
     let cursor = pad;
     if (module.type !== "divider" || module.data.sectionTitle) {
@@ -1944,7 +2172,7 @@
     }
     let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
     /* 内容实测高度超出临时画布时，重建更大画布完整重绘，不再截断（审计 P1）。 */
-    if (contentEnd + pad > 2800) {
+    if (contentEnd + pad > 3400) {
       scratch = document.createElement("canvas");
       scratch.width = Math.max(1, Math.round(w));
       scratch.height = Math.ceil(contentEnd + pad + 64);
@@ -1955,20 +2183,15 @@
       }
       contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
     }
-    const usedH = Math.max(pad * 2 + 40, contentEnd + pad);
+    const usedH = Math.max(pad * 2 + 48, contentEnd + pad);
     const bg = data.blockBgImage && data.blockBgImage.url ? await loadImage(data.blockBgImage) : null;
     if (!bg && data.blockBgImage && data.blockBgImage.url) silence.push({ type: "block-image", module: (data.sectionTitle || (def && def.label) || "未知板块") });
     const P = artTheme();
-    /* 1) 卡片投影 */
+    /* 风格骨架：贴纸微旋转，其余按 cardStyle 分支绘制（DOM 与 Canvas 双侧同步）。 */
+    const rot = st.cardStyle === "sticker" ? 0.013 : 0;
     ctx.save();
-    ctx.shadowColor = "rgba(38,65,51,.15)";
-    ctx.shadowBlur = 26;
-    ctx.shadowOffsetY = 12;
-    roundRectPath(ctx, area.x, area.y, w, usedH, radius);
-    ctx.fillStyle = cardFillStyle(data);
-    ctx.fill();
-    ctx.restore();
-    /* 2) 圆角内：底色/底图 + 内容 */
+    if (rot) { const cx0 = area.x + w / 2, cy0 = area.y + usedH / 2; ctx.translate(cx0, cy0); ctx.rotate(rot); ctx.translate(-cx0, -cy0); }
+    drawCardBase(ctx, area.x, area.y, w, usedH, radius, st, data, opacity);
     ctx.save();
     roundRectPath(ctx, area.x, area.y, w, usedH, radius);
     ctx.clip();
@@ -1977,15 +2200,14 @@
       ctx.fillRect(area.x, area.y, w, usedH);
       coverDraw(ctx, bg, area.x, area.y, w, usedH);
       if (opacity < 0.98) { ctx.fillStyle = alphaColor("#ffffff", 1 - opacity); ctx.fillRect(area.x, area.y, w, usedH); }
+    } else if (st.cardStyle === "ink") {
+      const nz = noisePattern(ctx);
+      if (nz) { ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = nz; ctx.fillRect(area.x, area.y, w, usedH); ctx.restore(); }
     }
     ctx.drawImage(scratch, 0, 0, scratch.width, usedH, area.x, area.y, w, usedH);
     ctx.restore();
-    /* 3) 圆角描边 */
-    ctx.save();
-    roundRectPath(ctx, area.x, area.y, w, usedH, radius);
-    ctx.strokeStyle = data.blockBorderColor ? data.blockBorderColor : alphaColor(P.primary, 0.16);
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    drawCardBorder(ctx, area.x, area.y, w, usedH, radius, st, data);
+    drawCardDecor(ctx, area.x, area.y, w, usedH, radius, st);
     ctx.restore();
     return { h: usedH, silence: silence };
   }
@@ -1996,20 +2218,20 @@
   async function measureCardLayout(module, w, serial) {
     const def = R.getDef(module.type);
     const data = module.data || {};
-    const pad = Math.min(64, Math.max(28, px2(Number(data.padding) != null ? Number(data.padding) : 16)));
+    const pad = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), artTheme());
     let scratch = document.createElement("canvas");
     scratch.width = Math.max(1, Math.round(w));
-    scratch.height = 2800;
+    scratch.height = 3400;
     let sctx = scratch.getContext("2d");
     let cursor = pad;
     let headBaseline = pad;
     if (module.type !== "divider" || data.sectionTitle) {
-      headBaseline = pad + Math.round(58 * 0.92);
+      headBaseline = pad + Math.round(54 * 0.92);
       cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
     }
     let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
     /* 内容实测高度超出临时画布时重建更大画布重测，保证测量与绘制一致（审计 P1）。 */
-    if (contentEnd + pad > 2800) {
+    if (contentEnd + pad > 3400) {
       scratch = document.createElement("canvas");
       scratch.width = Math.max(1, Math.round(w));
       scratch.height = Math.ceil(contentEnd + pad + 64);
@@ -2017,21 +2239,21 @@
       cursor = pad;
       headBaseline = pad;
       if (module.type !== "divider" || data.sectionTitle) {
-        headBaseline = pad + Math.round(58 * 0.92);
+        headBaseline = pad + Math.round(54 * 0.92);
         cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
       }
       contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
     }
-    const usedH = Math.max(pad * 2 + 40, contentEnd + pad);
+    const usedH = Math.max(pad * 2 + 48, contentEnd + pad);
     return { h: usedH, pad: pad, headBaseline: headBaseline, w: w };
   }
 
   /* 计算整页模块的真实排版位置（含 offsetY），供导出与 PSD 对齐共用同一套坐标。 */
   async function measurePageLayout(page, offsetY) {
     const size = pageSize();
-    const x = 64;
-    const w = size.pageWidth - 128;
-    let y = 64 + (offsetY || 0);
+    const x = 50;
+    const w = size.pageWidth - 100;
+    let y = 46 + (offsetY || 0);
     const out = [];
     const rows = M.packModuleRows(page.modules);
     for (let r = 0; r < rows.length; r += 1) {
@@ -2039,20 +2261,20 @@
       const list = row.modules.filter(function (m) { return m.visible !== false; });
       if (!list.length) continue;
       if (row.kind === "pair" && list.length === 2) {
-        const gap = 24;
+        const gap = 14;
         const halfW = (w - gap) / 2;
         const left = await measureCardLayout(list[0], halfW, page.modules.indexOf(list[0]) + 1);
         const right = await measureCardLayout(list[1], halfW, page.modules.indexOf(list[1]) + 1);
         out.push({ module: list[0], x: x, y: y, w: halfW, serial: page.modules.indexOf(list[0]) + 1, head: left.headBaseline, h: left.h });
         out.push({ module: list[1], x: x + halfW + gap, y: y, w: halfW, serial: page.modules.indexOf(list[1]) + 1, head: right.headBaseline, h: right.h });
         const mb = Math.max(px2(Number(list[0].data && list[0].data.marginBottom) || 18), px2(Number(list[1].data && list[1].data.marginBottom) || 18));
-        y += Math.max(left.h, right.h) + Math.max(mb, 44);
+        y += Math.max(left.h, right.h) + Math.max(mb, 24);
       } else {
         const module = list[0];
         const meas = await measureCardLayout(module, w, page.modules.indexOf(module) + 1);
         out.push({ module: module, x: x, y: y, w: w, serial: page.modules.indexOf(module) + 1, head: meas.headBaseline, h: meas.h });
         const mb = px2(Number(module.data && module.data.marginBottom) || 18);
-        y += meas.h + Math.max(mb, 44);
+        y += meas.h + Math.max(mb, 24);
       }
     }
     return out;
@@ -2069,14 +2291,6 @@
     return silence;
   }
 
-  async function drawPageToCanvas(page) {
-    const size = pageSize(); const canvas = document.createElement("canvas"); canvas.width = size.pageWidth; canvas.height = size.pageHeight; const ctx = canvas.getContext("2d");
-    await readyFontForText(docFontFamily(), collectPageText(page));
-    ctx.fillStyle = page.backgroundColor || state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const background = await loadImage(page.backgroundImage || state.doc.backgroundImage); if (background) ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
-    await drawModuleStack(ctx, page, 0);
-    return canvas;
-  }
 
   /* 导出统一走「实测排版高度」：画布高度 = max(屏高, 内容总高 + 底距)。
      内容超屏时导出画布自动加高，不再静默截断（审计 P1）。
@@ -2106,9 +2320,10 @@
     wrapCache.clear();
     const layout = await measurePageLayout(page, 0);
     const contentBottom = layout.reduce(function (max, item) { return Math.max(max, item.y + (item.h || 0)); }, 0);
-    const height = Math.max(size.pageHeight, Math.ceil(contentBottom + 64));
+    const height = Math.max(size.pageHeight, Math.ceil(contentBottom + 46));
     const canvas = document.createElement("canvas"); canvas.width = size.pageWidth; canvas.height = height; const ctx = canvas.getContext("2d");
     await readyFontForText(docFontFamily(), collectPageText(page));
+    await readyFontsForPage(page);
     const silence = [];
     if (options.forStrip) {
       if (page.backgroundColor) { ctx.fillStyle = page.backgroundColor; ctx.fillRect(0, 0, canvas.width, canvas.height); }
@@ -2124,11 +2339,30 @@
       if (background) coverDraw(ctx, background, 0, 0, canvas.width, canvas.height);
       else if (imageSrc(bgRef)) silence.push({ type: page.backgroundImage ? "page-background" : "doc-background", module: page.backgroundImage ? "本屏背景" : "整条背景" });
     }
+    pageBgColorForHoles = page.backgroundColor || state.doc.backgroundColor || "#ffffff";
+    const pst = artTheme();
+    if (pst.pattern && pst.pattern !== "none") drawPatternOverlay(ctx, canvas.width, canvas.height, pst);
     silence.push.apply(silence, await drawModuleStack(ctx, page, 0, layout));
     return { canvas: canvas, layout: layout, silence: silence, contentHeight: height };
   }
 
   async function exportPng(allPages) {
+    if (global.BannerBuilderExport && global.BannerBuilderExport.exportPng) return global.BannerBuilderExport.exportPng({ allPages: allPages });
+    return legacyExportPng(allPages);
+  }
+  async function exportStripPng() {
+    if (global.BannerBuilderExport && global.BannerBuilderExport.exportStripPng) return global.BannerBuilderExport.exportStripPng();
+    return legacyExportStripPng();
+  }
+  async function exportPsd() {
+    if (global.BannerBuilderExport && global.BannerBuilderExport.exportPsd) return global.BannerBuilderExport.exportPsd();
+    return legacyExportPsd();
+  }
+  global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); } };
+  /* 导出倍率（1x = 750 设计宽；默认 2x = 1500 高清），文档级可配 doc.exportScale */
+  function exportScale() { return Number(state.doc.exportScale) || 2; }
+
+  async function legacyExportPng(allPages) {
     const pages = allPages ? state.doc.pages : [activePage()];
     const allSilence = [];
     const pageNo = function (page) { return String(state.doc.pages.indexOf(page) + 1).padStart(2, "0"); };
@@ -2151,7 +2385,7 @@
   }
 
   /* 连续长图：逐屏按实测高度渲染后纵向拼接；整条背景 cover 向下锚定跨屏连续。 */
-  async function exportStripPng() {
+  async function legacyExportStripPng() {
     const pages = state.doc.pages || []; if (!pages.length) return null;
     const size = pageSize(); const width = size.pageWidth;
     await readyFontForText(docFontFamily(), pages.map(collectPageText).join(" "));
@@ -2196,7 +2430,7 @@
   function textLayer(name, value, x, y, size, align) { return textLayerScope(name, value, x, y, size, align, null); }
   function textLayerScope(name, value, x, y, size, align, scope) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
 
-  async function exportPsd() {
+  async function legacyExportPsd() {
     if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return null; }
     const page = activePage(); const size = pageSize();
     const result = await drawPageToCanvas(page);
@@ -2211,22 +2445,22 @@
       const group = { name: "板块 " + (index + 1) + " · " + def.label, children: [] };
       const cardLeft = px(item.x + 18); const cardW = px(item.w - 36);
       const headY = px(item.y + item.head);
-      const title = textLayer((data.sectionTitle || def.label) + " · 可编辑 H2", data.sectionTitle || def.label, px(item.x + item.w / 2), headY, 58, "center");
+      const title = textLayer((data.sectionTitle || def.label) + " · 可编辑 H2", data.sectionTitle || def.label, px(item.x + item.w / 2), headY, 54, "center");
       if (title) group.children.push(title);
       if (module.type === "cover") {
-        const h1 = textLayer("主标题 · 可编辑文字", data.title, cardLeft, px(headY + 60), 74, "left"); if (h1) group.children.push(h1);
-        const sub = textLayer("副标题 · 可编辑文字", data.subtitle, cardLeft, px(headY + 150), 34, "left"); if (sub) group.children.push(sub);
+        const h1 = textLayer("主标题 · 可编辑文字", data.title, cardLeft, px(headY + 68), 65, "left"); if (h1) group.children.push(h1);
+        const sub = textLayer("副标题 · 可编辑文字", data.subtitle, cardLeft, px(headY + 170), 29, "left"); if (sub) group.children.push(sub);
       } else if (module.type === "announcement") {
-        const body = textLayerScope("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 80), 34, "left", "body"); if (body) group.children.push(body);
+        const body = textLayerScope("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 86), 29, "left", "body"); if (body) group.children.push(body);
       } else if (module.type === "freeText") {
         const item2 = textLayer("自由文本 · 可编辑文字", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), data.align); if (item2) group.children.push(item2);
       } else if (module.type === "programList") {
-        (data.items || []).forEach(function (it, i) { const row = textLayerScope("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 34, "left", "body"); if (row) group.children.push(row); });
+        (data.items || []).forEach(function (it, i) { const row = textLayerScope("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 27, "left", "body"); if (row) group.children.push(row); });
       } else if (module.type === "footer") {
         /* 页脚数据字段是 lines（字符串数组），此前误用 items 导致内容层永不生成（审计 P5）。 */
-        const f = textLayerScope("页脚内容 · 可编辑文字", (data.lines || []).filter(Boolean).join("  ·  "), cardLeft, px(headY + 70), 34, "left", "body"); if (f) group.children.push(f);
+        const f = textLayerScope("页脚内容 · 可编辑文字", (data.lines || []).filter(Boolean).join("  ·  "), cardLeft, px(headY + 74), 23, "left", "body"); if (f) group.children.push(f);
       } else if (module.type === "divider") {
-        const d = textLayer("分隔线备注 · 可编辑文字", data.sectionTitle || def.label, px(item.x + item.w / 2), px(headY + 30), 34, "center"); if (d) group.children.push(d);
+        const d = textLayer("分隔线备注 · 可编辑文字", data.sectionTitle || def.label, px(item.x + item.w / 2), px(headY + 32), 23, "center"); if (d) group.children.push(d);
       }
       void cardW;
       children.push(group);
@@ -2287,13 +2521,26 @@
       renderAll();
       this.value = "";
     });
-    els.themeSelect.addEventListener("change", function () { state.doc.theme = this.value; renderAll(); });
+    els.themeSelect.addEventListener("change", function () {
+      const prev = state.doc.theme;
+      state.doc.theme = this.value;
+      /* 主题建议字体：用户未手动设置（值为空）时随主题自动应用；手动选过则尊重用户。 */
+      const nextSt = C.themeStyle(state.doc.theme);
+      const prevSt = C.themeStyle(prev);
+      if (state.doc.headingFont && prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
+      else if (!state.doc.headingFont) state.doc.headingFont = nextSt.headingFont || "";
+      if (state.doc.bodyFont && prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+      else if (!state.doc.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+      if (state.doc.headingFont) ensureFont(state.doc.headingFont);
+      if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
+      renderAll();
+    });
     els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; ensureFont(state.doc.fontFamily); renderAll(); });
     els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
     els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
-    els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.25, state.zoom - .05); renderToolbar(); renderCanvas(); });
-    els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(.9, state.zoom + .05); renderToolbar(); renderCanvas(); });
-    els.zoomFitBtn.addEventListener("click", function () { state.zoom = .46; renderToolbar(); renderCanvas(); });
+    els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
+    els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
+    els.zoomFitBtn.addEventListener("click", function () { const avail = (els.canvasBody.clientWidth || 560) - 48; state.zoom = Math.min(1.5, Math.max(.15, avail / pageSize().pageWidth)); renderToolbar(); renderCanvas(); });
     els.exportPngBtn.addEventListener("click", function () { exportPng(false); });
     els.exportAllBtn.addEventListener("click", function () { exportPng(true); });
     els.exportStripBtn.addEventListener("click", exportStripPng);
@@ -2306,6 +2553,6 @@
     els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);

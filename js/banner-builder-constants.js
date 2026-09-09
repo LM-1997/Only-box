@@ -2,41 +2,51 @@
   "use strict";
 
   const CANVAS_PRESETS = {
-    "9:16": { pageWidth: 1242, pageHeight: 2208 },
-    "3:4": { pageWidth: 1242, pageHeight: 1656 },
+    "9:16": { pageWidth: 750, pageHeight: 1334 },
+    "3:4": { pageWidth: 750, pageHeight: 1000 },
   };
   const DEFAULT_RATIO = "9:16";
   const TYPE_SCALE = {
-    h1: { fontScale: 96 / 1242, weight: 700 },
-    h2: { fontScale: 72 / 1242, weight: 700 },
-    h3: { fontScale: 48 / 1242, weight: 600 },
-    body: { fontScale: 34 / 1242, weight: 400 },
-    caption: { fontScale: 26 / 1242, weight: 400 },
+    h1: { fontScale: 65 / 750, weight: 700 },
+    h2: { fontScale: 48 / 750, weight: 700 },
+    h3: { fontScale: 35 / 750, weight: 600 },
+    body: { fontScale: 29 / 750, weight: 400 },
+    caption: { fontScale: 23 / 750, weight: 400 },
   };
-  const CAPTION_MIN_PX_WARNING = 24;
+  const CAPTION_MIN_PX_WARNING = 18;
 
   /* 文档级主题配色：切主题覆盖画布内主色/强调色/线色/浅底变量（line 供边框与分隔线，soft 供卡片空底）。 */
   const THEMES = {
-    forest: { label: "森林绿", primary: "#1e7a4f", primaryDark: "#124f30", primarySoft: "#e4f2ea", accent: "#f2704b", accentSoft: "#fdeae2", line: "#cfe3d6", soft: "#edf4ee" },
-    sakura: { label: "樱花粉紫", primary: "#b8437e", primaryDark: "#7e2a58", primarySoft: "#f7e4ee", accent: "#7a5bd8", accentSoft: "#ece5fb", line: "#e9d2e0", soft: "#faeef5" },
-    ocean: { label: "海蓝", primary: "#1f6fb2", primaryDark: "#124d7e", primarySoft: "#e2eef9", accent: "#f59a3c", accentSoft: "#fdf0e0", line: "#cfe2f2", soft: "#eaf3fb" },
-    sunset: { label: "落日橙", primary: "#cf6a26", primaryDark: "#9c4313", primarySoft: "#f9ecdf", accent: "#d6453d", accentSoft: "#fbe4e1", line: "#efd8c4", soft: "#fbf0e6" },
-    mono: { label: "黑白极简", primary: "#373d44", primaryDark: "#14171a", primarySoft: "#eceff1", accent: "#e5484d", accentSoft: "#fbe7e8", line: "#d7dbe0", soft: "#f1f2f4" },
-    aurora: { label: "极光紫蓝", primary: "#5a5fd8", primaryDark: "#32349a", primarySoft: "#e9e9fa", accent: "#2fa8a0", accentSoft: "#e0f4f2", line: "#d5d6ef", soft: "#f1f1fb" },
-    candy: { label: "糖果派对", primary: "#ef5da8", primaryDark: "#b32d74", primarySoft: "#fdeaf4", accent: "#8f6ee8", accentSoft: "#efeaff", line: "#f3d3e2", soft: "#fbf1f6" },
-    cyber: { label: "赛博霓虹", primary: "#8a2be2", primaryDark: "#571a9c", primarySoft: "#f0e6fb", accent: "#00b3a4", accentSoft: "#dff5f2", line: "#ddd2f0", soft: "#f6f1fb" },
-    midnight: { label: "午夜蓝", primary: "#2f56a4", primaryDark: "#1b3570", primarySoft: "#e2e9f6", accent: "#e8993e", accentSoft: "#fbeeda", line: "#d0dcef", soft: "#eef2fa" },
-    crimson: { label: "中国红金", primary: "#c0392b", primaryDark: "#8c1f14", primarySoft: "#fbe7e3", accent: "#c9a227", accentSoft: "#f8f0d9", line: "#eccdc7", soft: "#faf0ee" },
-    ink: { label: "水墨青灰", primary: "#3f5c66", primaryDark: "#243b42", primarySoft: "#e8eef0", accent: "#c05b3c", accentSoft: "#f8e6df", line: "#cdd9dc", soft: "#f2f5f5" },
-    matcha: { label: "抹茶绿", primary: "#5f8f4a", primaryDark: "#3c6130", primarySoft: "#ebf3e4", accent: "#c47a3c", accentSoft: "#f8ecdf", line: "#d3e2c8", soft: "#f3f7ef" },
-    peach: { label: "蜜桃乌龙", primary: "#e2715a", primaryDark: "#ab432f", primarySoft: "#fdebe4", accent: "#7f6fd0", accentSoft: "#eeeafb", line: "#f0cfc4", soft: "#fbf2ee" },
-    lavender: { label: "薰衣草紫", primary: "#7c6fc0", primaryDark: "#55479b", primarySoft: "#efecfa", accent: "#e08a5e", accentSoft: "#fbece2", line: "#ddd7f0", soft: "#f6f4fb" },
-    mint: { label: "薄荷青", primary: "#1f9d8e", primaryDark: "#0f6b60", primarySoft: "#e1f3ef", accent: "#f2a03d", accentSoft: "#fdf0dd", line: "#c9e7e0", soft: "#f0f8f5" },
-    desert: { label: "沙漠落日", primary: "#b5703e", primaryDark: "#7f471f", primarySoft: "#f7ecdf", accent: "#4a8572", accentSoft: "#e3f0ea", line: "#ecdcc8", soft: "#faf4ec" },
-    noir: { label: "黑金质感", primary: "#46403a", primaryDark: "#262119", primarySoft: "#efede8", accent: "#c2a024", accentSoft: "#f6efd8", line: "#d9d4ca", soft: "#f4f2ed" },
-    grape: { label: "葡萄汽水", primary: "#7b52a8", primaryDark: "#4f2f77", primarySoft: "#f0e9f8", accent: "#e5567c", accentSoft: "#fde8ee", line: "#dccfee", soft: "#f7f3fb" },
-    berry: { label: "树莓冰茶", primary: "#a4356f", primaryDark: "#6f1f4a", primarySoft: "#f9e7f0", accent: "#3f7fa8", accentSoft: "#e6f1f7", line: "#e5c7d8", soft: "#faf1f6" },
+    forest: { label: "森林绿", primary: "#1e7a4f", primaryDark: "#124f30", primarySoft: "#e4f2ea", accent: "#f2704b", accentSoft: "#fdeae2", line: "#cfe3d6", soft: "#edf4ee", cardStyle: "card", radius: 23, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" },
+    sakura: { label: "樱花粉紫", primary: "#b8437e", primaryDark: "#7e2a58", primarySoft: "#f7e4ee", accent: "#7a5bd8", accentSoft: "#ece5fb", line: "#e9d2e0", soft: "#faeef5", cardStyle: "sticker", radius: 29, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
+    ocean: { label: "海蓝", primary: "#1f6fb2", primaryDark: "#124d7e", primarySoft: "#e2eef9", accent: "#f59a3c", accentSoft: "#fdf0e0", line: "#cfe2f2", soft: "#eaf3fb", cardStyle: "card", radius: 23, shadow: "soft", divider: "line", chips: "pill", titleDecor: "bar", pattern: "none", headingFont: "", bodyFont: "" },
+    sunset: { label: "落日橙", primary: "#cf6a26", primaryDark: "#9c4313", primarySoft: "#f9ecdf", accent: "#d6453d", accentSoft: "#fbe4e1", line: "#efd8c4", soft: "#fbf0e6", cardStyle: "glass", radius: 32, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "stripes", headingFont: "", bodyFont: "" },
+    mono: { label: "黑白极简", primary: "#373d44", primaryDark: "#14171a", primarySoft: "#eceff1", accent: "#e5484d", accentSoft: "#fbe7e8", line: "#d7dbe0", soft: "#f1f2f4", cardStyle: "panel", radius: 0, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "grid", headingFont: "bebas", bodyFont: "lato" },
+    aurora: { label: "极光紫蓝", primary: "#5a5fd8", primaryDark: "#32349a", primarySoft: "#e9e9fa", accent: "#2fa8a0", accentSoft: "#e0f4f2", line: "#d5d6ef", soft: "#f1f1fb", cardStyle: "glass", radius: 32, shadow: "glow", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "poppins", bodyFont: "" },
+    candy: { label: "糖果派对", primary: "#ef5da8", primaryDark: "#b32d74", primarySoft: "#fdeaf4", accent: "#8f6ee8", accentSoft: "#efeaff", line: "#f3d3e2", soft: "#fbf1f6", cardStyle: "sticker", radius: 32, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
+    cyber: { label: "赛博霓虹", primary: "#8a2be2", primaryDark: "#571a9c", primarySoft: "#f0e6fb", accent: "#00b3a4", accentSoft: "#dff5f2", line: "#ddd2f0", soft: "#f6f1fb", cardStyle: "panel", radius: 0, shadow: "glow", divider: "glitch", chips: "squared", titleDecor: "bar", pattern: "grid", headingFont: "grotesk", bodyFont: "robotoCond" },
+    midnight: { label: "午夜蓝", primary: "#2f56a4", primaryDark: "#1b3570", primarySoft: "#e2e9f6", accent: "#e8993e", accentSoft: "#fbeeda", line: "#d0dcef", soft: "#eef2fa", cardStyle: "panel", radius: 7, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "none", headingFont: "oswald", bodyFont: "lato" },
+    crimson: { label: "中国红金", primary: "#c0392b", primaryDark: "#8c1f14", primarySoft: "#fbe7e3", accent: "#c9a227", accentSoft: "#f8f0d9", line: "#eccdc7", soft: "#faf0ee", cardStyle: "ticket", radius: 18, shadow: "soft", divider: "dashed", chips: "tag", titleDecor: "bracket", pattern: "none", headingFont: "qingke", bodyFont: "" },
+    ink: { label: "水墨青灰", primary: "#3f5c66", primaryDark: "#243b42", primarySoft: "#e8eef0", accent: "#c05b3c", accentSoft: "#f8e6df", line: "#cdd9dc", soft: "#f2f5f5", cardStyle: "ink", radius: 11, shadow: "soft", divider: "thread", chips: "pill", titleDecor: "bracket", pattern: "paper", headingFont: "xiaowei", bodyFont: "kai" },
+    matcha: { label: "抹茶绿", primary: "#5f8f4a", primaryDark: "#3c6130", primarySoft: "#ebf3e4", accent: "#c47a3c", accentSoft: "#f8ecdf", line: "#d3e2c8", soft: "#f3f7ef", cardStyle: "ink", radius: 14, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "stitch", pattern: "paper", headingFont: "xiaowei", bodyFont: "kai" },
+    peach: { label: "蜜桃乌龙", primary: "#e2715a", primaryDark: "#ab432f", primarySoft: "#fdebe4", accent: "#7f6fd0", accentSoft: "#eeeafb", line: "#f0cfc4", soft: "#fbf2ee", cardStyle: "glass", radius: 36, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" },
+    lavender: { label: "薰衣草紫", primary: "#7c6fc0", primaryDark: "#55479b", primarySoft: "#efecfa", accent: "#e08a5e", accentSoft: "#fbece2", line: "#ddd7f0", soft: "#f6f4fb", cardStyle: "card", radius: 29, shadow: "soft", divider: "thread", chips: "pill", titleDecor: "stitch", pattern: "none", headingFont: "playfair", bodyFont: "" },
+    mint: { label: "薄荷青", primary: "#1f9d8e", primaryDark: "#0f6b60", primarySoft: "#e1f3ef", accent: "#f2a03d", accentSoft: "#fdf0dd", line: "#c9e7e0", soft: "#f0f8f5", cardStyle: "card", radius: 18, shadow: "soft", divider: "dots", chips: "squared", titleDecor: "none", pattern: "dots", headingFont: "montserrat", bodyFont: "" },
+    desert: { label: "沙漠落日", primary: "#b5703e", primaryDark: "#7f471f", primarySoft: "#f7ecdf", accent: "#4a8572", accentSoft: "#e3f0ea", line: "#ecdcc8", soft: "#faf4ec", cardStyle: "ticket", radius: 14, shadow: "hard", divider: "dashed", chips: "tag", titleDecor: "bar", pattern: "stripes", headingFont: "abril", bodyFont: "" },
+    noir: { label: "黑金质感", primary: "#46403a", primaryDark: "#262119", primarySoft: "#efede8", accent: "#c2a024", accentSoft: "#f6efd8", line: "#d9d4ca", soft: "#f4f2ed", cardStyle: "panel", radius: 4, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "noise", headingFont: "playfair", bodyFont: "lato" },
+    grape: { label: "葡萄汽水", primary: "#7b52a8", primaryDark: "#4f2f77", primarySoft: "#f0e9f8", accent: "#e5567c", accentSoft: "#fde8ee", line: "#dccfee", soft: "#f7f3fb", cardStyle: "sticker", radius: 32, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
+    berry: { label: "树莓冰茶", primary: "#a4356f", primaryDark: "#6f1f4a", primarySoft: "#f9e7f0", accent: "#3f7fa8", accentSoft: "#e6f1f7", line: "#e5c7d8", soft: "#faf1f6", cardStyle: "glass", radius: 25, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "poppins", bodyFont: "" },
   };
+
+  /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。 */
+  const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" };
+  function themeStyle(key) {
+    const t = THEMES[key] || THEMES.forest;
+    const out = {};
+    Object.keys(STYLE_DEFAULTS).forEach(function (k) { out[k] = t[k] != null ? t[k] : STYLE_DEFAULTS[k]; });
+    Object.keys(t).forEach(function (k) { if (!(k in out)) out[k] = t[k]; });
+    return out;
+  }
 
   /* 文档级字体：全部为免费可商用字体（SIL OFL / 官方免费授权），经 jsDelivr 在线加载 @fontsource 分包。
      family 必须与 @fontsource css 内 @font-face 声明的字体名一致；css 数组按字重列出。
@@ -132,5 +142,6 @@
     fontStack,
     headingFontStack,
     bodyFontStack,
+    themeStyle,
   });
 })(window);

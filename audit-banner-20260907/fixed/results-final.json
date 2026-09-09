@@ -1,0 +1,66 @@
+{
+  "startedAt": "2026-09-07T08:41:30.001Z",
+  "phases": [
+    {
+      "name": "P4-P5",
+      "data": {
+        "all": [
+          {
+            "w": 1242,
+            "h": 2208,
+            "bytes": 813686
+          },
+          {
+            "w": 1242,
+            "h": 2208,
+            "bytes": 100225
+          }
+        ],
+        "psd": 77
+      }
+    },
+    {
+      "name": "P6",
+      "data": {
+        "coverPixelAfterRestore": [
+          139,
+          74,
+          151
+        ]
+      }
+    },
+    {
+      "name": "P1-P6-alerts",
+      "data": {
+        "dialogCount": 1,
+        "dialogs": [
+          "导出完成，但以下图片未能加载（刷新后旧图片引用会过期）：\n第 1 屏 「整条背景」的整条背景引用已失效，该处按占位底色导出\n第 2 屏 「整条背景」的整条背景引用已失效，该处按占位底色导出\n\n重新插入图片后再次导出即可还原。"
+        ]
+      }
+    },
+    {
+      "name": "P1-final",
+      "data": {
+        "w": 1242,
+        "h": 3869,
+        "bytes": 1263079
+      }
+    }
+  ],
+  "dialogs": [
+    "导出完成，但以下图片未能加载（刷新后旧图片引用会过期）：\n第 1 屏 「整条背景」的整条背景引用已失效，该处按占位底色导出\n第 2 屏 「整条背景」的整条背景引用已失效，该处按占位底色导出\n\n重新插入图片后再次导出即可还原。"
+  ],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Not allowed to load local resource: blob:https://127.0.0.1/dead-blob",
+    "Not allowed to load local resource: blob:https://127.0.0.1/dead-blob"
+  ],
+  "finishedAt": "2026-09-07T08:41:34.110Z"
+}

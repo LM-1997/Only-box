@@ -1,0 +1,165 @@
+{
+  "startedAt": "2026-09-07T08:36:34.637Z",
+  "phases": [
+    {
+      "name": "built",
+      "data": {
+        "pages": 3,
+        "modules": 5
+      }
+    },
+    {
+      "name": "P9-font-notice",
+      "data": {
+        "exists": false
+      }
+    },
+    {
+      "name": "baseline-png",
+      "data": {
+        "p1": {
+          "w": 1242,
+          "h": 2208,
+          "bytes": 941766
+        },
+        "p2": {
+          "w": 1242,
+          "h": 2688,
+          "bytes": 158164
+        },
+        "p3": {
+          "w": 1242,
+          "h": 2208,
+          "bytes": 108261
+        }
+      }
+    },
+    {
+      "name": "strip",
+      "data": {
+        "w": 1242,
+        "h": 7104,
+        "bytes": 1203963
+      }
+    },
+    {
+      "name": "P1-longtext",
+      "data": {
+        "ms": 389,
+        "png": {
+          "w": 1242,
+          "h": 4181,
+          "bytes": 2006346
+        },
+        "bottom": {
+          "h": 4181,
+          "lastInkY": 4180,
+          "marginBelow": 0
+        }
+      }
+    },
+    {
+      "name": "P3-bg-cover",
+      "data": {
+        "w": 1242,
+        "h": 2208,
+        "picks": {
+          "y150": [
+            0,
+            255,
+            0
+          ],
+          "y1104": [
+            0,
+            255,
+            0
+          ],
+          "y2100": [
+            0,
+            255,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "name": "P5-psd-head",
+      "data": {
+        "sig": "8BPS",
+        "bytes": 420862
+      }
+    },
+    {
+      "name": "P5-psd-footer-layer",
+      "data": {
+        "height": 2208,
+        "footerLayers": [
+          {
+            "name": "页脚内容 · 可编辑文字",
+            "text": "微博 @Only-box 企划  ·  联系 QQ 123456789"
+          }
+        ]
+      }
+    },
+    {
+      "name": "P6-draft",
+      "data": {
+        "draftCoverUrlPrefix": "data:",
+        "restored": {
+          "imgTotal": 1,
+          "imgBroken": 0,
+          "coverPrefix": "blob:"
+        },
+        "heroMidAfterRestore": [
+          139,
+          74,
+          151
+        ]
+      }
+    },
+    {
+      "name": "empty-regression",
+      "data": {
+        "png": {
+          "w": 1242,
+          "h": 2208,
+          "bytes": 62109
+        },
+        "psd": {
+          "sig": "8BPS",
+          "bytes": 292626
+        }
+      }
+    }
+  ],
+  "consoleErrors": [
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED",
+    "Failed to load resource: net::ERR_FAILED"
+  ],
+  "dialogs": [],
+  "downloads": [
+    "only-box-banner-01.png",
+    "only-box-banner-01.png",
+    "only-box-banner-02.png",
+    "only-box-banner-03.png",
+    "only-box-banner-continuous.png",
+    "only-box-banner-01.png",
+    "only-box-banner-04.png",
+    "only-box-banner-page-3.psd",
+    "only-box-banner-draft.json",
+    "only-box-banner-01.png",
+    "only-box-banner-01.png",
+    "only-box-banner-page-1.psd"
+  ],
+  "finishedAt": "2026-09-07T08:36:41.435Z"
+}

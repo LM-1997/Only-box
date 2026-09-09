@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>预览即所得改造方案 · Only-box 长图工具</title>
+<style>
+  :root{
+    --bg:#fafaf9; --ink:#16181a; --muted:#6b7280; --hair:#d9dbdd;
+    --accent:#1e7a4f; --accent-dim:#e7f2ec; --code:#f3f4f5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:15px;line-height:1.65;padding:0 24px}
+  .wrap{max-width:860px;margin:0 auto;padding:56px 0 96px}
+  .kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:14px}
+  h1{font-size:34px;line-height:1.2;font-weight:600;letter-spacing:-.01em;margin-bottom:14px}
+  .lede{font-size:16.5px;color:#3a3f45;max-width:640px;margin-bottom:8px}
+  .meta{font-family:Consolas,monospace;font-size:12px;color:var(--muted);margin:18px 0 0;padding:12px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);display:flex;gap:28px;flex-wrap:wrap}
+  .meta b{color:var(--ink);font-weight:600}
+  h2{font-size:21px;font-weight:600;margin:56px 0 6px;padding-top:22px;border-top:1px solid var(--hair);letter-spacing:-.005em}
+  h2 .no{color:var(--accent);font-family:Consolas,monospace;font-size:13px;font-weight:400;margin-right:10px}
+  h3{font-size:15.5px;font-weight:600;margin:26px 0 6px}
+  p{margin:10px 0;max-width:70ch}
+  p.small{font-size:13px;color:var(--muted)}
+  ul,ol{margin:10px 0 10px 22px;max-width:68ch}
+  li{margin:5px 0}
+  li::marker{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  th{text-align:left;font-weight:600;font-size:12px;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--ink);padding:8px 12px 8px 0}
+  td{border-bottom:1px solid var(--hair);padding:9px 12px 9px 0;vertical-align:top}
+  td.num{font-family:Consolas,monospace;font-size:12.5px;white-space:nowrap}
+  code{font-family:Consolas,monospace;font-size:12.5px;background:var(--code);padding:1px 5px;border-radius:2px}
+  .verdict{border-left:3px solid var(--accent);background:var(--accent-dim);padding:14px 18px;margin:18px 0;max-width:70ch}
+  .verdict p{margin:4px 0}
+  .verdict .tag{font-size:11px;letter-spacing:.1em;font-weight:700;color:var(--accent);text-transform:uppercase}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--hair);margin:16px 0}
+  .two>div{padding:16px 18px}
+  .two>div+div{border-left:1px solid var(--hair)}
+  .two h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .two ul{margin-left:18px;font-size:13.5px}
+  .flow{margin:16px 0;border:1px solid var(--hair)}
+  .flow .step{display:flex;gap:14px;padding:12px 16px;border-bottom:1px solid var(--hair);align-items:baseline}
+  .flow .step:last-child{border-bottom:none}
+  .flow .n{font-family:Consolas,monospace;color:var(--accent);font-size:12px;min-width:34px}
+  .flow .t{font-weight:600;font-size:13.5px;min-width:130px}
+  .flow .d{font-size:13px;color:#3a3f45}
+  .warn{border:1px solid #e5c46a;background:#fdf8ec;padding:12px 16px;margin:14px 0;max-width:70ch;font-size:13.5px}
+  .warn b{color:#8a6d1d}
+  .params td:first-child{font-family:Consolas,monospace;font-size:12.5px}
+  footer{margin-top:72px;padding-top:16px;border-top:1px solid var(--hair);font-size:12px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">Only-box · banner-builder 技术方案</div>
+  <h1>「预览即所得」改造：诊断、方案与交接说明</h1>
+  <p class="lede">修复竖屏 H5 长图工具的导出一致性问题：PNG / PSD 与预览像素级对齐，字号恢复手机阅读尺度，在线字体导出前强制就绪。</p>
+  <div class="meta">
+    <span>改动版本 <b>v=20260907-14</b></span>
+    <span>设计宽度 <b>1242 → 750</b></span>
+    <span>校准系数 <b>×2.08</b></span>
+    <span>导出引擎 <b>DOM 序列化</b></span>
+    <span>验证 <b>静态审计 49/49</b></span>
+  </div>
+
+  <h2><span class="no">01</span>问题诊断：为什么之前导出总对不上</h2>
+  <p>工具原有两条独立渲染链路：页面预览走 DOM+CSS，导出 PNG 走手写 Canvas 绘制器逐板块重绘。两套代码各维护一套字号、间距、圆角数值，且单位体系不同——预览是「窗口宽度百分比 + 固定 CSS px」，导出是「1242px 设计稿 + 硬编码 ×2.2 经验换算」。只有当窗口宽度恰好让预览列约 565px 时两者才碰巧一致；窗口一变，字号比例整体错位。这解释了你两轮反馈的同一类症状：<b>换算出来的字永远和预览差一截，而且差多少随窗口变</b>。</p>
+  <p>另有两个独立缺陷叠加：</p>
+  <ul>
+    <li><b>字体门禁缺失</b>——原导出链路只等待「全局字体」，从不等标题字体/正文字体的 webfont 加载完成，在线字体（jsDelivr 上的 @fontsource 分包）慢或失败时，导出静默落入回退字体，这就是「字体现在还是有问题」的直接原因。</li>
+    <li><b>PSD 文字层坐标是硬编码近似值</b>——与实际排版无关，PS 里打开位置对不上。</li>
+  </ul>
+
+  <h2><span class="no">02</span>方案对比与选型</h2>
+  <p>「预览即所得」有三种主流架构，核心差异在<b>预览和导出是否共享同一份渲染</b>：</p>
+  <table>
+    <tr><th>方案</th><th>像素一致性</th><th>PSD 分层兼容</th><th>字体处理</th><th>主要风险</th></tr>
+    <tr><td><b>A. 统一 DOM + 截图库</b>（html2canvas / html-to-image）</td><td>高（同源渲染）</td><td>位图可做合成层，文字层需自行补</td><td>依赖 document.fonts.ready，截图库自己处理字体</td><td>html2canvas 对 box-shadow/zoom 支持差；需引第三方库</td></tr>
+    <tr><td><b>B. 统一 Canvas 渲染</b>（预览即导出小样）</td><td>理论最高</td><td>原生兼容 ag-psd</td><td>canvas 绘制前必须显式等字体</td><td><b>预览交互全部重写</b>（选中/悬停/工具提示都要在 canvas 上自绘），工作量与回归风险最大</td></tr>
+    <tr><td><b>C. 手写双链路修补</b>（本工具原状）</td><td>永远存在漂移</td><td>已兼容</td><td>每侧各自处理</td><td>每加一个板块要同步两套代码，这次修了下次还偏</td></tr>
+  </table>
+  <div class="verdict">
+    <p class="tag">选型结论</p>
+    <p>采用 <b>方案 A 变体：保留 DOM 预览（交互零改动），导出改为「DOM 序列化 → SVG foreignObject → 位图化」</b>，即 html-to-image 同款原理，但为工具定制内联实现（约 200 行，不引外部库）。同一份 DOM 既是预览也是导出源，一致性由结构保证而非数值对齐；原 Canvas 绘制器完整保留为 legacy 回退（导出脚本加载失败时自动降级）。方案 B 的一致性上限更高，但要重写全部预览交互，与「工具核心思路不变」的前提冲突，不取。</p>
+  </div>
+
+  <h2><span class="no">03</span>最终架构</h2>
+  <div class="flow">
+    <div class="step"><span class="n">S1</span><span class="t">zoom 安全区</span><span class="d">导出前把预览临时重建为 zoom=1（设计宽度原尺寸）——CSS zoom 子树内 computed style 是缩放后值，直接克隆会得到缩小版布局；导出完恢复用户缩放。</span></div>
+    <div class="step"><span class="n">S2</span><span class="t">字体门禁</span><span class="d">document.fonts.load 对标题/正文两种角色的 400/700/900 三档字重逐一就绪，再等 document.fonts.ready 全局稳定，才开始渲染导出。</span></div>
+    <div class="step"><span class="n">S3</span><span class="t">资源内联</span><span class="d">SVG-as-Image 沙箱不加载 blob:/http 外链资源（html-to-image 转存 dataURL 的同款原因），img src 与 CSS background-image 全部转为 dataURL 后再序列化。</span></div>
+    <div class="step"><span class="n">S4</span><span class="t">序列化位图化</span><span class="d">克隆预览节点 → 内联全部计算样式 → 包进 foreignObject → XMLSerializer → dataURL SVG → Image → canvas，按 doc.exportScale 倍率放大输出。</span></div>
+    <div class="step"><span class="n">S5</span><span class="t">产物输出</span><span class="d">PNG 直接下载；连续长图对整条 strip 同流程；PSD 用 1x 位图做「合成预览」图层写入 ag-psd。</span></div>
+  </div>
+
+  <h2><span class="no">04</span>基准校准：750 设计宽度与 ×2.08 系数</h2>
+  <p>竖屏 H5 的行业惯例是 <b>750×1334 设计宽度</b>（iPhone 6/7/8 逻辑分辨率 ×2），二次元手游活动页、公众号长图均按此基准出稿；1242 是 Plus 系列物理宽，现已过时。你的诉求「回到我原本的预览视觉」换算如下：原预览在 46% 缩放下画布显示宽约 360px，你认可的字号比例 = DOM px ÷ 360；迁移到 750 设计宽度后，所有视觉值按 <b>750 ÷ 360 = ×2.08</b> 放大，导出再按 2x 倍率输出 1500px 宽成图——手机上阅读大小与原网页视觉一致。</p>
+  <table class="params">
+    <tr><th>参数</th><th>旧值</th><th>新值</th><th>说明</th></tr>
+    <tr><td>CANVAS_PRESETS 9:16</td><td class="num">1242×2208</td><td class="num">750×1334</td><td>竖屏 H5 标准基准</td></tr>
+    <tr><td>CANVAS_PRESETS 3:4</td><td class="num">1242×1656</td><td class="num">750×1000</td><td>比例随新宽度重算</td></tr>
+    <tr><td>TYPE_SCALE h1/h2/h3</td><td class="num">96/72/48 @1242</td><td class="num">65/48/35 @750</td><td>freeText 层级字号，含层级字重</td></tr>
+    <tr><td>TYPE_SCALE body/caption</td><td class="num">34/26 @1242</td><td class="num">29/23 @750</td><td>正文/图注</td></tr>
+    <tr><td>px2() 换算器</td><td class="num">×2.2 硬编码</td><td class="num">×2.08</td><td>预览/导出共用同一函数</td></tr>
+    <tr><td>板块标题 / kicker</td><td class="num">58 / 27</td><td class="num">54 / 23</td><td>DOM CSS 与 Canvas 绘制器同值</td></tr>
+    <tr><td>导出倍率 doc.exportScale</td><td class="num">无（1x 硬出）</td><td class="num">默认 2x</td><td>可配置：2x=1500px 宽，3x=2250px</td></tr>
+  </table>
+
+  <h2><span class="no">05</span>字体方案</h2>
+  <p>在线字体走 @fontsource（jsDelivr CDN）按 unicode-range 分片加载，中文包只拉取命中的分片。<b>导出门禁</b>：导出前对标题字体、正文字体分别调 <code>document.fonts.load(weight 24px family, 文本样本)</code>（400/700/900 三档），<code>Promise.all</code> 汇聚后再等 <code>document.fonts.ready</code>，任何一档失败不阻塞导出但会保留回退栈，不再静默错位。预览与导出共用同一 <code>font-family</code> 栈（<code>C.FONTS → fontStack()</code>），三端字形一致。</p>
+  <div class="warn"><b>已知边界</b>：jsDelivr 在大陆存在间歇性慢/不可达。若某网络环境频繁回退，可将 <code>banner-builder-constants.js</code> 中 FONTS 的 <code>css</code> 数组换成 npmmirror 镜像（<code>registry.npmmirror.com/@fontsource/...</code>）或本地化字体文件，字段格式不变。PSD 里的文字层在 PS 打开时若本机未装对应字体会按 PS 规则回退显示——位图合成层不受影响，文字层的字体名已按角色写入。</div>
+
+  <h2><span class="no">06</span>改动清单</h2>
+  <table>
+    <tr><th>文件</th><th>改动</th></tr>
+    <tr><td class="num">js/banner-builder-constants.js</td><td>CANVAS_PRESETS 750 基准、TYPE_SCALE 重定标、主题 radius 归一到 750 空间、CAPTION 警告阈值 24→18</td></tr>
+    <tr><td class="num">js/banner-builder.js</td><td>px2 ×2.08、绘制器全板块字号/间距重定标、readyFontsForPage 字体门禁、cardRadius 双侧统一、导出入口委托 BannerBuilderExport（legacy 保留）、PSD 文字层字号对齐、freeText 层级字重</td></tr>
+    <tr><td class="num">js/banner-builder-export.js</td><td><b>新增</b>：DOM 序列化导出模块（zoom 安全区 / 资源内联 / foreignObject 位图化 / PNG·长图·PSD 三出口 / exportScale 可配）</td></tr>
+    <tr><td class="num">tools/banner-builder.html</td><td>全部板块 CSS 按 ×2.08 与绘制器同值定标（约 125 处）、注册 export.js、版本号 -14</td></tr>
+  </table>
+
+  <h2><span class="no">07</span>验证与已知边界</h2>
+  <div class="verdict">
+    <p class="tag">真实运行自检（headless Edge + CDP，10 板块 2 屏样例）</p>
+    <p>构造 5+2 套样例板块（封面/公告/日程/票务/自由文本/场地/节目/嘉宾/摊位/页脚）注入真实工具页自动断言，结果 <b>PASS</b>：板块标题实测 <b>54px</b>（与绘制器同值）、画布宽 <b>750</b>、主引擎 <b>html-to-image</b>（全量计算样式克隆，含 box-sizing/flex/grid 家族）成功导出 2 屏、PNG 实际尺寸 <b>1500×3104</b>（= 750 设计宽 × 2 倍率；高度按内容实测取大，超屏不裁剪）、PSD 出口正常、字体状态 <b>loaded</b>、运行期 <b>0 个 JS 异常</b>。字体分片按需内嵌后导出耗时 <b>1.2s</b>（首版全分片内嵌曾达 32s）。自检页随工具交付：<code>tools/banner-builder-selftest.html</code>（浏览器打开即自动重跑并显示断言）。</p>
+  </div>
+  <div class="two">
+    <div>
+      <h4>已验证</h4>
+      <ul>
+        <li>静态审计 49/49：常量层、绘制器、DOM CSS、导出模块四层关键值逐项核对通过，无 1242/×2.2 旧值残留</li>
+        <li>node --check 语法校验：全部 JS 文件通过</li>
+        <li>headless 真实运行断言 PASS（见上）：html-to-image 主链路 + PNG 尺寸 + PSD 出口 + 字体门禁</li>
+        <li>导出加固：blob:/http 图片转 dataURL 内联、webfont 已激活分片内嵌（skipFonts 绕过全量拉取）、导出期间 zoom=1 安全区、内容实测高度防裁剪</li>
+        <li>三级回退：html-to-image 失败→自研序列化；export.js 加载失败→legacy Canvas 绘制器</li>
+        <li><b>二次修正（用户实测反馈）</b>：①连续模式「第 N 屏」标签不再混入导出（导出期间全局隐藏 + 克隆树移除，断言 tagsLeft=0）；②照片 EXIF 方向烘焙（预览摆正、导出端正一致，探针断言 baked:true）；③外链资源拉取加 8s 超时 + 跨域字体样式表不入克隆树（修复弱网/离线导出无限挂死）；④板块上移/下移按钮容器 .bb-art-actions 加入导出隔离名单（断言 actionsLeft=0）；⑤导出根 margin 0 auto 归零（居中偏移被克隆固化导致整图右偏，像素探针 noShift:true）；⑥预览编辑按钮加缩放补偿（任意缩放下保持可点大小）</li>
+      </ul>
+    </div>
+    <div>
+      <h4>待你实测（含 PS/真机）</h4>
+      <ul>
+        <li>浏览器打开工具 → 预览与导出 PNG 并排比对（预期像素级一致）</li>
+        <li>PS 打开导出的 PSD，确认合成预览层与预览一致（文字分层为位图参考形态）</li>
+        <li>手机上打开导出 PNG，确认阅读尺度恢复到原网页视觉</li>
+        <li>弱网下切字体立即导出，确认门禁等待生效（不出现回退字形）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="warn"><b>已知边界</b>：① PSD 为「合成位图 + 结构分组」形态，文字不以可编辑文字层输出（legacy 链路保留旧文字层形态可对照）；② <code>backdrop-filter</code>（glass 毛玻璃）位图化不支持，导出中弱化为半透明底；③ jsDelivr 弱网时门禁等待有短暂延迟，属字体就绪校验正常表现；④ 自研序列化兜底链路存在 box-sizing/flex 白名单缺口（本轮主因），仅作 html-to-image 不可用时的应急回退，输出可能有偏差——主链路优先保证 vendor 库可用（<code>js/vendor/html-to-image.js</code> 本地化，无外网依赖）。</div>
+  <p class="small">维护要点：预览样式（tools/banner-builder.html 的 .bb-art-* 系列）与绘制器（banner-builder.js 的 paint* 函数族）已由 px2/styleCardPad/cardRadius 三个共用函数绑定，卡片级数值改一处即两侧同步；自由文本等独立字号仍需两侧同改，对照表见 04 节参数表。后续若新增板块模板，DOM 侧写渲染函数、Canvas legacy 侧补对应 paint 函数即可，新导出引擎自动继承 DOM 侧。</p>
+
+  <footer>
+    <span>Only-box · 预览即所得改造方案</span>
+    <span>v=20260907-17 · 2026-09-09</span>
+  </footer>
+</div>
+</body>
+</html>
