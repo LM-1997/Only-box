@@ -8,6 +8,7 @@
     doc: M.createDoc(C.DEFAULT_RATIO),
     activePageId: null,
     selectedModuleId: null,
+    pickMode: "screen",
     zoom: 0.46,
   };
   const els = {};
@@ -872,6 +873,7 @@
     els.zoomValue.textContent = Math.round(state.zoom * 100) + "%"; els.stats.textContent = state.doc.pages.length + " 屏 · " + M.countModules(state.doc) + " 个板块";
     els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans"; els.headingFontSelect.value = state.doc.headingFont || ""; els.bodyFontSelect.value = state.doc.bodyFont || "";
     Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    syncPickMode();
   }
 
   function renderLibrary() {
@@ -1151,8 +1153,11 @@
   function artWeight(v) {
     return v >= 900 ? 900 : v >= 800 ? 800 : v >= 600 ? 600 : v >= 500 ? 500 : 400;
   }
-  function artFont(ctx, size, weight) {
-    ctx.font = artWeight(weight || 400) + " " + size + "px " + C.fontStack(docFontFamily());
+  function artFont(ctx, size, weight, scope) {
+    const key = scope === "body"
+      ? (state.doc.bodyFont || state.doc.headingFont || state.doc.fontFamily || "sans")
+      : (state.doc.headingFont || state.doc.fontFamily || "sans");
+    ctx.font = artWeight(weight || 400) + " " + size + "px " + C.fontStack(key);
   }
   function artInk() {
     return "#20251f";
@@ -1219,9 +1224,9 @@
 
   /* 文本排版：支持 左/中/右；返回用尽后(含行距)的 y。
      与旧 drawText 同构但显式携带字号/字重/行距倍数。 */
-  function drawRich(ctx, value, x, y, maxWidth, size, weight, color, align, lineMul) {
+  function drawRich(ctx, value, x, y, maxWidth, size, weight, color, align, lineMul, scope) {
     ctx.save();
-    artFont(ctx, size, weight);
+    artFont(ctx, size, weight, scope);
     ctx.fillStyle = color || artInk();
     ctx.textAlign = align || "left";
     ctx.textBaseline = "alphabetic";
@@ -1232,22 +1237,22 @@
     return y + Math.max(1, lines.length) * step;
   }
   /* 只测高度的排版辅助：行数 × 步进，供「先铺底、后写字」的内衬面板计算高度。 */
-  function textBlockInfo(ctx, value, maxWidth, size, weight, lineMul) {
+  function textBlockInfo(ctx, value, maxWidth, size, weight, lineMul, scope) {
     ctx.save();
-    artFont(ctx, size, weight || 400);
+    artFont(ctx, size, weight || 400, scope);
     const step = Math.round(size * (lineMul || 1.45));
     const count = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth)).length;
     ctx.restore();
     return { count: count, step: step, height: Math.max(1, count) * step };
   }
   /* 从 bottom 界向上排版一个文本块（供封面沉浸底部锚定），返回块顶(可作为上方块的新 bottom)。 */
-  function paintUpText(ctx, value, x, bottom, maxWidth, size, weight, color, align, lineMul) {
-    const info = textBlockInfo(ctx, value, maxWidth, size, weight, lineMul);
+  function paintUpText(ctx, value, x, bottom, maxWidth, size, weight, color, align, lineMul, scope) {
+    const info = textBlockInfo(ctx, value, maxWidth, size, weight, lineMul, scope);
     const step = info.step;
     const count = info.count;
     const yStart = bottom - (count - 1) * step - Math.round(size * 0.3);
     ctx.save();
-    artFont(ctx, size, weight);
+    artFont(ctx, size, weight, scope);
     ctx.fillStyle = color || artInk();
     ctx.textAlign = align || "left";
     ctx.textBaseline = "alphabetic";
@@ -1266,7 +1271,7 @@
     const padX = Math.round(size * 0.95);
     const lh = Math.round(size * 1.85);
     ctx.save();
-    artFont(ctx, size, o.weight || 500);
+    artFont(ctx, size, o.weight || 500, o.scope);
     ctx.textAlign = "left";
     const measure = function (label) { return { label: label, bw: ctx.measureText(label).width + padX * 2 }; };
     const rowsLayout = [];
@@ -1311,11 +1316,11 @@
     return cy;
   }
   /* 只量 chips 高度（行数 × 行高），供「先铺底、后排版」的布局预估。 */
-  function chipRowCount(ctx, items, maxWidth, size) {
+  function chipRowCount(ctx, items, maxWidth, size, scope) {
     const gap = Math.round(size * 0.6);
     const padX = Math.round(size * 0.95);
     ctx.save();
-    artFont(ctx, size, 500);
+    artFont(ctx, size, 500, scope);
     let rows = 1; let rowW = 0;
     (items || []).forEach(function (item) {
       const label = String(item || "");
@@ -1403,9 +1408,9 @@
     const drawInfoCopy = function (yy, centered) {
       let c = yy;
       c = drawRich(ctx, title, centered ? x0 + w / 2 : x0, c, w, 65, 900, P.primaryDark, centered ? "center" : "left", 1.2) + 19;
-      if (subtitle) c = drawRich(ctx, subtitle, centered ? x0 + w / 2 : x0, c, w, 29, 500, artMuted(), centered ? "center" : "left") + 17;
-      c = drawChips(ctx, infoLines, centered ? x0 + w / 2 : x0, c + 4, w, centered ? chipCenter : chipPlain);
-      if (qqText) c = drawRich(ctx, qqText, centered ? x0 + w / 2 : x0, c + 13, w, 23, 500, artMuted(), centered ? "center" : "left") + 10;
+      if (subtitle) c = drawRich(ctx, subtitle, centered ? x0 + w / 2 : x0, c, w, 29, 500, artMuted(), centered ? "center" : "left", null, "body") + 17;
+      c = drawChips(ctx, infoLines, centered ? x0 + w / 2 : x0, c + 4, w, Object.assign({}, centered ? chipCenter : chipPlain, { scope: "body" }));
+      if (qqText) c = drawRich(ctx, qqText, centered ? x0 + w / 2 : x0, c + 13, w, 23, 500, artMuted(), centered ? "center" : "left", null, "body") + 10;
       return c;
     };
     if (tpl === "info") {
@@ -1433,13 +1438,13 @@
     const infoShown = infoLines.slice(0, 3);
     for (let i = infoShown.length - 1; i >= 0; i -= 1) {
       if (!infoShown[i]) continue;
-      bottom = paintUpText(ctx, infoShown[i], cx, bottom - 4, cw, 11, 500, "rgba(255,255,255,.85)", "center", 1.55);
+      bottom = paintUpText(ctx, infoShown[i], cx, bottom - 4, cw, 23, 500, "rgba(255,255,255,.85)", "center", 1.55, "body");
       bottom -= 10;
     }
-    if (subtitle) { bottom = paintUpText(ctx, subtitle, cx, bottom - 8, cw, 29, 600, "rgba(255,255,255,.96)", "center", 1.45); bottom -= 25; }
+    if (subtitle) { bottom = paintUpText(ctx, subtitle, cx, bottom - 8, cw, 29, 600, "rgba(255,255,255,.96)", "center", 1.45, "body"); bottom -= 25; }
     paintUpText(ctx, title, cx, bottom - 6, cw, 65, 900, "#ffffff", "center", 1.22);
     let y = y0 + heroH;
-    if (qqText) y = drawRich(ctx, qqText, cx, y + 33, w, 23, 500, artMuted(), "center") + 13;
+    if (qqText) y = drawRich(ctx, qqText, cx, y + 33, w, 23, 500, artMuted(), "center", null, "body") + 13;
     return y;
   }
 
@@ -1457,7 +1462,7 @@
       let y = y0;
       const a = anchor(x0, w);
       if (heading) y = drawRich(ctx, heading, a.x, y, w, headSize, 800, P.primaryDark, align, 1.35) + 10;
-      y = drawRich(ctx, bodyValue, a.x, y, w, bodySize, 400, ink, align, bodyMul);
+      y = drawRich(ctx, bodyValue, a.x, y, w, bodySize, 400, ink, align, bodyMul, "body");
       return y;
     }
     const padX = 30;
@@ -1465,13 +1470,13 @@
     const innerW = Math.max(60, w - padX * 2);
     const a = anchor(innerLeft, innerW);
     const headInfo = heading ? textBlockInfo(ctx, heading, innerW, headSize, 800, 1.35) : { height: 0 };
-    const bodyInfo = textBlockInfo(ctx, bodyValue, innerW, bodySize, 400, bodyMul);
+    const bodyInfo = textBlockInfo(ctx, bodyValue, innerW, bodySize, 400, bodyMul, "body");
     if (tpl === "boxed") {
       const padY = 20;
       const paneH = padY * 2 + headInfo.height + (heading ? 12 : 0) + bodyInfo.height;
       let y = y0 + padY + Math.round(headSize * 0.2);
       if (heading) y = drawRich(ctx, heading, a.x, y, innerW, headSize, 800, P.primaryDark, align, 1.35) + 13;
-      drawRich(ctx, bodyValue, a.x, y, innerW, bodySize, 400, ink, align, bodyMul);
+      drawRich(ctx, bodyValue, a.x, y, innerW, bodySize, 400, ink, align, bodyMul, "body");
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.primary, 0.42); ctx.lineWidth = 3; ctx.setLineDash([2, 16]); ctx.stroke(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.strokeStyle = alphaColor(P.accent, 0.9); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
       return y0 + paneH;
@@ -1505,10 +1510,10 @@
     }
     y = y0 + padTop + Math.round(bodySize * 0.2) + (heading && tpl !== "quote" ? headInfo.height + 13 : 0) + bodyTopPad;
     if (tpl === "quote") {
-      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 700, "#20251f", align, bodyMul);
+      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 700, "#20251f", align, bodyMul, "body");
       if (heading) drawRich(ctx, heading, x0 + w - padX, y0 + paneH - padBottom + 12, innerW, 23, 600, P.primaryDark, "right", 1.4);
     } else {
-      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 400, ink, align, bodyMul);
+      drawRich(ctx, bodyValue, ba.x, y, bodyW, bodySize, 400, ink, align, bodyMul, "body");
     }
     return y0 + paneH;
   }
@@ -1542,7 +1547,7 @@
         ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 12, y + 12, qrSize, qrSize); ctx.restore();
         y += qh + 8;
       }
-      if (data.note) y = drawRich(ctx, data.note, x0, y + 15, w, 23, 500, artMuted(), "left", 1.5) + 10;
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 15, w, 23, 500, artMuted(), "left", 1.5, "body") + 10;
       return y;
     }
     if (tpl === "ticket-cards") {
@@ -1560,7 +1565,7 @@
       });
       if (!tiers.length) { ctx.save(); roundRectPath(ctx, x0, y, w, 140, 24); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); drawRich(ctx, "暂无票档", x0 + w / 2, y + 30, w, 27, 600, artMuted(), "center", 1); y += 60; }
       else y += Math.ceil(Math.min(tiers.length, 6) / cols) * (ch + gap) - gap;
-      if (data.note) y = drawRich(ctx, data.note, x0, y + 21, w, 23, 500, artMuted(), "left", 1.5) + 14;
+      if (data.note) y = drawRich(ctx, data.note, x0, y + 21, w, 23, 500, artMuted(), "left", 1.5, "body") + 14;
       if (qr) {
         y += 18; const qw = qrSize + 32; const qh = qrSize + 32;
         ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.fill(); ctx.restore();
@@ -1588,7 +1593,7 @@
       ctx.save(); roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.clip(); containDraw(ctx, qr, qx + 20, y + 20, qrSize, qrSize); ctx.restore();
     }
     y = Math.max(ly, qr ? y + qrSide : ly);
-    if (data.note) y = drawRich(ctx, data.note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5) + 10;
+    if (data.note) y = drawRich(ctx, data.note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5, "body") + 10;
     return y;
   }
 
@@ -1602,22 +1607,22 @@
     if (tpl === "checklist") {
       for (const item of list) {
         drawRich(ctx, "✓", x0 + 17, y + 36, 40, 27, 900, P.accent, "left", 1);
-        drawRich(ctx, text(item.label, "物料条目"), x0 + 54, y + 30, w - 54, 27, 500, ink, "left", 1);
+        drawRich(ctx, text(item.label, "物料条目"), x0 + 54, y + 30, w - 54, 27, 500, ink, "left", 1, "body");
         y += 71;
       }
       if (!items.length) y -= 29;
-      if (note) y = drawRich(ctx, note, x0, y + 17, w, 23, 500, artMuted(), "left", 1.5) + 12;
+      if (note) y = drawRich(ctx, note, x0, y + 17, w, 23, 500, artMuted(), "left", 1.5, "body") + 12;
       return y;
     }
     if (tpl === "notice-strip") {
       const stripH = 64;
       list.forEach(function (item, index) {
         ctx.save(); roundRectPath(ctx, x0, y, w, stripH, 18); ctx.fillStyle = index % 2 === 0 ? P.accent : P.primary; ctx.fill(); ctx.restore();
-        drawRich(ctx, text(item.label, "物料条目"), x0 + w / 2, y + stripH - 22, w - 30, 25, 700, "#ffffff", "center", 1);
+        drawRich(ctx, text(item.label, "物料条目"), x0 + w / 2, y + stripH - 22, w - 30, 25, 700, "#ffffff", "center", 1, "body");
         y += stripH + 16;
       });
       if (!items.length) y -= 50;
-      if (note) y = drawRich(ctx, note, x0, y + 7, w, 11, 500, artMuted(), "left", 1.5) + 5;
+      if (note) y = drawRich(ctx, note, x0, y + 7, w, 11, 500, artMuted(), "left", 1.5, "body") + 5;
       return y;
     }
     /* icon-grid：图标圆角块 + 说明文字 */
@@ -1636,10 +1641,10 @@
       ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.14); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
       const img = icons[i];
       if (img) { ctx.save(); roundRectPath(ctx, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox, 24); ctx.clip(); coverDraw(ctx, img, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox); ctx.restore(); }
-      drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 34, cw - 16, 25, 600, ink, "center", 1.35);
+      drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 34, cw - 16, 25, 600, ink, "center", 1.35, "body");
     }
     y += Math.ceil(count / cols) * (cellH + gap) - gap;
-    if (note) y = drawRich(ctx, note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5) + 10;
+    if (note) y = drawRich(ctx, note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5, "body") + 10;
     return y;
   }
 
@@ -1651,7 +1656,7 @@
     const padY = 24;
     let innerH = 0;
     if (tpl === "promo-centered") {
-      const info = textBlockInfo(ctx, value, w - 60, 29, 600, 1.7);
+      const info = textBlockInfo(ctx, value, w - 60, 29, 600, 1.7, "body");
       innerH = (icon ? Math.round(w * 0.24) + 38 : 0) + info.height + padY * 2 - 30;
       ctx.save(); roundRectPath(ctx, x0, y0, w, innerH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
       let y = y0 + 36;
@@ -1661,20 +1666,20 @@
         ctx.save(); roundRectPath(ctx, ix, y, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, y, iw, ih); ctx.restore();
         y += ih + 33;
       }
-      y = drawRich(ctx, value, x0 + w / 2, y, w - 60, 29, 600, ink, "center", 1.7);
+      y = drawRich(ctx, value, x0 + w / 2, y, w - 60, 29, 600, ink, "center", 1.7, "body");
       return y0 + innerH;
     }
     const side = icon ? Math.min(163, Math.round(w * 0.26)) : 0;
-    const textInfo = textBlockInfo(ctx, value, w - side - (icon ? 60 : 0), 29, 600, 1.68);
+    const textInfo = textBlockInfo(ctx, value, w - side - (icon ? 60 : 0), 29, 600, 1.68, "body");
     const bandH = Math.max(100, padY * 2 + textInfo.height);
     ctx.save(); roundRectPath(ctx, x0, y0, w, bandH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
     if (icon) {
       const iw = Math.min(104, side - 36); const ih = iw;
       const ix = x0 + (side - iw) / 2; const iy = y0 + (bandH - ih) / 2;
       ctx.save(); roundRectPath(ctx, ix, iy, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, iy, iw, ih); ctx.restore();
-      drawRich(ctx, value, x0 + side + 19, y0 + (bandH - textInfo.height) / 2 + 20, w - side - 40, 29, 600, ink, "left", 1.68);
+      drawRich(ctx, value, x0 + side + 19, y0 + (bandH - textInfo.height) / 2 + 20, w - side - 40, 29, 600, ink, "left", 1.68, "body");
     } else {
-      drawRich(ctx, value, x0 + w / 2, y0 + (bandH - textInfo.height) / 2 + 20, w - 60, 29, 600, ink, "center", 1.68);
+      drawRich(ctx, value, x0 + w / 2, y0 + (bandH - textInfo.height) / 2 + 20, w - 60, 29, 600, ink, "center", 1.68, "body");
     }
     return y0 + bandH;
   }
@@ -1738,32 +1743,32 @@
     if (tpl === "venue-focus") {
       let y = y0;
       if (img) { const h = Math.min(396, Math.round(w * 0.5)); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 44; }
-      y = drawRich(ctx, data.description || "场地描述", x0, y, w, 29, 400, ink, "left", 1.68) + 10;
+      y = drawRich(ctx, data.description || "场地描述", x0, y, w, 29, 400, ink, "left", 1.68, "body") + 10;
       if (tags.length) y = drawChips(ctx, tags, x0, y, w, chipsOpt) + 8;
       return y;
     }
     if (tpl === "venue-map") {
       const pad = 25;
-      const textH = textBlockInfo(ctx, data.description || "场地描述", w - pad * 2, 29, 400, 1.68).height;
+      const textH = textBlockInfo(ctx, data.description || "场地描述", w - pad * 2, 29, 400, 1.68, "body").height;
       const chipsH = tags.length ? chipRowCount(ctx, tags, w - pad * 2, 23) : 0;
       const paneH = pad + textH + 24 + (tags.length ? chipsH + 14 : 0) + pad - 20;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.strokeStyle = alphaColor(P.accent, 0.75); ctx.lineWidth = 3; ctx.setLineDash([14, 14]); ctx.stroke(); ctx.restore();
       let y = y0 + pad - 8;
-      y = drawRich(ctx, data.description || "场地描述", x0 + pad, y, w - pad * 2, 29, 400, ink, "left", 1.68) + 10;
+      y = drawRich(ctx, data.description || "场地描述", x0 + pad, y, w - pad * 2, 29, 400, ink, "left", 1.68, "body") + 10;
       if (tags.length) drawChips(ctx, tags, x0 + pad, y, w - pad * 2, chipsOpt);
       return y0 + paneH;
     }
     /* venue-side：左描述 + 右侧场地照片 */
     const side = img ? Math.min(163, Math.round(w * 0.4)) : 0;
     const textW = side ? w - side - 34 : w;
-    const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 29, 400, 1.68).height;
+    const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 29, 400, 1.68, "body").height;
     const chipsH = tags.length ? chipRowCount(ctx, tags, textW, 23) : 0;
     const copyH = textH + (tags.length ? chipsH + 16 : 0);
     const imgH = Math.max(Math.round(w * 0.48), copyH + 20);
     if (img) { ctx.save(); roundRectPath(ctx, x0 + textW + 19, y0, side, imgH, 21); ctx.clip(); coverDraw(ctx, img, x0 + textW + 19, y0, side, imgH); ctx.restore(); }
     let y = y0;
-    y = drawRich(ctx, data.description || "场地描述", x0, y, textW, 29, 400, ink, "left", 1.68) + 10;
+    y = drawRich(ctx, data.description || "场地描述", x0, y, textW, 29, 400, ink, "left", 1.68, "body") + 10;
     if (tags.length) y = drawChips(ctx, tags, x0, y, textW, chipsOpt);
     return Math.max(y + 12, img ? y0 + imgH : y + 12);
   }
@@ -1776,12 +1781,12 @@
     if (tpl === "route-focus") {
       if (lines[0]) {
         ctx.save(); roundRectPath(ctx, x0, y, w, 100, 21); ctx.fillStyle = P.primary; ctx.fill(); ctx.restore();
-        drawRich(ctx, lines[0], x0 + w / 2, y + 60, w - 44, 29, 700, "#ffffff", "center", 1.5);
+        drawRich(ctx, lines[0], x0 + w / 2, y + 60, w - 44, 29, 700, "#ffffff", "center", 1.5, "body");
         y += 100 + 21;
       }
       for (const line of lines.slice(1)) {
         drawRich(ctx, "›", x0, y + 34, 40, 28, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 48, y + 30, w - 48, 27, 500, ink, "left", 1.6);
+        drawRich(ctx, line, x0 + 48, y + 30, w - 48, 27, 500, ink, "left", 1.6, "body");
         y += 92;
       }
       if (!lines.length) { drawRich(ctx, "暂无路线", x0, y + 34, w, 27, 600, artMuted(), "left", 1); y += 60; }
@@ -1793,12 +1798,12 @@
       if (tpl === "route-list") {
         ctx.save(); roundRectPath(ctx, x0, y, w, 62, 17); ctx.fillStyle = alphaColor("#ffffff", 0.7); ctx.fill(); ctx.restore();
         drawRich(ctx, "›", x0 + 20, y + 40, 30, 28, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 46, y + 38, w - 62, 27, 500, ink, "left", 1);
+        drawRich(ctx, line, x0 + 46, y + 38, w - 62, 27, 500, ink, "left", 1, "body");
         y += 78;
       } else {
         const num = String(i + 1).padStart(2, "0");
         drawRich(ctx, num, x0, y + 34, 76, 30, 900, P.accent, "left", 1);
-        drawRich(ctx, line, x0 + 86, y + 34, w - 86, 27, 600, ink, "left", 1.35);
+        drawRich(ctx, line, x0 + 86, y + 34, w - 86, 27, 600, ink, "left", 1.35, "body");
         y += 92;
       }
     }
@@ -1829,7 +1834,7 @@
         else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
         if (item.tag) drawRich(ctx, item.tag, cx + 14, cy + imgH + 30, cw - 26, 21, 800, P.accent, "left", 1);
         drawRich(ctx, text(item.title, "节目标题"), cx + 14, cy + imgH + 58, cw - 26, 27, 700, ink, "left", 1.35);
-        if (item.subtitle) drawRich(ctx, item.subtitle, cx + 14, cy + imgH + 88, cw - 26, 23, 500, artMuted(), "left", 1.3);
+        if (item.subtitle) drawRich(ctx, item.subtitle, cx + 14, cy + imgH + 88, cw - 26, 23, 500, artMuted(), "left", 1.3, "body");
       }
       y += Math.ceil(count / cols) * (cardH + gap) - gap;
       return y;
@@ -1862,13 +1867,13 @@
         let cy = y + 28;
         if (item.tag) cy = drawRich(ctx, item.tag, textX, cy, textW, 21, 800, P.accent, "left", 1) + 10;
         cy = drawRich(ctx, text(item.title, "节目标题"), textX, cy, textW, 27, 700, ink, "left", 1.3) + 8;
-        if (item.subtitle) cy = drawRich(ctx, item.subtitle, textX, cy, textW, 23, 500, artMuted(), "left", 1.4);
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, textX, cy, textW, 23, 500, artMuted(), "left", 1.4, "body");
         y += Math.max(th + 24, cy - y + 17);
       } else {
         let cy = y + 28;
         if (item.tag) cy = drawRich(ctx, item.tag, x0, cy, w, 21, 800, P.accent, "left", 1) + 10;
         cy = drawRich(ctx, text(item.title, "节目标题"), x0, cy, w, 27, 700, ink, "left", 1.3) + 8;
-        if (item.subtitle) cy = drawRich(ctx, item.subtitle, x0, cy, w, 23, 500, artMuted(), "left", 1.4);
+        if (item.subtitle) cy = drawRich(ctx, item.subtitle, x0, cy, w, 23, 500, artMuted(), "left", 1.4, "body");
         y = cy + 19;
       }
       drawLine(ctx, x0, y - 10, x0 + w, y - 10, alphaColor(P.primary, 0.12), 2);
@@ -1887,8 +1892,8 @@
     const drawCopy = function (yy, width) {
       let cy = yy;
       cy = drawRich(ctx, name, x0, cy, width, 33, 800, P.primaryDark, "left", 1.3) + 12;
-      cy = drawRich(ctx, bio, x0, cy, width, 27, 400, ink, "left", 1.62) + 10;
-      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 23, 600, P.accent, "left", 1.5); }
+      cy = drawRich(ctx, bio, x0, cy, width, 27, 400, ink, "left", 1.62, "body") + 10;
+      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 23, 600, P.accent, "left", 1.5, "body"); }
       return cy;
     };
     if (tpl === "performer-poster") {
@@ -1902,7 +1907,7 @@
       } else { ctx.save(); roundRectPath(ctx, x0, y0, w, Math.round(ph * 0.56), 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
       const cx = x0 + w / 2; const cw = w - 66; const photoH = portraits.length ? ph : Math.round(ph * 0.56);
       let bottom = y0 + photoH - 33;
-      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 8, cw, 25, 500, "rgba(255,255,255,.92)", "center", 1.55); bottom -= 21; }
+      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 8, cw, 25, 500, "rgba(255,255,255,.92)", "center", 1.55, "body"); bottom -= 21; }
       paintUpText(ctx, name, cx, bottom - 5, cw, 54, 900, "#ffffff", "center", 1.3);
       return y0 + photoH + 24;
     }
@@ -1934,7 +1939,7 @@
         if (img) { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.clip(); coverDraw(ctx, img, x0 + 20, y + 24, imgW, imgW); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
         drawRich(ctx, text(item.name, "摊位"), x0 + imgW + 23, y + 58, w - imgW - 40, 27, 800, ink, "left", 1);
-        if (item.desc) drawRich(ctx, item.desc, x0 + imgW + 23, y + 96, w - imgW - 40, 23, 500, artMuted(), "left", 1.5);
+        if (item.desc) drawRich(ctx, item.desc, x0 + imgW + 23, y + 96, w - imgW - 40, 23, 500, artMuted(), "left", 1.5, "body");
         ctx.save(); roundRectPath(ctx, x0, y, w, rowH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
         y += rowH + 21;
       }
@@ -1945,7 +1950,7 @@
       const list = items.length ? items : [{}];
       for (const item of list) {
         drawRich(ctx, text(item.name, "摊位"), x0, y + 42, w * 0.52, 27, 700, ink, "left", 1);
-        if (item.desc) drawRich(ctx, item.desc, x0 + w * 0.5, y + 39, w * 0.5, 23, 500, artMuted(), "right", 1);
+        if (item.desc) drawRich(ctx, item.desc, x0 + w * 0.5, y + 39, w * 0.5, 23, 500, artMuted(), "right", 1, "body");
         y += 68;
         drawLine(ctx, x0, y - 8, x0 + w, y - 8, alphaColor(P.primary, 0.14), 2);
       }
@@ -1972,10 +1977,10 @@
         if (img) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, img, cx, cy, cw, imgH); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
         drawRich(ctx, text(item.name, "摊位"), cx + 12, cy + imgH + 36, cw - 22, 27, 700, ink, "left", 1.3);
-        if (item.desc) drawRich(ctx, capText(item.desc, 26), cx + 12, cy + imgH + 66, cw - 22, 23, 500, artMuted(), "left", 1.35);
+        if (item.desc) drawRich(ctx, capText(item.desc, 26), cx + 12, cy + imgH + 66, cw - 22, 23, 500, artMuted(), "left", 1.35, "body");
       } else {
         drawRich(ctx, text(item.name, "摊位"), cx + cw / 2, cy + 54, cw - 24, 30, 700, ink, "center", 1.3);
-        if (item.desc) drawRich(ctx, capText(item.desc, 30), cx + cw / 2, cy + 102, cw - 24, 25, 500, artMuted(), "center", 1.35);
+        if (item.desc) drawRich(ctx, capText(item.desc, 30), cx + cw / 2, cy + 102, cw - 24, 25, 500, artMuted(), "center", 1.35, "body");
       }
     }
     y += Math.ceil(count / cols) * (cellH + gap) - gap;
@@ -1995,7 +2000,7 @@
     if (tpl === "footer-banner") {
       const items = lines.length ? lines : ["主办：Only-box 企划"];
       const size = 25; const gap = 21; const rowH = 52;
-      ctx.save(); artFont(ctx, size, 600);
+      ctx.save(); artFont(ctx, size, 600, "body");
       let rows = 1; let rowW = 0;
       const widths = items.map(function (line) { const tw = ctx.measureText(String(line)).width; return { line: line, tw: tw }; });
       const fitted = [];
@@ -2012,7 +2017,7 @@
       fitted.forEach(function (rowItems) {
         let cx = x0 + w / 2 - (rowItems.reduce(function (s, it) { return s + it.tw; }, 0) + (rowItems.length - 1) * gap) / 2;
         rowItems.forEach(function (it) {
-          drawRich(ctx, it.line, cx, by, it.tw + 6, size, 600, "#ffffff", "left", 1);
+          drawRich(ctx, it.line, cx, by, it.tw + 6, size, 600, "#ffffff", "left", 1, "body");
           cx += it.tw + gap;
         });
         by += rowH;
@@ -2021,17 +2026,17 @@
     }
     if (tpl === "footer-center") {
       (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
-        y = drawRich(ctx, line, x0 + w / 2, y, w, 23, 500, artMuted(), "center", 1.6) + 8;
+        y = drawRich(ctx, line, x0 + w / 2, y, w, 23, 500, artMuted(), "center", 1.6, "body") + 8;
       });
       return y;
     }
     if (tpl === "footer-pills") {
       const items = lines.length ? lines : ["主办：Only-box 企划"];
-      y = drawChips(ctx, items, x0 + w / 2, y, w, { size: 23, color: P.primaryDark, border: alphaColor(P.primary, 0.35), fill: P.primarySoft, lw: 2, center: true });
+      y = drawChips(ctx, items, x0 + w / 2, y, w, { size: 23, color: P.primaryDark, border: alphaColor(P.primary, 0.35), fill: P.primarySoft, lw: 2, center: true, scope: "body" });
       return y + 10;
     }
     (lines.length ? lines : ["微博 @XXX"]).forEach(function (line) {
-      y = drawRich(ctx, line, x0, y, w, 23, 500, ink, "left", 1.5) + 6;
+      y = drawRich(ctx, line, x0, y, w, 23, 500, ink, "left", 1.5, "body") + 6;
     });
     return y;
   }
@@ -2045,12 +2050,12 @@
     const tpl = data.template || "text-basic";
     const value = data.text || "自由文本";
     const drawTxt = function (y, sizePx, weight, color, mul, maxW) {
-      return drawRich(ctx, value, tx, y, maxW || w, sizePx, weight, color || ink, align, mul || 1.66);
+      return drawRich(ctx, value, tx, y, maxW || w, sizePx, weight, color || ink, align, mul || 1.66, "body");
     };
     if (tpl === "text-highlight") {
       const padX = 31; const padY = 27;
       const innerW = w - padX * 2 - 18;
-      const info = textBlockInfo(ctx, value, innerW, size, 600, 1.7);
+      const info = textBlockInfo(ctx, value, innerW, size, 600, 1.7, "body");
       const paneH = padY * 2 + info.height;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 24); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0 + 13, y0 + 13, 9, paneH - 26, 5); ctx.fillStyle = P.accent; ctx.fill(); ctx.restore();
@@ -2059,7 +2064,7 @@
     }
     if (tpl === "text-card") {
       const padX = 33; const padY = 29;
-      const info = textBlockInfo(ctx, value, w - padX * 2, size, 500, 1.66);
+      const info = textBlockInfo(ctx, value, w - padX * 2, size, 500, 1.66, "body");
       const paneH = padY * 2 + info.height;
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.fillStyle = alphaColor("#ffffff", 0.82); ctx.fill(); ctx.restore();
       ctx.save(); roundRectPath(ctx, x0, y0, w, paneH, 26); ctx.strokeStyle = alphaColor(P.primary, 0.2); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
@@ -2101,7 +2106,7 @@
     ctx.restore();
     y += h;
     if (isCard) y += 20;
-    if (data.caption) { y += 12; y = drawRich(ctx, data.caption, x0, y, w, 27, 500, artMuted(), "left", 1.5); }
+    if (data.caption) { y += 12; y = drawRich(ctx, data.caption, x0, y, w, 27, 500, artMuted(), "left", 1.5, "body"); }
     return y;
   }
 
@@ -2153,41 +2158,52 @@
     return y + 20;
   }
 
-  async function drawModuleCard(ctx, module, area, serial) {
+  /* 公共辅助：把模块内容渲染到临时 scratch canvas 并返回布局参数。
+     供 drawModuleCard 和 measureCardLayout 共用，消除 ~60 行重复代码。 */
+  async function _renderScratch(module, w, serial) {
     const def = R.getDef(module.type);
     const data = module.data || {};
-    const st = artTheme();
-    const pad = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), st);
-    const radius = cardRadius(data, st);
-    const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
-    const w = area.w;
-    const silence = [];
+    const pad = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), artTheme());
     let scratch = document.createElement("canvas");
     scratch.width = Math.max(1, Math.round(w));
     scratch.height = 3400;
     let sctx = scratch.getContext("2d");
     let cursor = pad;
-    if (module.type !== "divider" || module.data.sectionTitle) {
-      cursor = paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+    let headBaseline = pad;
+    if (module.type !== "divider" || data.sectionTitle) {
+      headBaseline = pad + Math.round(54 * 0.92);
+      cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
     }
     let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
-    /* 内容实测高度超出临时画布时，重建更大画布完整重绘，不再截断（审计 P1）。 */
     if (contentEnd + pad > 3400) {
       scratch = document.createElement("canvas");
       scratch.width = Math.max(1, Math.round(w));
       scratch.height = Math.ceil(contentEnd + pad + 64);
       sctx = scratch.getContext("2d");
       cursor = pad;
-      if (module.type !== "divider" || module.data.sectionTitle) {
-        cursor = paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
+      headBaseline = pad;
+      if (module.type !== "divider" || data.sectionTitle) {
+        headBaseline = pad + Math.round(54 * 0.92);
+        cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
       }
       contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
     }
     const usedH = Math.max(pad * 2 + 48, contentEnd + pad);
+    return { scratch: scratch, usedH: usedH, pad: pad, headBaseline: headBaseline };
+  }
+
+  async function drawModuleCard(ctx, module, area, serial) {
+    const data = module.data || {};
+    const st = artTheme();
+    const w = area.w;
+    const r = await _renderScratch(module, w, serial);
+    const usedH = r.usedH;
+    const radius = cardRadius(data, st);
+    const opacity = Number.isFinite(Number(data.blockOpacity)) ? Number(data.blockOpacity) / 100 : 0.94;
+    const silence = [];
     const bg = data.blockBgImage && data.blockBgImage.url ? await loadImage(data.blockBgImage) : null;
-    if (!bg && data.blockBgImage && data.blockBgImage.url) silence.push({ type: "block-image", module: (data.sectionTitle || (def && def.label) || "未知板块") });
+    if (!bg && data.blockBgImage && data.blockBgImage.url) silence.push({ type: "block-image", module: (data.sectionTitle || (R.getDef(module.type) && R.getDef(module.type).label) || "未知板块") });
     const P = artTheme();
-    /* 风格骨架：贴纸微旋转，其余按 cardStyle 分支绘制（DOM 与 Canvas 双侧同步）。 */
     const rot = st.cardStyle === "sticker" ? 0.013 : 0;
     ctx.save();
     if (rot) { const cx0 = area.x + w / 2, cy0 = area.y + usedH / 2; ctx.translate(cx0, cy0); ctx.rotate(rot); ctx.translate(-cx0, -cy0); }
@@ -2204,7 +2220,7 @@
       const nz = noisePattern(ctx);
       if (nz) { ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = nz; ctx.fillRect(area.x, area.y, w, usedH); ctx.restore(); }
     }
-    ctx.drawImage(scratch, 0, 0, scratch.width, usedH, area.x, area.y, w, usedH);
+    ctx.drawImage(r.scratch, 0, 0, r.scratch.width, usedH, area.x, area.y, w, usedH);
     ctx.restore();
     drawCardBorder(ctx, area.x, area.y, w, usedH, radius, st, data);
     drawCardDecor(ctx, area.x, area.y, w, usedH, radius, st);
@@ -2216,36 +2232,8 @@
      与 drawModuleCard 同款：先画到 scratch 量出 contentEnd → usedH；headBaseline 即 H2 标题基线
      相对卡片顶的像素偏移（0.92*58 的字身顶部下移 + pad）。 */
   async function measureCardLayout(module, w, serial) {
-    const def = R.getDef(module.type);
-    const data = module.data || {};
-    const pad = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), artTheme());
-    let scratch = document.createElement("canvas");
-    scratch.width = Math.max(1, Math.round(w));
-    scratch.height = 3400;
-    let sctx = scratch.getContext("2d");
-    let cursor = pad;
-    let headBaseline = pad;
-    if (module.type !== "divider" || data.sectionTitle) {
-      headBaseline = pad + Math.round(54 * 0.92);
-      cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
-    }
-    let contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
-    /* 内容实测高度超出临时画布时重建更大画布重测，保证测量与绘制一致（审计 P1）。 */
-    if (contentEnd + pad > 3400) {
-      scratch = document.createElement("canvas");
-      scratch.width = Math.max(1, Math.round(w));
-      scratch.height = Math.ceil(contentEnd + pad + 64);
-      sctx = scratch.getContext("2d");
-      cursor = pad;
-      headBaseline = pad;
-      if (module.type !== "divider" || data.sectionTitle) {
-        headBaseline = pad + Math.round(54 * 0.92);
-        cursor = await paintModuleHead(sctx, module, def, pad, pad, w - pad * 2, serial);
-      }
-      contentEnd = await paintModuleBody(sctx, module, pad, cursor, w - pad * 2);
-    }
-    const usedH = Math.max(pad * 2 + 48, contentEnd + pad);
-    return { h: usedH, pad: pad, headBaseline: headBaseline, w: w };
+    const r = await _renderScratch(module, w, serial);
+    return { h: r.usedH, pad: r.pad, headBaseline: r.headBaseline, w: w };
   }
 
   /* 计算整页模块的真实排版位置（含 offsetY），供导出与 PSD 对齐共用同一套坐标。 */
@@ -2358,6 +2346,60 @@
     if (global.BannerBuilderExport && global.BannerBuilderExport.exportPsd) return global.BannerBuilderExport.exportPsd();
     return legacyExportPsd();
   }
+
+  /* ===== 打包字体：把所用字体的桌面文件(.ttf/.otf)下载并打包 ZIP，便于在 PS 中正确渲染文字图层 ===== */
+  const _libScriptPromises = {};
+  function loadLibScript(url, globalName) {
+    if (globalName && global[globalName]) return Promise.resolve(global[globalName]);
+    if (_libScriptPromises[url]) return _libScriptPromises[url];
+    _libScriptPromises[url] = new Promise(function (resolve, reject) {
+      const s = document.createElement("script");
+      s.src = url; s.async = true;
+      s.onload = function () { resolve(globalName ? global[globalName] : undefined); };
+      s.onerror = function () { reject(new Error("依赖加载失败：" + url)); };
+      document.head.appendChild(s);
+    });
+    return _libScriptPromises[url];
+  }
+  async function ensureZip() {
+    const JSZip = await loadLibScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js", "JSZip");
+    if (typeof JSZip !== "function") throw new Error("JSZip 加载失败");
+    return JSZip;
+  }
+  async function packFontsZip() {
+    const headingKey = state.doc.headingFont || state.doc.fontFamily || "sans";
+    const bodyKey = state.doc.bodyFont || headingKey;
+    const keys = [headingKey, bodyKey].filter(function (key, index, arr) { return arr.indexOf(key) === index; });
+    const JSZip = await ensureZip();
+    const zip = new JSZip();
+    const ok = []; const fail = [];
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      const dl = C.FONT_DOWNLOADS[key];
+      if (!dl) continue;
+      const label = C.FONTS[key] ? C.FONTS[key].label : key;
+      try {
+        const resp = await fetch(dl.url, { mode: "cors" });
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const blob = await resp.blob();
+        zip.file("fonts/" + dl.name, blob);
+        ok.push(label);
+      } catch (error) { fail.push(label); }
+    }
+    if (!ok.length) throw new Error("没有可打包的字体文件（可能网络受限）");
+    const lines = ["Only-box 长条排版 · 字体安装说明", "", "已打包字体（位于 fonts/ 目录）："];
+    ok.forEach(function (name) { lines.push("  - " + name); });
+    if (fail.length) {
+      lines.push(""); lines.push("以下字体未能自动下载，请手动下载安装：");
+      fail.forEach(function (name) { lines.push("  - " + name); });
+    }
+    lines.push("");
+    lines.push("安装方法：双击 .ttf/.otf 文件点击「安装」，或将字体文件复制到系统字体目录后重启 Photoshop。");
+    zip.file("字体安装说明.txt", lines.join("\r\n"));
+    const content = await zip.generateAsync({ type: "blob" });
+    downloadBlob(content, "only-box-banner-fonts.zip");
+    return { ok: ok, fail: fail };
+  }
   global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); } };
   /* 导出倍率（1x = 750 设计宽；默认 2x = 1500 高清），文档级可配 doc.exportScale */
   function exportScale() { return Number(state.doc.exportScale) || 2; }
@@ -2365,12 +2407,19 @@
   async function legacyExportPng(allPages) {
     const pages = allPages ? state.doc.pages : [activePage()];
     const allSilence = [];
+    const scale = exportScale();
     const pageNo = function (page) { return String(state.doc.pages.indexOf(page) + 1).padStart(2, "0"); };
     for (let i = 0; i < pages.length; i += 1) {
       const page = pages[i];
       const result = await drawPageToCanvas(page);
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = result.canvas.width * scale;
+      outCanvas.height = result.canvas.height * scale;
+      const outCtx = outCanvas.getContext("2d");
+      outCtx.scale(scale, scale);
+      outCtx.drawImage(result.canvas, 0, 0);
       await new Promise(function (resolve) {
-        result.canvas.toBlob(function (blob) {
+        outCanvas.toBlob(function (blob) {
           if (blob) downloadBlob(blob, "only-box-banner-" + pageNo(page) + ".png");
           else if (global.alert) global.alert("导出失败：PNG 编码返回空（画布可能过大，请尝试减少板块内容）。");
           resolve();
@@ -2410,8 +2459,15 @@
       y0 += h;
     }
     auditSilence(silence);
-    canvas.toBlob(function (blob) { if (blob) downloadBlob(blob, "only-box-banner-continuous.png"); else if (global.alert) global.alert("长图导出失败：PNG 编码返回空（内容可能过大）。"); }, "image/png");
-    return { width: width, height: total, pages: rendered.length, silence: silence.length };
+    const scale = exportScale();
+    const outCanvas = document.createElement("canvas");
+    outCanvas.width = canvas.width * scale;
+    outCanvas.height = canvas.height * scale;
+    const outCtx = outCanvas.getContext("2d");
+    outCtx.scale(scale, scale);
+    outCtx.drawImage(canvas, 0, 0);
+    outCanvas.toBlob(function (blob) { if (blob) downloadBlob(blob, "only-box-banner-continuous.png"); else if (global.alert) global.alert("长图导出失败：PNG 编码返回空（内容可能过大）。"); }, "image/png");
+    return { width: outCanvas.width, height: outCanvas.height, pages: rendered.length, silence: silence.length };
   }
 
   function psFontName() {
@@ -2430,43 +2486,208 @@
   function textLayer(name, value, x, y, size, align) { return textLayerScope(name, value, x, y, size, align, null); }
   function textLayerScope(name, value, x, y, size, align, scope) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
 
+  /* ===== PSD 可编辑图层辅助：把 CSS 元素转成 PS 形状/文字/图片图层 ===== */
+  /* hex(#rgb/#rrggbb) 或 rgb()/rgba() 字符串 → {r,g,b}(0-255)；无法解析返回 null */
+  function psdParseRgb(color) {
+    const raw = String(color || "").trim();
+    if (!raw) return null;
+    let m = raw.match(/^#?([0-9a-f]{6})$/i);
+    if (m) { const n = parseInt(m[1], 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
+    m = raw.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (m) { return { r: Math.max(0, Math.min(255, Math.round(Number(m[1])))), g: Math.max(0, Math.min(255, Math.round(Number(m[2])))), b: Math.max(0, Math.min(255, Math.round(Number(m[3])))) }; }
+    return null;
+  }
+  /* 圆角矩形 → PS 矢量蒙版 paths（8 锚点闭合子路径，逆…顺时钟贝塞尔圆角） */
+  function psdRoundRect(x, y, w, h, r) {
+    const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+    const k = radius * 0.5522847498;
+    const knot = function (cbx, cby, ax, ay, cax, cay) { return { linked: true, points: [cbx, cby, ax, ay, cax, cay] }; };
+    return [{ open: false, fillRule: "non-zero", knots: [
+      knot(x, y + radius, x, y + radius, x, y + radius - k),
+      knot(x + radius - k, y, x + radius, y, x + radius, y),
+      knot(x + w - radius, y, x + w - radius, y, x + w - radius + k, y),
+      knot(x + w, y + radius - k, x + w, y + radius, x + w, y + radius),
+      knot(x + w, y + h - radius, x + w, y + h - radius, x + w, y + h - radius + k),
+      knot(x + w - radius + k, y + h, x + w - radius, y + h, x + w - radius, y + h),
+      knot(x + radius, y + h, x + radius, y + h, x + radius - k, y + h),
+      knot(x, y + h - radius + k, x, y + h - radius, x, y + h - radius),
+    ] }];
+  }
+  /* 形状图层：圆角矩形 + 纯色填充（PS 里可直接改颜色/圆角/路径） */
+  function psdShapeLayer(name, x, y, w, h, r, color) {
+    const rgb = psdParseRgb(color);
+    if (!rgb) return null;
+    return { name: name, vectorMask: { paths: psdRoundRect(x, y, w, h, r), invert: false, notLink: false, disable: false }, vectorFill: { type: "color", color: rgb } };
+  }
+  /* 可见文字图层：可编辑文字、字号、颜色、对齐 */
+  function psdTextLayer(name, value, x, y, size, color, align, scope) {
+    if (value == null || String(value).trim() === "") return null;
+    const rgb = psdParseRgb(color) || { r: 24, g: 34, b: 29 };
+    return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: rgb }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } };
+  }
+  /* 图片位图图层：整页尺寸画布，图片按 cover/contain 定位到指定区域（PS 里可替换/移动） */
+  async function psdImageLayer(name, imageRef, x, y, w, h, fit) {
+    const img = await loadImage(imageRef);
+    if (!img || !w || !h) return null;
+    const c = document.createElement("canvas");
+    c.width = pageSize().pageWidth; c.height = pageSize().pageHeight;
+    const cx = c.getContext("2d");
+    if (fit === "contain") containDraw(cx, img, x, y, w, h);
+    else coverDraw(cx, img, x, y, w, h);
+    return { name: name, canvas: c };
+  }
+
   async function legacyExportPsd() {
     if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return null; }
     const page = activePage(); const size = pageSize();
-    const result = await drawPageToCanvas(page);
-    const composite = result.canvas;
-    const layout = result.layout;
-    const silence = result.silence || [];
-    /* 用与合成预览一致的排版坐标放置可编辑文字层，保证在 PS 里文字与位图参考对齐。 */
-    const children = [{ name: "合成预览（位图参考）", canvas: composite }];
+    const full = await drawPageToCanvas(page);
+    const layout = full.layout;
+    const silence = full.silence || [];
+    const pageHeight = full.canvas.height;
     const px = function (n) { return Math.round(n); };
-    layout.forEach(function (item, index) {
-      const module = item.module; const def = R.getDef(module.type); const data = module.data || {};
-      const group = { name: "板块 " + (index + 1) + " · " + def.label, children: [] };
-      const cardLeft = px(item.x + 18); const cardW = px(item.w - 36);
+    const children = [];
+    /* 背景层：铺页面底色，便于在 PS 里改背景 */
+    children.push({ name: "背景底色", canvas: (function () {
+      const c = document.createElement("canvas"); c.width = size.pageWidth; c.height = pageHeight;
+      const cx = c.getContext("2d");
+      cx.fillStyle = page.backgroundColor || "#ffffff";
+      cx.fillRect(0, 0, c.width, c.height);
+      return c;
+    })() });
+
+    /* 每板块一组：可编辑图层 = 形状背景 + 图片位图 + 可见文字（全部可在 PS 里直接编辑） */
+    const st = artTheme();
+    const inkColor = artInk();
+    const mutedColor = artMuted();
+    const ratioOf = function (ratioStr, fallback) { const m = String(ratioStr || "").replace(/\s+/g, "").match(/^(\d+(?:\.\d+)?)[:/](\d+(?:\.\d+)?)$/); return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : fallback; };
+    for (let idx = 0; idx < layout.length; idx += 1) {
+      const item = layout[idx];
+      const module = item.module;
+      const def = R.getDef(module.type);
+      const data = module.data || {};
+      const group = { name: "板块 " + (idx + 1) + " · " + def.label, children: [], opened: true };
+
+      const addT = function (name, value, x, y, sz, color, align, scope) { const l = psdTextLayer(name, value, x, y, sz, color, align, scope); if (l) group.children.push(l); };
+      const addShape = function (name, x, y, w, h, r, color) { const l = psdShapeLayer(name, x, y, w, h, r, color); if (l) group.children.push(l); };
+      const addImg = async function (name, ref, x, y, w, h, fit) { const l = await psdImageLayer(name, ref, x, y, w, h, fit); if (l) group.children.push(l); };
+
+      const cardLeft = px(item.x + 18);
       const headY = px(item.y + item.head);
-      const title = textLayer((data.sectionTitle || def.label) + " · 可编辑 H2", data.sectionTitle || def.label, px(item.x + item.w / 2), headY, 54, "center");
-      if (title) group.children.push(title);
+      const cw = item.w;
+
+      /* 1) 卡片背景：CSS 卡片底色 → PS 圆角矩形纯色形状图层（可改颜色/圆角/路径） */
+      addShape(def.label + " 背景", item.x, item.y, item.w, item.h, cardRadius(data, st), cardBaseFill(st, data, 1));
+
+      /* 2) 模块主图 → 独立位图图层（可替换/移动） */
+      const imgFit = data.imageFit === "contain" ? "contain" : "cover";
       if (module.type === "cover") {
-        const h1 = textLayer("主标题 · 可编辑文字", data.title, cardLeft, px(headY + 68), 65, "left"); if (h1) group.children.push(h1);
-        const sub = textLayer("副标题 · 可编辑文字", data.subtitle, cardLeft, px(headY + 170), 29, "left"); if (sub) group.children.push(sub);
-      } else if (module.type === "announcement") {
-        const body = textLayerScope("公告正文 · 可编辑文字", data.body, cardLeft, px(headY + 86), 29, "left", "body"); if (body) group.children.push(body);
-      } else if (module.type === "freeText") {
-        const item2 = textLayer("自由文本 · 可编辑文字", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), data.align); if (item2) group.children.push(item2);
+        const tpl = data.template || "immersive";
+        if (tpl === "immersive") {
+          if (data.mainImage && data.mainImage.url) await addImg("主视觉图", data.mainImage, item.x, item.y, item.w, Math.round(item.w * 0.85), imgFit);
+          else addShape(def.label + " 主视觉底", item.x, item.y, item.w, Math.round(item.w * 0.85), cardRadius(data, st), st.primaryDark);
+        } else await addImg("主视觉图", data.mainImage, item.x, px(headY + 24), item.w, Math.round(item.w * 0.6), imgFit);
+      } else if (module.type === "freeImageBox") {
+        await addImg("图片", data.image, item.x, px(headY + 20), item.w, Math.round(item.w / ratioOf(data.ratio, 0.6)), imgFit);
+      } else if (module.type === "venueInfo" && data.photo) {
+        await addImg("场地照片", data.photo, item.x, px(headY + 24), item.w, Math.round(item.w * 0.55), imgFit);
+      } else if (module.type === "crossPromo" && data.icon) {
+        await addImg("联动方图标", data.icon, item.x, px(headY + 20), 120, 120, "contain");
+      } else if (module.type === "ticketInfo" && data.qrImage) {
+        await addImg("购票二维码", data.qrImage, px(item.x + item.w - 228), px(headY + 20), 208, 208, "contain");
+      } else if (module.type === "performerCard" && data.images && data.images[0]) {
+        await addImg("人物照片", data.images[0], item.x, px(headY + 20), 240, 300, imgFit);
       } else if (module.type === "programList") {
-        (data.items || []).forEach(function (it, i) { const row = textLayerScope("节目条目 · 可编辑文字", [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, px(headY + 60 + i * 55), 27, "left", "body"); if (row) group.children.push(row); });
-      } else if (module.type === "footer") {
-        /* 页脚数据字段是 lines（字符串数组），此前误用 items 导致内容层永不生成（审计 P5）。 */
-        const f = textLayerScope("页脚内容 · 可编辑文字", (data.lines || []).filter(Boolean).join("  ·  "), cardLeft, px(headY + 74), 23, "left", "body"); if (f) group.children.push(f);
-      } else if (module.type === "divider") {
-        const d = textLayer("分隔线备注 · 可编辑文字", data.sectionTitle || def.label, px(item.x + item.w / 2), px(headY + 32), 23, "center"); if (d) group.children.push(d);
+        const pgItems = data.items || [];
+        for (let pi = 0; pi < pgItems.length; pi++) { if (pgItems[pi].image) await addImg("节目配图 " + (pi + 1), pgItems[pi].image, item.x, px(headY + 24), cw, Math.round(cw * 0.4), imgFit); }
+      } else if (module.type === "boothList") {
+        const boItems = data.items || [];
+        for (let bi = 0; bi < boItems.length; bi++) { if (boItems[bi].image) await addImg("摊位图 " + (bi + 1), boItems[bi].image, px(item.x + 20), px(headY + 24), 150, 150, imgFit); }
       }
-      void cardW;
+
+      /* 3) 序号 + 板块标题 + 内容文字（可见、可编辑文字/字号/颜色） */
+      addT("序号", String(item.serial != null ? item.serial : idx + 1).padStart(2, "0"), px(item.x + 20), px(item.y + 26), 23, st.accent, "left");
+      if (module.type !== "divider" || data.sectionTitle) addT("板块标题", moduleTitle(module, def), px(item.x + item.w / 2), headY, 54, st.primaryDark, "center");
+
+      switch (module.type) {
+        case "cover": {
+          if ((data.template || "immersive") === "immersive") {
+            const heroH = Math.round(item.w * 0.85);
+            addT("主标题", data.title, px(item.x + cw / 2), px(item.y + heroH - 42), 65, "#ffffff", "center");
+            addT("副标题", data.subtitle, px(item.x + cw / 2), px(item.y + heroH - 90), 29, "#ffffff", "center");
+          } else {
+            addT("主标题", data.title, cardLeft, px(headY + 68), 65, st.primaryDark, "left");
+            addT("副标题", data.subtitle, cardLeft, px(headY + 170), 29, mutedColor, "left");
+          }
+          (data.infoLines || []).filter(Boolean).slice(0, 6).forEach(function (line, i) { addT("信息行 " + (i + 1), line, cardLeft, px(headY + 235 + i * 36), 23, mutedColor, "left"); });
+          addT("QQ 群号", data.qqGroupNumber, cardLeft, px(headY + 320), 23, mutedColor, "left");
+          break;
+        }
+        case "announcement":
+          addT("小标题", data.heading, cardLeft, px(headY + 60), 29, st.primaryDark, "left");
+          addT("正文", data.body, cardLeft, px(headY + 105), 29, inkColor, data.bodyAlign || "left", "body");
+          break;
+        case "ticketInfo": {
+          let ty = headY + 70;
+          (data.tiers || []).forEach(function (t, i) { addT("票档 " + (i + 1), [t.label, t.price].filter(Boolean).join("　"), cardLeft, ty, 27, st.primaryDark, "left"); ty += 42; });
+          addT("购票说明", data.note, cardLeft, ty + 10, 23, mutedColor, "left", "body");
+          break;
+        }
+        case "materials": {
+          let my = headY + 70;
+          (data.items || []).forEach(function (it, i) { addT("物料 " + (i + 1), it.label, cardLeft, my, 25, inkColor, "left", "body"); my += 38; });
+          addT("补充说明", data.note, cardLeft, my + 10, 23, mutedColor, "left", "body");
+          break;
+        }
+        case "crossPromo":
+          addT("推广文案", data.text, cardLeft, px(headY + 70), 27, inkColor, data.bodyAlign || "left", "body");
+          break;
+        case "schedule": {
+          let sy = headY + 70;
+          (data.groups || []).forEach(function (g) { if (g.groupName) { addT("分组", g.groupName, cardLeft, sy, 27, st.primaryDark, "left"); sy += 40; } (g.rows || []).forEach(function (r) { addT("环节", [r.time, r.name].filter(Boolean).join("  "), cardLeft, sy, 25, inkColor, "left", "body"); sy += 36; }); sy += 14; });
+          break;
+        }
+        case "venueInfo":
+          addT("场地描述", data.description, cardLeft, px(headY + 70), 27, inkColor, data.bodyAlign || "left", "body");
+          addT("标签", (data.tags || []).filter(Boolean).join(" · "), cardLeft, px(headY + 170), 23, st.primaryDark, "left");
+          break;
+        case "routeText": {
+          let ry = headY + 70;
+          (data.lines || []).filter(Boolean).forEach(function (line, i) { addT("步骤 " + (i + 1), line, cardLeft, ry, 27, inkColor, "left", "body"); ry += 40; });
+          break;
+        }
+        case "programList": {
+          let py = headY + 70;
+          (data.items || []).forEach(function (it, i) { addT("节目 " + (i + 1), [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, py, 25, inkColor, "left", "body"); py += 40; });
+          break;
+        }
+        case "performerCard":
+          addT("名称", data.name, cardLeft, px(headY + 70), 33, st.primaryDark, "left");
+          addT("简介", data.bio, cardLeft, px(headY + 115), 25, inkColor, data.bodyAlign || "left", "body");
+          addT("曲目单", (data.setlist || []).filter(Boolean).join(" · "), cardLeft, px(headY + 200), 23, mutedColor, "left", "body");
+          break;
+        case "boothList": {
+          let by = headY + 70;
+          (data.items || []).forEach(function (it, i) { addT("摊位 " + (i + 1), [it.name, it.desc].filter(Boolean).join("  "), cardLeft, by, 25, inkColor, "left", "body"); by += 42; });
+          break;
+        }
+        case "footer":
+          addT("页脚内容", (data.lines || []).filter(Boolean).join(" · "), cardLeft, px(headY + 70), 23, mutedColor, "left", "body");
+          break;
+        case "freeText":
+          addT("文本", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), inkColor, data.align || "left", "body");
+          break;
+        case "freeImageBox":
+          addT("图注", data.caption, px(item.x + cw / 2), px(item.y + item.h - 20), 23, mutedColor, data.contentAlign || "center");
+          break;
+        case "divider":
+          break;
+        default:
+          break;
+      }
       children.push(group);
-    });
+    }
     try {
-      const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: composite.height, children: children }, { generateThumbnail: true });
+      const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: pageHeight, children: children }, { generateThumbnail: true });
       downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + (activePageIndex() + 1) + ".psd");
       auditSilence(silence, "PSD 第 " + (activePageIndex() + 1) + " 屏 ");
       return { layers: children.length, silence: silence.length };
@@ -2524,35 +2745,149 @@
     els.themeSelect.addEventListener("change", function () {
       const prev = state.doc.theme;
       state.doc.theme = this.value;
-      /* 主题建议字体：用户未手动设置（值为空）时随主题自动应用；手动选过则尊重用户。 */
       const nextSt = C.themeStyle(state.doc.theme);
       const prevSt = C.themeStyle(prev);
-      if (state.doc.headingFont && prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
-      else if (!state.doc.headingFont) state.doc.headingFont = nextSt.headingFont || "";
-      if (state.doc.bodyFont && prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
-      else if (!state.doc.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+      /* 主题推荐字体：用户从未手动改字体时随主题应用；手动改过则只在「仍等于旧主题推荐」时跟随，
+         且「跟随全局/标题」(空) 与手动字体一律保持，避免主题切换污染字体跟随关系。 */
+      if (state.doc.fontManual === true) {
+        if (prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
+        if (prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+      } else {
+        state.doc.headingFont = nextSt.headingFont || "";
+        state.doc.bodyFont = nextSt.bodyFont || "";
+      }
       if (state.doc.headingFont) ensureFont(state.doc.headingFont);
       if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
       renderAll();
     });
-    els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; ensureFont(state.doc.fontFamily); renderAll(); });
-    els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
-    els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; if (this.value) ensureFont(this.value); renderAll(); });
+    els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; state.doc.fontManual = true; ensureFont(state.doc.fontFamily); renderAll(); });
+    els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
+    els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
     els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
     els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
     els.zoomFitBtn.addEventListener("click", function () { const avail = (els.canvasBody.clientWidth || 560) - 48; state.zoom = Math.min(1.5, Math.max(.15, avail / pageSize().pageWidth)); renderToolbar(); renderCanvas(); });
     els.exportPngBtn.addEventListener("click", function () { exportPng(false); });
     els.exportAllBtn.addEventListener("click", function () { exportPng(true); });
     els.exportStripBtn.addEventListener("click", exportStripPng);
-    els.exportPsdBtn.addEventListener("click", exportPsd);
+    els.exportPsdBtn.addEventListener("click", async function () { const result = await exportPsd(); if (result && els.packFontsToggle && els.packFontsToggle.checked) { try { await packFontsZip(); } catch (error) { if (global.alert) global.alert("字体打包失败：" + (error && error.message || error)); } } });
     els.saveDraftBtn.addEventListener("click", saveDraft);
     els.loadDraftInput.addEventListener("change", function () { if (this.files && this.files[0]) loadDraft(this.files[0]); this.value = ""; });
     els.libraryList.addEventListener("click", function (event) { const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView(); });
     els.myTplList.addEventListener("click", function (event) { const del = event.target.closest("[data-action='tpl-del']"); if (del) { deleteMyTemplate(del.dataset.tplId); return; } const add = event.target.closest("[data-action='tpl-add']"); if (add) addTemplateToPage(add.dataset.tplId); });
     els.panelBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action='save-tpl']"); if (target) saveSelectedModuleAsTemplate(); });
-    els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
+    els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { if (state.pickMode !== "module") { const hostCard = target.closest(".bb-page-card"); state.activePageId = (hostCard && hostCard.dataset.pageId) || M.findModule(state.doc, moduleId).page.id; state.selectedModuleId = null; renderAll(); return; } state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
+    if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
+    if (els.importThemeBtn) els.importThemeBtn.addEventListener("click", showThemeImportModal);
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.THEME_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  /* ===== 主题导入弹窗 ===== */
+  function rebuildThemeSelect(opts) {
+    var sel = els.themeSelect;
+    if (!sel) return;
+    var value = sel.value;
+    sel.textContent = "";
+    var options = opts || C.getThemeOptions();
+    var importer = global.BannerBuilderThemeImporter;
+    options.forEach(function (o) {
+      var option = el("option", null, (importer && importer.isCustom(o.value) ? "★ " : "") + o.label);
+      option.value = o.value;
+      sel.appendChild(option);
+    });
+    sel.value = options.some(function (o) { return o.value === value; }) ? value : (options[0] ? options[0].value : "forest");
+  }
+
+  function showThemeImportModal() {
+    var existing = document.getElementById("bb-theme-modal");
+    if (existing) { existing.parentNode.removeChild(existing); }
+
+    var mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-theme-modal";
+
+    var modal = document.createElement("div");
+    modal.className = "bb-modal";
+
+    var h3 = el("h3", null, "导入 AI 生成的主题");
+    modal.appendChild(h3);
+    modal.appendChild(el("p", null, "复制下方 AI 提示词发给 ChatGPT / Claude 等 AI → 把生成的 JSON 粘贴回来 → 点击导入"));
+
+    var promptArea = document.createElement("textarea");
+    promptArea.className = "bb-input bb-modal-textarea";
+    promptArea.readOnly = true;
+    promptArea.style.height = "80px";
+    promptArea.value = (global.BannerBuilderThemeImporter && global.BannerBuilderThemeImporter.promptText) || "";
+    modal.appendChild(promptArea);
+
+    var copyRow = document.createElement("div");
+    copyRow.className = "bb-modal-actions";
+    var copyBtn = el("button", "bb-btn ghost", "📋 复制 AI 提示词");
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", function () {
+      try { navigator.clipboard.writeText(promptArea.value).then(function () { copyBtn.textContent = "✓ 已复制"; setTimeout(function () { copyBtn.textContent = "📋 复制 AI 提示词"; }, 2000); }); } catch (e) {}
+    });
+    copyRow.appendChild(copyBtn);
+    modal.appendChild(copyRow);
+
+    var inputLabel = el("p", null, "▼ 将 AI 生成的 JSON 粘贴到下方（支持带 markdown 代码块）");
+    inputLabel.style.marginTop = "16px";
+    modal.appendChild(inputLabel);
+
+    var inputArea = document.createElement("textarea");
+    inputArea.className = "bb-input bb-modal-textarea";
+    inputArea.placeholder = "粘贴 AI 生成的 JSON 主题代码...";
+    modal.appendChild(inputArea);
+
+    var msgArea = el("div");
+    msgArea.style.display = "none";
+    modal.appendChild(msgArea);
+
+    var actionRow = document.createElement("div");
+    actionRow.className = "bb-modal-actions";
+    var importBtn = el("button", "bb-btn primary", "导入主题");
+    importBtn.type = "button";
+    importBtn.addEventListener("click", function () {
+      var raw = inputArea.value.trim();
+      if (!raw) { showMsg("error", "请先粘贴 JSON 代码"); return; }
+      var obj = global.BannerBuilderThemeImporter.extractJson(raw);
+      if (!obj) { showMsg("error", "JSON 格式解析失败，请确认粘贴内容"); return; }
+      var errors = global.BannerBuilderThemeImporter.validate(obj);
+      if (errors.length) { showMsg("error", "校验不通过：\n" + errors.join("\n")); return; }
+      try {
+        global.BannerBuilderThemeImporter.add(obj);
+        rebuildThemeSelect();
+        showMsg("success", "✓ 主题「" + obj.label + "」已导入，可在主题下拉菜单中选用");
+      } catch (e) {
+        showMsg("error", "保存失败：" + (e && e.message || e));
+      }
+    });
+    actionRow.appendChild(importBtn);
+
+    var cancelBtn = el("button", "bb-btn ghost", "关闭");
+    cancelBtn.type = "button";
+    cancelBtn.addEventListener("click", function () { mask.parentNode.removeChild(mask); });
+    actionRow.appendChild(cancelBtn);
+
+    modal.appendChild(actionRow);
+    mask.appendChild(modal);
+
+    mask.addEventListener("click", function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    document.body.appendChild(mask);
+
+    function showMsg(type, text) {
+      msgArea.style.display = "block";
+      msgArea.className = type === "error" ? "bb-modal-error" : "bb-modal-success";
+      msgArea.textContent = text;
+    }
+  }
+
+  function syncPickMode() {
+    if (!els.pickModuleToggle) return;
+    const on = state.pickMode === "module";
+    els.pickModuleToggle.checked = on;
+    if (els.pickModeText) els.pickModeText.textContent = on ? "选图层" : "选整屏";
+    if (els.canvasBody) els.canvasBody.classList.toggle("bb-pick-module", on);
+  }
+
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);

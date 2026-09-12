@@ -14,20 +14,20 @@ const M = window.BannerBuilderModel;
 const T = window.BannerBuilderMyTemplates;
 
 /* ============ 常量 ============ */
-/* 跨 vm 上下文对象原型不同，deepStrictEqual 会失败，须逐字段断言。 */assert.equal(C.pageSize("9:16").pageWidth, 1242, "9:16 宽度");
-assert.equal(C.pageSize("9:16").pageHeight, 2208, "9:16 高度");
-assert.equal(C.pageSize("3:4").pageWidth, 1242, "3:4 宽度");
-assert.equal(C.pageSize("3:4").pageHeight, 1656, "3:4 高度");
-assert.equal(C.pageSize("8:1").pageWidth, 1242, "未知比例回退默认宽度");
-assert.equal(C.pageSize("8:1").pageHeight, 2208, "未知比例回退默认高度");
+/* 跨 vm 上下文对象原型不同，deepStrictEqual 会失败，须逐字段断言。 */assert.equal(C.pageSize("9:16").pageWidth, 750, "9:16 宽度");
+assert.equal(C.pageSize("9:16").pageHeight, 1334, "9:16 高度");
+assert.equal(C.pageSize("3:4").pageWidth, 750, "3:4 宽度");
+assert.equal(C.pageSize("3:4").pageHeight, 1000, "3:4 高度");
+assert.equal(C.pageSize("8:1").pageWidth, 750, "未知比例回退默认宽度");
+assert.equal(C.pageSize("8:1").pageHeight, 1334, "未知比例回退默认高度");
 
-assert.equal(C.fontSizePx("h1", 1242), 96, "H1 在 1242 宽下为 96px");
-assert.equal(C.fontSizePx("body", 1242), 34, "正文在 1242 宽下为 34px");
-assert.equal(C.fontSizePx("caption", 1242), 26, "小字在 1242 宽下为 26px");
-assert.equal(C.fontSizePx("caption", 621), 13, "字号按画布宽度换算");
+assert.equal(C.fontSizePx("h1", 750), 65, "H1 在 750 宽下为 65px");
+assert.equal(C.fontSizePx("body", 750), 29, "正文在 750 宽下为 29px");
+assert.equal(C.fontSizePx("caption", 750), 23, "小字在 750 宽下为 23px");
+assert.equal(C.fontSizePx("caption", 375), 12, "字号按画布宽度换算");
 
-assert.equal(C.captionWarning("caption", 1242), "", "26px 不提示");
-assert.ok(C.captionWarning("caption", 900).includes("24px"), "换算后低于 24px 应提示");
+assert.equal(C.captionWarning("caption", 750), "", "23px 不提示");
+assert.ok(C.captionWarning("caption", 400).includes("12px"), "换算后低于 18px 应提示");
 
 assert.notEqual(C.uid(), C.uid(), "uid 每次不同");
 assert.ok(C.uid().length >= 8, "uid 长度可用");

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="81GlOxBCUPVnIGu26BEG8a">
   <meta name="description" content="Only-box 活动宣传长条排版工具：本地编辑多屏宣图、调整板块与图片、导出 PNG、PSD 和备份草稿。" data-page-node-id="ES5tRQnadQXpzoATHJXiST">
   <title>活动宣传长条排版｜Only-box</title>
-  <link rel="stylesheet" href="../css/only-box.css?v=20260907-17" data-page-node-id="NquBvkFBhDDB0qTARzvhLF">
+  <link rel="stylesheet" href="../css/only-box.css?v=20260907-20" data-page-node-id="NquBvkFBhDDB0qTARzvhLF">
   <style>
     :root{--bb-line:#dce4dd;--bb-soft:#edf4ee;--bb-panel:rgba(255,255,255,.9);--bb-stage:#dfe6df}
     [hidden]{display:none!important}
@@ -38,6 +38,7 @@
     .bb-col-head{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--bb-line);background:rgba(255,255,255,.72)}
     .bb-col-head h2{margin:0;font-size:15px;letter-spacing:0}
     .bb-col-head .bb-sub{margin:3px 0 0;color:var(--ob-muted);font-size:11px;line-height:1.5}
+    .bb-pickmode{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none;font-size:11px;color:var(--ob-muted);white-space:nowrap}.bb-pickmode input{position:absolute;opacity:0;width:0;height:0}.bb-pickmode-track{position:relative;width:30px;height:16px;border-radius:999px;background:#c9d4ca;transition:background .15s;flex:0 0 auto}.bb-pickmode-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}.bb-pickmode input:checked+.bb-pickmode-track{background:var(--ob-primary,#4c7a5a)}.bb-pickmode input:checked+.bb-pickmode-track .bb-pickmode-thumb{left:16px}.bb-pickmode-text{min-width:44px;font-weight:700;color:var(--ob-ink,#333)}#canvasBody .bb-page-canvas{cursor:pointer}#canvasBody.bb-pick-module .bb-art-module{cursor:pointer}
     .bb-col-body{flex:1;min-height:0;overflow:auto;padding:12px}
     .bb-col-body.library{padding:9px}
     .bb-lib-item{display:flex;width:100%;min-height:40px;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;padding:7px 9px;border:1px solid var(--bb-line);border-radius:10px;color:var(--ob-ink);background:#fff;font-size:12px;font-weight:750;text-align:left;cursor:pointer}
@@ -148,24 +149,24 @@
       <span class="bb-toolbar-label" data-page-node-id="LoftwZ260szaFbHh6ztOkR">画布比例</span><div class="bb-seg" id="ratioGroup" role="group" data-page-node-id="BeXkAVf7SErKwdDpx77FJl"><button type="button" data-ratio="9:16" class="is-active" aria-pressed="true" data-page-node-id="xd8CKNP9oaeRfc3GAFsKji">9:16 竖屏</button><button type="button" data-ratio="3:4" aria-pressed="false" data-page-node-id="NArwXkk1Edgd5kdgsHls1j">3:4 竖屏</button></div><span class="bb-size-readout" id="sizeReadout" data-page-node-id="gG32OzVt4BPIXVbv2iy3Ay">1242 × 2208 px</span>
       <span class="bb-toolbar-label">屏幕</span><div class="bb-seg" id="screenModeGroup" role="group" aria-label="屏幕衔接方式" data-page-node-id="sM1ScreenModeGrp0"><button type="button" data-screen="split" class="is-active" aria-pressed="true" data-page-node-id="sM1SplitBtn000">分屏</button><button type="button" data-screen="continuous" aria-pressed="false" data-page-node-id="sM1ContBtn0000">连续</button></div>
       <button class="bb-btn primary" id="addPageBtn" type="button" data-page-node-id="QMlAooGqKpZA3YN3Pw0sk5">＋ 新增屏</button><select class="bb-input bb-toolbar-select" id="themeSelect" title="主题配色" aria-label="主题配色"></select><select class="bb-input bb-toolbar-select" id="fontSelect" title="全局字体（标题正文未单独设置时生效）" aria-label="全局字体"></select><select class="bb-input bb-toolbar-select" id="headingFontSelect" title="标题字体（主标题/板块标题）" aria-label="标题字体"></select><select class="bb-input bb-toolbar-select" id="bodyFontSelect" title="正文字体（正文/说明/图注）" aria-label="正文字体"></select><select class="bb-input bb-toolbar-select" id="backgroundScope" aria-label="背景图作用范围" data-page-node-id="ZhEzTik32c9m4UVC5KO4EG"><option value="doc" data-page-node-id="RbpKFY3YmUShANUazpa32f">整条长条背景</option><option value="page" data-page-node-id="kqkn4CbFVjusxBQD30vDRC">当前屏背景</option></select><label class="bb-btn ghost bb-import-btn" for="backgroundInput" data-page-node-id="niFZGtiDjQE5fCTElrvvvF">导入背景图<input class="bb-file-input" id="backgroundInput" type="file" accept="image/*" data-page-node-id="DqxSwVo1uvlWxSlMndHSrU"></label><span class="bb-spacer" data-page-node-id="Q44rn6k1vN3WKKD1CGXaMs"></span><span class="bb-stats" id="docStats" data-page-node-id="xmTr0oow9A7IOk0BpzF4iF">1 屏 · 0 个板块</span>
-      <button class="bb-btn ghost" id="exportPngBtn" type="button" title="导出当前屏 PNG" data-page-node-id="GPPQqtW68mLyeikbAwDWjC">导出当前屏</button><button class="bb-btn ghost" id="exportAllBtn" type="button" title="逐屏导出全部 PNG（多屏时逐个间隔下载；若浏览器提示，请选择允许下载多个文件）" data-page-node-id="3ZDlf7KPvxelyE0ICyS5Im">导出全部屏</button><button class="bb-btn ghost" id="exportStripBtn" type="button" title="把全部屏拼成一张连续 PNG，整条背景跨屏连续">导出连续长图</button><button class="bb-btn ghost" id="exportPsdBtn" type="button" title="导出可编辑图层 PSD" data-page-node-id="b0wj0gWgXlG6Z2q4mDqc6L">导出 PSD</button><button class="bb-btn ghost" id="saveDraftBtn" type="button" title="备份草稿（含图片数据，跨会话恢复不丢图）" data-page-node-id="3VWeSUjSzlMUmHubRUNlwX">备份草稿</button><label class="bb-btn ghost" for="loadDraftInput" data-page-node-id="yhQuhflH0P8Aq2YyOw0mEA">恢复<input class="bb-file-input" id="loadDraftInput" type="file" accept="application/json" data-page-node-id="r0wtqXAeegQALI4qj3muwU"></label>
+      <button class="bb-btn ghost" id="exportPngBtn" type="button" title="导出当前屏 PNG" data-page-node-id="GPPQqtW68mLyeikbAwDWjC">导出当前屏</button><button class="bb-btn ghost" id="exportAllBtn" type="button" title="逐屏导出全部 PNG（多屏时逐个间隔下载；若浏览器提示，请选择允许下载多个文件）" data-page-node-id="3ZDlf7KPvxelyE0ICyS5Im">导出全部屏</button><button class="bb-btn ghost" id="exportStripBtn" type="button" title="把全部屏拼成一张连续 PNG，整条背景跨屏连续">导出连续长图</button><button class="bb-btn ghost" id="exportPsdBtn" type="button" title="导出可编辑图层 PSD" data-page-node-id="b0wj0gWgXlG6Z2q4mDqc6L">导出 PSD</button><label class="bb-btn ghost" id="packFontsLabel" title="导出 PSD 时同时打包所用字体文件（.ttf/.otf），在 Photoshop 中打开前先安装字体即可正确渲染文字"><input type="checkbox" id="packFontsToggle" style="margin-right:4px;accent-color:var(--ob-primary)">打包字体</label><button class="bb-btn ghost" id="saveDraftBtn" type="button" title="备份草稿（含图片数据，跨会话恢复不丢图）" data-page-node-id="3VWeSUjSzlMUmHubRUNlwX">备份草稿</button><label class="bb-btn ghost" for="loadDraftInput" data-page-node-id="yhQuhflH0P8Aq2YyOw0mEA">恢复<input class="bb-file-input" id="loadDraftInput" type="file" data-page-node-id="r0wtqXAeegQALI4qj3muwU"></label>
       <div class="bb-zoom" data-page-node-id="8gEiR46mbhDHs3KQUo20uh"><span data-page-node-id="gQeRmcRjkItJ338uA6GwKl" hidden></span><button id="zoomOutBtn" type="button" aria-label="缩小" data-page-node-id="kbFO5Q8Ck0LrdhDU9Pnpy9">−</button><span class="bb-zoom-value" id="zoomValue" data-page-node-id="rOlM5gD1BQ5IEFuPevwIPM">46%</span><button id="zoomInBtn" type="button" aria-label="放大" data-page-node-id="Ejr1DTL4a1tt5njvz2wejh">＋</button><button class="bb-btn ghost" id="zoomFitBtn" type="button" data-page-node-id="kE542VjOARLF9jiwA8yypi">适配</button></div>
     </div>
     <div class="bb-workbench" data-page-node-id="zWVvsf2HL3lt8shwl5ltml">
       <section class="bb-col library-col" aria-label="板块库" data-page-node-id="gRQ35U3EYQkeFkxvh54mz8"><header class="bb-col-head" data-page-node-id="VFdzZDT6k234R800NvetRX"><div data-page-node-id="Sh7lHlNc4lHeoB5Cz20MvH"><h2 data-page-node-id="qe7rConXyrPMvUZPw58WYF">板块库</h2><p class="bb-sub" id="libraryHint" data-page-node-id="ogIkvXV8MsDzObWyTAOUyv">点击板块，添加到第 1 屏</p></div></header><div class="bb-col-body library" data-page-node-id="libBodyMyTpl01"><div class="bb-mytpl-area" id="myTplArea" hidden data-page-node-id="myTplArea00001"><div class="bb-mytpl-title"><span data-page-node-id="myTplTitl0001">★ 我的模板</span><span class="bb-mytpl-count" id="myTplCount" data-page-node-id="myTplCount000"></span></div><div id="myTplList" data-page-node-id="myTplList0000"></div></div><div id="libraryList" data-page-node-id="srmso8IUsa201JQNCGz5eU"></div></div></section>
-      <section class="bb-col" aria-label="长条画布" data-page-node-id="HMhlACpNAdNQfAB6Wb4fCQ"><header class="bb-col-head" data-page-node-id="BG0dzmpRsJJELSLQAsIk9B"><div data-page-node-id="UAUwWZJFMFJ2w37TKEB3vv"><h2 data-page-node-id="z5cTrjOeryKpOHEGFLf7Wh">长条预览</h2><p class="bb-sub" data-page-node-id="vVZRd3qqk6DWamsUxIq8Zj">按观众从上到下的阅读顺序组织多屏内容</p></div></header><div class="bb-col-body" id="canvasBody" data-page-node-id="4IA2t7FEjfnOuzz6yHGKgm"></div></section>
+      <section class="bb-col" aria-label="长条画布" data-page-node-id="HMhlACpNAdNQfAB6Wb4fCQ"><header class="bb-col-head" data-page-node-id="BG0dzmpRsJJELSLQAsIk9B"><div data-page-node-id="UAUwWZJFMFJ2w37TKEB3vv"><h2 data-page-node-id="z5cTrjOeryKpOHEGFLf7Wh">长条预览</h2><p class="bb-sub" data-page-node-id="vVZRd3qqk6DWamsUxIq8Zj">按观众从上到下的阅读顺序组织多屏内容</p></div><label class="bb-pickmode" id="pickModeSwitch" title="预览点击模式：选整屏=点击屏内任意位置选中该屏；选图层=点击板块选中该板块，点屏内空白选中该屏"><input id="pickModuleToggle" type="checkbox"><span class="bb-pickmode-track"><span class="bb-pickmode-thumb"></span></span><span class="bb-pickmode-text" id="pickModeText">选整屏</span></label></header><div class="bb-col-body" id="canvasBody" data-page-node-id="4IA2t7FEjfnOuzz6yHGKgm"></div></section>
       <section class="bb-col" aria-label="属性面板" data-page-node-id="3taZjOqGwXNDiW11H2rQAB"><header class="bb-col-head" data-page-node-id="o2iuUoxz8PopG44RldzfWj"><div data-page-node-id="SED9acIhbkWkJLl7z9dNxo"><h2 class="bb-panel-title" id="panelTitle" data-page-node-id="7q56F6RA959MBIHxp0EDh7">整条 / 当前屏</h2><p class="bb-panel-sub" id="panelSub" data-page-node-id="IXZTNXHBy040wIUmlo6ua0">画布真实预览 · 点模块编辑板块</p></div></header><div class="bb-col-body" id="panelBody" data-page-node-id="Djbhd6NBhrLdZXaTtiv1Mo"></div></section>
     </div>
   </main>
   <footer class="site-footer" data-page-node-id="AKR2HMRFh7i72HmJb1uyXW"><div class="footer-inner" data-page-node-id="c1z7QFJnt9MYJoGqWF0Bkx"><span data-page-node-id="Q6zpua6e37jk9eHTsHnCbN">Only-box · 活动宣传长条排版</span><a href="../index.html" data-page-node-id="hAIaxl0Qp17tyTRSqB1AYI">返回工具箱首页 →</a></div></footer>
-  <script src="../js/vendor/ag-psd.js?v=20260907-17"></script>
-  <script src="../js/banner-builder-constants.js?v=20260907-17"></script>
-  <script src="../js/banner-builder-registry.js?v=20260907-17"></script>
-  <script src="../js/banner-builder-model.js?v=20260907-17"></script>
-  <script src="../js/banner-builder-mytemplates.js?v=20260907-17"></script>
-  <script src="../js/vendor/html-to-image.js?v=20260907-17"></script>
-  <script src="../js/banner-builder-export.js?v=20260907-17"></script>
-  <script src="../js/banner-builder.js?v=20260907-17"></script>
+  <script src="../js/vendor/ag-psd.js?v=20260907-20"></script>
+  <script src="../js/banner-builder-constants.js?v=20260907-20"></script>
+  <script src="../js/banner-builder-registry.js?v=20260907-20"></script>
+  <script src="../js/banner-builder-model.js?v=20260907-20"></script>
+  <script src="../js/banner-builder-mytemplates.js?v=20260907-20"></script>
+  <script src="../js/vendor/html-to-image.js?v=20260907-20"></script>
+  <script src="../js/banner-builder-export.js?v=20260907-20"></script>
+  <script src="../js/banner-builder.js?v=20260907-20"></script>
 
 <div id="selftest-result" style="display:none">SELFTEST:pending</div>
 <script>
@@ -275,12 +276,33 @@
         await window.BannerBuilderExport.__inline(holder);
         tagCheck = { tagsLeft: holder.querySelectorAll(".bb-slice-tag").length, actionsLeft: holder.querySelectorAll(".bb-art-actions").length, imgs: holder.querySelectorAll("img").length };
       } catch (e) { tagCheck = { error: String(e && e.message || e) }; }
+      /* 滑块开关闭环：整屏模式点击板块只选屏；图层模式点击板块选中板块、点屏空白选屏 */
+      var pickCheck = null;
+      try {
+        var sw = document.getElementById("pickModuleToggle");
+        var mod2 = doc.pages[1].modules[0];
+        var modNode2 = document.querySelector(".bb-art-module[data-module-id='" + mod2.id + "']");
+        if (!sw || !modNode2) throw new Error("pickModeSwitch 或板块节点缺失");
+        sw.checked = false; sw.dispatchEvent(new Event("change"));
+        modNode2 = document.querySelector(".bb-art-module[data-module-id='" + mod2.id + "']");
+        modNode2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        var screenOk = window.bannerBuilder.state.activePageId === doc.pages[1].id && !window.bannerBuilder.state.selectedModuleId;
+        sw.checked = true; sw.dispatchEvent(new Event("change"));
+        modNode2 = document.querySelector(".bb-art-module[data-module-id='" + mod2.id + "']");
+        modNode2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        var moduleOk = window.bannerBuilder.state.selectedModuleId === mod2.id && window.bannerBuilder.state.activePageId === doc.pages[1].id;
+        var canvasNode2 = document.querySelectorAll(".bb-page-canvas")[1];
+        canvasNode2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        var screenFallbackOk = window.bannerBuilder.state.activePageId === doc.pages[1].id && !window.bannerBuilder.state.selectedModuleId;
+        sw.checked = false; sw.dispatchEvent(new Event("change"));
+        pickCheck = { switchFound: !!sw, screenOk: screenOk, moduleOk: moduleOk, screenFallbackOk: screenFallbackOk, pass: screenOk && moduleOk && screenFallbackOk };
+      } catch (e) { pickCheck = { error: String(e && e.message || e) }; }
       done({
         status: "PASS",
         h2FontSize: h2Size,
         domCanvasWidth: domWidth,
         libLoaded: !!window.htmlToImage, engine: result.engine,
-        pngWidth: d0.width, pngHeight: d0.height, psdEngine: psd && psd.engine, psdError: psd && psd.error || null, exifCheck: exifCheck, tagCheck: tagCheck, edgeCheck: edgeCheck, evidencePng: evidencePng,
+        pngWidth: d0.width, pngHeight: d0.height, psdLayers: psd && psd.layers, psdSilence: psd && psd.silence, psdError: psd && psd.error || null, exifCheck: exifCheck, tagCheck: tagCheck, edgeCheck: edgeCheck, pickCheck: pickCheck, evidencePng: evidencePng,
         exportPages: result.pages,
         exportScale: scale,
         fonts: document.fonts ? document.fonts.status : "n/a",

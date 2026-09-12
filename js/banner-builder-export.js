@@ -389,28 +389,13 @@
   }
 
   async function exportPsd() {
-    if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return null; }
-    const scale = exportScale();
+    /* 分层 PSD：委托 legacy 绘制器逐板块重建
+       （背景层 + 每板块一组[板块位图层(可见) + 隐藏可编辑文字层]），合成效果 = 预览 */
     const fontStatus = await ensureFonts();
-    const activeId = BB().state.activePageId;
-    const page = BB().doc.pages.filter(function (p) { return p.id === activeId; })[0] || BB().doc.pages[0];
-    const node = findPreviewCanvas(page.id);
-    if (!node) throw new Error("找不到当前屏的预览画布");
-    const size = pageSize();
-    const bitmap = await withDesignZoom(async function () {
-      const node2 = findPreviewCanvas(page.id);
-      if (!node2) throw new Error("找不到当前屏的预览画布");
-      return rasterizeDomToCanvas(node2, size.pageWidth, Math.max(node2.offsetHeight, node2.scrollHeight), 1);
-    });
-    const buffer = global.agPsd.writePsd({
-      width: size.pageWidth,
-      height: bitmap.height,
-      children: [
-        { name: "合成预览（位图参考 · 与预览像素一致）", canvas: bitmap },
-      ],
-    }, { generateThumbnail: true });
-    downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + String(BB().doc.pages.indexOf(page) + 1).padStart(2, "0") + ".psd");
-    return { engine: "dom-serialize", scale: scale, fontStatus: fontStatus, width: size.pageWidth, height: bitmap.height };
+    const legacy = global.BannerBuilderLegacy || global.bannerBuilder;
+    const result = await legacy.exportPsd();
+    if (result) result.fontStatus = fontStatus;
+    return result;
   }
 
   global.BannerBuilderExport = {

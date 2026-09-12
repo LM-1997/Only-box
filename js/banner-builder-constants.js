@@ -41,7 +41,12 @@
   /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。 */
   const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" };
   function themeStyle(key) {
-    const t = THEMES[key] || THEMES.forest;
+    var importer = global.BannerBuilderThemeImporter;
+    var merged = THEMES;
+    if (importer && typeof importer.mergeAll === "function") {
+      merged = importer.mergeAll();
+    }
+    const t = merged[key] || merged.forest || THEMES.forest;
     const out = {};
     Object.keys(STYLE_DEFAULTS).forEach(function (k) { out[k] = t[k] != null ? t[k] : STYLE_DEFAULTS[k]; });
     Object.keys(t).forEach(function (k) { if (!(k in out)) out[k] = t[k]; });
@@ -72,6 +77,31 @@
     grotesk: { label: "Space Grotesk（科技感）", family: "Space Grotesk", css: ["https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/700.css"] },
     robotoCond: { label: "Roboto Condensed（窄体正文）", family: "Roboto Condensed", css: ["https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/700.css"] },
     ubuntu: { label: "Ubuntu（人文无衬线）", family: "Ubuntu", css: ["https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/700.css"] },
+  };
+  /* 桌面字体文件（供「打包字体」下载）：PS 需安装对应 .ttf/.otf 才能正确渲染文字图层。
+     来源优先 google/fonts（jsDelivr 镜像，CORS 友好）；思源宋体走 raw.githubusercontent；
+     霞鹜文楷走官方 release（部分网络环境下 fetch 可能受限，打包时容错跳过并提示）。 */
+  const FONT_DOWNLOADS = {
+    sans: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf", name: "NotoSansSC.ttf" },
+    serif: { url: "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf", name: "NotoSerifSC.ttf" },
+    kai: { url: "https://github.com/lxgw/LxgwWenKai/releases/download/v1.510/LXGWWenKai-Regular.ttf", name: "LXGWWenKai-Regular.ttf" },
+    rounded: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf", name: "ZCOOLKuaiLe-Regular.ttf" },
+    xiaowei: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf", name: "ZCOOLXiaoWei-Regular.ttf" },
+    qingke: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolqingkehuangyou/ZCOOLQingKeHuangYou-Regular.ttf", name: "ZCOOLQingKeHuangYou-Regular.ttf" },
+    mashanzheng: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mashanzheng/MaShanZheng-Regular.ttf", name: "MaShanZheng-Regular.ttf" },
+    longcang: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/longcang/LongCang-Regular.ttf", name: "LongCang-Regular.ttf" },
+    zhimangxing: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zhimangxing/ZhiMangXing-Regular.ttf", name: "ZhiMangXing-Regular.ttf" },
+    liujianmaocao: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/liujianmaocao/LiuJianMaoCao-Regular.ttf", name: "LiuJianMaoCao-Regular.ttf" },
+    poppins: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf", name: "Poppins-Regular.ttf" },
+    montserrat: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/Montserrat%5Bwght%5D.ttf", name: "Montserrat-Variable.ttf" },
+    oswald: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/oswald/Oswald%5Bwght%5D.ttf", name: "Oswald-Variable.ttf" },
+    bebas: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/bebasneue/BebasNeue-Regular.ttf", name: "BebasNeue-Regular.ttf" },
+    playfair: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf", name: "PlayfairDisplay-Variable.ttf" },
+    abril: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/abrilfatface/AbrilFatface-Regular.ttf", name: "AbrilFatface-Regular.ttf" },
+    lato: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Regular.ttf", name: "Lato-Regular.ttf" },
+    grotesk: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf", name: "SpaceGrotesk-Variable.ttf" },
+    robotoCond: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf", name: "RobotoCondensed-Variable.ttf" },
+    ubuntu: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ufl/ubuntu/Ubuntu-Regular.ttf", name: "Ubuntu-Regular.ttf" },
   };
   function fontFallback(key) {
     if (key === "serif" || key === "xiaowei" || key === "playfair" || key === "abril") return "'Songti SC',serif";
@@ -121,6 +151,14 @@
     return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
 
+  function getThemeOptions() {
+    var importer = global.BannerBuilderThemeImporter;
+    if (importer && typeof importer.mergeAll === "function") {
+      return optionList(importer.mergeAll());
+    }
+    return optionList(THEMES);
+  }
+
   global.BannerBuilderConstants = Object.freeze({
     CANVAS_PRESETS,
     DEFAULT_RATIO,
@@ -128,7 +166,10 @@
     CAPTION_MIN_PX_WARNING,
     THEMES,
     FONTS,
+    FONT_DOWNLOADS,
+    STYLE_DEFAULTS,
     THEME_OPTIONS: optionList(THEMES),
+    getThemeOptions: getThemeOptions,
     FONT_OPTIONS: optionList(FONTS),
     ROLE_FONT_OPTIONS: [
       { value: "", label: "跟随全局字体" },

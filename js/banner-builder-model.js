@@ -27,6 +27,7 @@
       fontFamily: "sans",
       headingFont: "",
       bodyFont: "",
+      fontManual: false,
       screenMode: "split",
       backgroundColor: "#ffffff",
       backgroundImage: imageValue(),
