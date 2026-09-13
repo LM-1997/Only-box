@@ -158,6 +158,34 @@ R.MODULE_ORDER.forEach(function (type) {
   assert.equal(M.removeModule(doc, ticket.id), false, "重复删除返回 false");
 }
 
+/* ============ 文档模型：跨屏移动 ============ */
+
+{
+  const doc = M.createDoc();
+  const pageA = doc.pages[0];
+  const pageB = M.addPage(doc);
+  const a1 = M.addModule(doc, pageA.id, "cover");
+  const a2 = M.addModule(doc, pageA.id, "announcement");
+  const b1 = M.addModule(doc, pageB.id, "footer");
+
+  /* 跨屏移动到目标屏末尾 */
+  assert.equal(M.moveModuleAcross(doc, a1.id, pageB.id, null), true, "跨屏移动到目标屏末尾");
+  assert.equal(pageA.modules.length, 1, "源屏移除后剩 1 个");
+  assert.equal(pageB.modules.map(m => m.id).join(","), [b1.id, a1.id].join(","), "目标屏末尾追加");
+
+  /* 跨屏插入到指定下标（插到 b1 之前） */
+  assert.equal(M.moveModuleAcross(doc, a2.id, pageB.id, 0), true, "跨屏插入到下标 0");
+  assert.equal(pageB.modules.map(m => m.id).join(","), [a2.id, b1.id, a1.id].join(","), "插入到目标屏指定位置");
+
+  /* 同屏拖拽：a2（原下标 0）移动到下标 2（原 a1 之后），语义为「插到原列表位置」，回退一位后落到 a1 之后 */
+  assert.equal(M.moveModuleAcross(doc, a2.id, pageB.id, 2), true, "同屏拖拽到下标 2");
+  assert.equal(pageB.modules.map(m => m.id).join(","), [b1.id, a2.id, a1.id].join(","), "同屏拖拽位置回退后顺序正确");
+
+  /* 找不到模块返回 false */
+  assert.equal(M.moveModuleAcross(doc, "nope", pageB.id, 0), false, "未知模块移动失败");
+  assert.equal(M.moveModuleAcross(doc, a1.id, "bad-page", 0), false, "未知目标屏移动失败");
+}
+
 /* ============ 导出 JSON ============ */
 
 {

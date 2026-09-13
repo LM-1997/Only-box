@@ -42,7 +42,11 @@
     bb.state.zoom = 1;
     const suppress = document.createElement("style");
     suppress.id = "bb-export-suppress-tags";
-    suppress.textContent = ".bb-slice-tag,.bb-art-actions{display:none!important}";
+    /* 导出白名单反向过滤：凡标记为「仅屏幕显示」的界面元素（板块上移/下移按钮、屏序号标签、
+       空屏提示等）一律不进导出位图。核心内容始终保留，仅剥离编辑器交互件。 */
+    suppress.textContent = ".bb-dom-only,.bb-slice-tag,.bb-art-actions{display:none!important}"
+      + ".bb-page-canvas,.bb-strip,.bb-page-card{outline:none!important;box-shadow:none!important}"
+      + ".bb-art-module{outline:none!important}";
     document.head.appendChild(suppress);
     try {
       bb.renderAll();
@@ -180,8 +184,8 @@
     });
   }
   async function inlineResources(root) {
-    /* 编辑器交互件（屏序号标签 / 板块上下移按钮）绝不能进导出位图 */
-    [].slice.call(root.querySelectorAll(".bb-slice-tag, .bb-art-actions")).forEach(function (node) {
+    /* 编辑器交互件（屏序号标签 / 板块上下移按钮 / 空屏提示）绝不能进导出位图 */
+    [].slice.call(root.querySelectorAll(".bb-slice-tag, .bb-art-actions, .bb-page-empty, .bb-dom-only")).forEach(function (node) {
       if (node.parentNode) node.parentNode.removeChild(node);
     });
     const imgs = [].slice.call(root.querySelectorAll("img"));
@@ -242,6 +246,16 @@
     return clone;
   }
 
+  /* 节点有效底色：读 computed background-color；透明/未设置一律回落白色。
+     长图与分屏导出共用，保证「用户设置的底色」被精确铺到导出位图，而非硬编码白色。 */
+  function nodeBackground(node) {
+    if (!node) return "#ffffff";
+    let color = "";
+    try { color = getComputedStyle(node).backgroundColor || ""; } catch (error) { color = ""; }
+    if (!color || color === "transparent" || color === "rgba(0, 0, 0, 0)") return "#ffffff";
+    return color;
+  }
+
   /* ---------- 核心位图化：优先 html-to-image（全量样式克隆），失败回落自研序列化 ---------- */
   function rasterizeViaLibrary(node, width, height, scale) {
     if (!global.htmlToImage || typeof global.htmlToImage.toCanvas !== "function") return Promise.reject(new Error("html-to-image 未加载"));
@@ -262,7 +276,7 @@
         pixelRatio: scale,
         width: width,
         height: height,
-        backgroundColor: "#ffffff",
+        backgroundColor: nodeBackground(node),
         cacheBust: false,
         skipFonts: true,
         /* 外链资源拉取加 8s 超时（库默认无超时，弱网/离线对慢资源会无限挂死） */
@@ -292,12 +306,13 @@
   function rasterizeViaOwn(node, width, height, scale) {
     return new Promise(function (resolve, reject) {
       const clone = cloneWithComputedStyles(node);
+      const bgColor = nodeBackground(node);
       Promise.all([inlineResources(clone), buildFontCss()]).then(function (arr) {
-        finishRasterize(clone, width, height, scale, resolve, reject, arr[1] || "");
+        finishRasterize(clone, width, height, scale, resolve, reject, arr[1] || "", bgColor);
       }, function () { reject(new Error("资源内联失败")); });
     });
   }
-  function finishRasterize(clone, width, height, scale, resolve, reject, fontCss) {
+  function finishRasterize(clone, width, height, scale, resolve, reject, fontCss, bgColor) {
     /* 兜底链路同样剥离居中 margin（避免右偏） */
     clone.style.margin = "0";
     return new Promise(function (resolve2, reject2) {
@@ -329,7 +344,7 @@
         canvas.width = width * scale;
         canvas.height = height * scale;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = bgColor || "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         resolve(canvas); resolve2(canvas);
@@ -409,13 +424,52 @@
   }
 
   async function exportPsd() {
-    /* 分层 PSD：委托 legacy 绘制器逐板块重建
-       （背景层 + 每板块一组[板块位图层(可见) + 隐藏可编辑文字层]），合成效果 = 预览 */
+    /* 所见即所得 + 可编辑双层结构：
+       1) 底层「预览合成图」= DOM 序列化逐像素位图，与预览 100% 一致（视觉兜底）；
+       2) 上层「可编辑图层组」= 形状 / 文字 / 图片子图层，默认隐藏，展开后可逐项编辑。
+       字体：PSD 文字层只保存字体名（PSD 格式不内嵌字体二进制），勾选「打包字体」时
+       同步下载 .ttf/.otf 供 PS 安装，保证文字层以正确字形打开。 */
+    const bb = BB();
     const fontStatus = await ensureFonts();
+    const size = pageSize();
+    const ag = global.agPsd;
     const legacy = global.BannerBuilderLegacy || global.bannerBuilder;
-    const result = await legacy.exportPsd();
-    if (result) result.fontStatus = fontStatus;
-    return result;
+    if (!ag || typeof ag.writePsd !== "function") {
+      if (legacy && typeof legacy.exportPsd === "function") return legacy.exportPsd();
+      if (global.alert) global.alert("PSD 引擎尚未加载，请刷新页面后重试。");
+      return null;
+    }
+    /* 合成位图：以设计宽度 1x 位图化当前屏 DOM（坐标与可编辑图层同一坐标系）。
+       高度固定为设计画布高 pageHeight，保证与可编辑图层坐标、PSD 文档尺寸完全一致。 */
+    let composite = null;
+    try {
+      composite = await withDesignZoom(async function () {
+        const node = findPreviewCanvas(bb.state.activePageId);
+        if (!node) throw new Error("找不到当前屏预览画布");
+        return await rasterizeDomToCanvas(node, size.pageWidth, size.pageHeight, 1);
+      });
+    } catch (error) { composite = null; }
+    /* 可编辑子图层（形状/文字/图片），复用 legacy 重建结果 */
+    let editable = null;
+    try { editable = legacy && typeof legacy.buildPsdChildren === "function" ? await legacy.buildPsdChildren() : null; } catch (error) { editable = null; }
+    if (!editable) {
+      if (legacy && typeof legacy.exportPsd === "function") return legacy.exportPsd();
+      if (global.alert) global.alert("PSD 图层构建失败，请刷新页面后重试。");
+      return null;
+    }
+    const children = [];
+    if (composite) children.push({ name: "预览合成图（所见即所得）", canvas: composite });
+    /* 丢弃 legacy 的「背景底色」占位层（合成图已含页面背景），其余板块组保留为可编辑内容 */
+    const editables = (editable.children || []).filter(function (c) { return c.name !== "背景底色"; }).map(function (c) { return Object.assign({}, c, { hidden: true }); });
+    if (editables.length) children.push({ name: "可编辑图层（改为「显示」即可编辑文字 / 形状 / 图片）", children: editables, opened: true });
+    try {
+      const buffer = ag.writePsd({ width: editable.width, height: editable.height, children: children }, { generateThumbnail: true });
+      const pageIndex = (bb.doc.pages || []).indexOf((bb.doc.pages || []).filter(function (p) { return p.id === bb.state.activePageId; })[0]);
+      const pageNo = String((pageIndex >= 0 ? pageIndex : 0) + 1).padStart(2, "0");
+      downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + pageNo + ".psd");
+      const result = { layers: children.length, editable: editables.length, composite: !!composite, fontStatus: fontStatus };
+      return result;
+    } catch (error) { if (global.alert) global.alert("PSD 导出失败：" + error.message); return null; }
   }
 
   global.BannerBuilderExport = {

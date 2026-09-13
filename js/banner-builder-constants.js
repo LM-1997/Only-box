@@ -18,8 +18,15 @@
   /* 文档级主题配色：切主题覆盖画布内主色/强调色/线色/浅底变量（line 供边框与分隔线，soft 供卡片空底）。 */
   const THEMES = global.BannerBuilderBuiltinThemes || {};
 
-  /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。 */
-  const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: "" };
+  /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。
+     排版字段（ink/muted 文字色、headingWeight/bodyWeight 字重、lineHeight 行距、
+     letterSpacing 字距、typeScale 全局字号缩放、h1Scale..captionScale 逐层字号缩放）
+     与颜色/形状同层：AI 可直接生成、步骤 1 可覆盖、未设走默认值。 */
+  const STYLE_DEFAULTS = {
+    cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: "",
+    ink: "#20251f", muted: "#6a706c", headingWeight: 800, bodyWeight: 400, lineHeight: 1, letterSpacing: 0, typeScale: 1,
+    h1Scale: 1, h2Scale: 1, h3Scale: 1, bodyScale: 1, captionScale: 1,
+  };
   function themeStyle(key) {
     var importer = global.BannerBuilderThemeImporter;
     var merged = THEMES;

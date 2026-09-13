@@ -101,6 +101,21 @@
     return true;
   }
 
+  /* 跨屏搬移：把模块从当前屏移动到目标屏的指定下标（targetIndex 为“插入前”的原始下标）。
+     同屏拖拽时，若目标位在原位置之后，移除后需回退一位以保证「插到某模块之前」语义正确。 */
+  function moveModuleAcross(doc, moduleId, targetPageId, targetIndex) {
+    const hit = findModule(doc, moduleId);
+    if (!hit.module) return false;
+    const targetPage = findPage(doc, targetPageId);
+    if (!targetPage) return false;
+    let index = Math.max(0, Math.min(Number.isFinite(targetIndex) ? targetIndex : targetPage.modules.length, targetPage.modules.length));
+    const samePage = targetPage.id === hit.page.id;
+    const moved = hit.page.modules.splice(hit.index, 1)[0];
+    if (samePage && index > hit.index) index -= 1;
+    targetPage.modules.splice(index, 0, moved);
+    return true;
+  }
+
   function countModules(doc) {
     return (doc.pages || []).reduce(function (sum, page) { return sum + (page.modules || []).length; }, 0);
   }
@@ -138,6 +153,7 @@
     addModule,
     removeModule,
     moveModule,
+    moveModuleAcross,
     countModules,
     moduleWidth,
     packModuleRows,

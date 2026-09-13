@@ -142,6 +142,23 @@
     rootEl.style.setProperty("--ob-accent-soft", theme.accentSoft);
     rootEl.style.setProperty("--bb-line", theme.line);
     rootEl.style.setProperty("--bb-soft", theme.soft);
+    rootEl.style.setProperty("--ob-ink", artInk());
+    rootEl.style.setProperty("--ob-muted", artMuted());
+    /* 排版变量：让 DOM 预览与 Canvas/PSD 导出同源，拖动排版微调时画布实时变化 */
+    const num = function (v, fallback) { const n = Number(v); return (Number.isFinite(n) && n > 0) ? n : fallback; };
+    rootEl.style.setProperty("--ob-ts", num(theme.typeScale, 1));
+    rootEl.style.setProperty("--ob-h1s", num(theme.h1Scale, 1));
+    rootEl.style.setProperty("--ob-h2s", num(theme.h2Scale, 1));
+    rootEl.style.setProperty("--ob-h3s", num(theme.h3Scale, 1));
+    rootEl.style.setProperty("--ob-bodys", num(theme.bodyScale, 1));
+    rootEl.style.setProperty("--ob-caps", num(theme.captionScale, 1));
+    rootEl.style.setProperty("--ob-lh", num(artLineHeight(), 1));
+    rootEl.style.setProperty("--ob-ls", (Number(theme.letterSpacing) || 0) + "px");
+    /* 字重偏置（与导出侧 artAdjustedWeight 同语义）：标题以 800、正文以 400 为基准的平移量 */
+    const hwTarget = artWeight(Number(theme.headingWeight) != null ? Number(theme.headingWeight) : 800);
+    const bwTarget = artWeight(Number(theme.bodyWeight) != null ? Number(theme.bodyWeight) : 400);
+    rootEl.style.setProperty("--ob-hwo", hwTarget - 800);
+    rootEl.style.setProperty("--ob-bwo", bwTarget - 400);
   }
 
   function docBackgroundStyle(value) {
@@ -162,6 +179,74 @@
     if (!/^[0-9a-f]{6}$/i.test(raw)) return "";
     const number = parseInt(raw, 16);
     return "rgba(" + ((number >> 16) & 255) + "," + ((number >> 8) & 255) + "," + (number & 255) + "," + Math.max(0, Math.min(1, alpha)) + ")";
+  }
+
+  /* ===== 图片裁剪：复用全局 MobileImageUpload + Cropper.js，与站内其他工具一致的裁剪能力。
+     上传图片后先进入裁剪弹窗，确认后回写 {url,name,type}；取消则忽略本次选择。 ===== */
+  let cropModal = null; let cropCropper = null; let cropOpened = null; let cropDone = null; let cropFileName = "";
+  function closeCropModal() {
+    if (cropCropper) { try { cropCropper.destroy(); } catch (e) { /* ignore */ } cropCropper = null; }
+    if (cropOpened && cropOpened.release) { try { cropOpened.release(); } catch (e) { /* ignore */ } cropOpened = null; }
+    if (cropModal && cropModal.parentNode) cropModal.parentNode.removeChild(cropModal);
+    cropModal = null; cropDone = null;
+  }
+  function buildCropModal(imageSrc) {
+    if (cropModal) closeCropModal();
+    cropModal = document.createElement("div");
+    cropModal.className = "bb-crop-modal";
+    const box = document.createElement("div");
+    box.className = "bb-crop-box"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+    box.appendChild(el("h3", null, "裁剪图片"));
+    const wrap = el("div", "bb-crop-wrap");
+    const img = document.createElement("img"); img.alt = "图片裁剪预览"; img.src = imageSrc;
+    wrap.appendChild(img); box.appendChild(wrap);
+    const actions = el("div", "bb-crop-actions");
+    const cancel = el("button", "bb-btn ghost", "取消"); cancel.type = "button";
+    cancel.addEventListener("click", function () { closeCropModal(); if (cropDone) cropDone(null); });
+    const save = el("button", "bb-btn primary", "应用裁剪"); save.type = "button";
+    save.addEventListener("click", async function () {
+      let blob = cropOpened ? cropOpened.blob : null;
+      let mime = (blob && blob.type) || "image/png";
+      let name = cropFileName || "image.png";
+      let type = mime;
+      if (cropCropper) {
+        try {
+          mime = /jpe?g/i.test(mime) ? "image/jpeg" : "image/png";
+          const cropped = cropCropper.getCroppedCanvas({ maxWidth: 4000, maxHeight: 4000 });
+          blob = await new Promise(function (resolve) { cropped.toBlob(resolve, mime, mime === "image/jpeg" ? 0.92 : undefined); });
+          type = mime;
+        } catch (e) { /* 裁剪失败回退原图 */ }
+      }
+      closeCropModal();
+      if (cropDone && blob) cropDone({ url: URL.createObjectURL(blob), name: name, type: type });
+      else if (cropDone) cropDone(null);
+    });
+    actions.appendChild(cancel); actions.appendChild(save); box.appendChild(actions);
+    cropModal.appendChild(box);
+    cropModal.addEventListener("click", function (e) { if (e.target === cropModal) { closeCropModal(); if (cropDone) cropDone(null); } });
+    document.body.appendChild(cropModal);
+    return img;
+  }
+  function openImageWithCrop(file, done) {
+    const MUI = global.MobileImageUpload;
+    /* 无裁剪组件或文件非法时降级为「直选不裁」，保证基本功能可用 */
+    if (!MUI || typeof MUI.open !== "function" || typeof MUI.ensureCropper !== "function") {
+      done({ url: URL.createObjectURL(file), name: file.name, type: file.type });
+      return;
+    }
+    cropDone = done; cropFileName = file.name;
+    MUI.open(file).then(function (opened) {
+      cropOpened = opened;
+      const img = buildCropModal(opened.src);
+      MUI.ensureCropper().then(function (Cropper) {
+        if (!cropModal || !global.Cropper) return;
+        cropCropper = new global.Cropper(img, { viewMode: 1, autoCropArea: 1, dragMode: "move" });
+      }).catch(function () { cropCropper = null; });
+    }).catch(function (error) {
+      cropOpened = null;
+      if (global.alert) global.alert(MUI.errorMessage ? MUI.errorMessage(error) : "图片读取失败，请换一张图片重试。");
+      if (cropDone) { const cb = cropDone; cropDone = null; cb(null); }
+    });
   }
 
   function imageField(field, obj, id) {
@@ -185,8 +270,10 @@
     input.addEventListener("change", function () {
       const file = input.files && input.files[0];
       if (!file) return;
-      obj[field.key] = { url: URL.createObjectURL(file), name: file.name, type: file.type };
-      renderAll();
+      openImageWithCrop(file, function (value) {
+        if (value) { obj[field.key] = value; renderAll(); }
+      });
+      input.value = "";
     });
     pick.appendChild(input);
     actions.appendChild(pick);
@@ -342,7 +429,10 @@
     input.addEventListener("change", function () {
       const file = input.files && input.files[0];
       if (!file || list.length >= (field.max || 4)) return;
-      list.push({ url: URL.createObjectURL(file), name: file.name, type: file.type }); renderAll();
+      openImageWithCrop(file, function (value) {
+        if (value) { list.push(value); renderAll(); }
+      });
+      input.value = "";
     });
     add.appendChild(input); head.appendChild(add); wrap.appendChild(head);
     const grid = el("div", "bb-image-grid");
@@ -892,7 +982,14 @@
       const pageImage = page.backgroundImage || state.doc.backgroundImage;
       if (pageImage && pageImage.url) { canvas.style.backgroundImage = docBackgroundStyle(pageImage); canvas.style.backgroundSize = "cover"; }
     }
-    if (!page.modules.length) { const emptyTip = el("div", "bb-page-empty bb-dom-only", "从左侧「板块库」添加第一个板块，即可预览主题效果。"); canvas.appendChild(emptyTip); }
+    if (!page.modules.length) {
+      if (continuous) {
+        /* 连续模式空屏：不显示「添加第一个板块」提示，仅留轻量可点选占位；导出时整块隐藏不占高度 */
+        canvas.classList.add("bb-empty-screen", "bb-dom-only");
+      } else {
+        canvas.appendChild(el("div", "bb-page-empty bb-dom-only", "从左侧「板块库」添加第一个板块，即可预览主题效果。"));
+      }
+    }
     else {
       const rows = M.packModuleRows(page.modules);
       rows.forEach(function (row) {
@@ -997,11 +1094,14 @@
       const del = el("button", "bb-layer-page-del", "×"); del.type = "button"; del.title = "删除本屏"; del.dataset.action = "layer-page-del"; del.dataset.pageId = page.id;
       head.appendChild(del); pageCard.appendChild(head);
       const list = el("div", "bb-layer-modules");
+      list.dataset.dropTarget = "page"; list.dataset.pageId = page.id;
       if (!page.modules.length) list.appendChild(el("div", "bb-layer-empty", "暂无板块，切换左侧「板块库」添加"));
       else page.modules.forEach(function (module, mIndex) {
         const def = R.getDef(module.type);
         const row = el("div", "bb-layer-module" + (module.id === state.selectedModuleId ? " is-active" : ""));
-        row.dataset.action = "layer-module-pick"; row.dataset.moduleId = module.id; row.dataset.pageId = page.id; row.title = "选中编辑：第 " + (pIndex + 1) + " 屏 · " + moduleTitle(module, def);
+        row.dataset.action = "layer-module-pick"; row.dataset.moduleId = module.id; row.dataset.pageId = page.id; row.title = "选中编辑：第 " + (pIndex + 1) + " 屏 · " + moduleTitle(module, def) + "（可拖拽跨屏移动）";
+        row.draggable = true;
+        row.dataset.dragModule = module.id;
         row.appendChild(el("span", "bb-layer-module-no", "0" + (mIndex + 1)));
         row.appendChild(el("span", "bb-layer-module-name", moduleTitle(module, def)));
         const ops = el("div", "bb-layer-module-ops");
@@ -1390,21 +1490,77 @@
   function px2(v) {
     return Math.max(1, Math.round((Number(v) || 0) * 2.08));
   }
-  /* canvas 只认 100 一档的 numeric font-weight，兜底 clamp 到最接近档位。 */
+  /* canvas 只认 100 一档的 numeric font-weight，floor 到最接近允许档位（含 700，避免跳档）。 */
   function artWeight(v) {
-    return v >= 900 ? 900 : v >= 800 ? 800 : v >= 600 ? 600 : v >= 500 ? 500 : 400;
+    const bins = [400, 500, 600, 700, 800, 900];
+    if (v >= 900) return 900;
+    let best = 400;
+    for (let i = 0; i < bins.length; i += 1) {
+      if (bins[i] <= v) best = bins[i];
+      else break;
+    }
+    return best;
   }
-  function artFont(ctx, size, weight, scope) {
+  /* 字重整体偏置：标题类以 800、正文类以 400 为基准平移，保留局部字重差异（700 vs 800），
+     同时允许主题通过 headingWeight / bodyWeight 整体加粗或减细。 */
+  function artAdjustedWeight(weight, scope) {
+    const base = artWeight(weight || 400);
+    const st = artTheme();
+    const nominal = scope === "body" ? 400 : 800;
+    const target = scope === "body"
+      ? (Number(st.bodyWeight) != null ? Number(st.bodyWeight) : 400)
+      : (Number(st.headingWeight) != null ? Number(st.headingWeight) : 800);
+    const delta = artWeight(target || nominal) - nominal;
+    return artWeight(base + delta);
+  }
+  /* 逐层字号归类：按当前字面量字号归到 5 档，供「逐层缩放」自动命中（无需改各调用点）。 */
+  const TYPE_LEVEL_BANDS = [
+    { key: "h1", min: 60 }, { key: "h2", min: 44 }, { key: "h3", min: 32 },
+    { key: "body", min: 26 }, { key: "caption", min: 0 },
+  ];
+  function typeLevelKeyFor(size) {
+    for (let i = 0; i < TYPE_LEVEL_BANDS.length; i += 1) { if (size >= TYPE_LEVEL_BANDS[i].min) return TYPE_LEVEL_BANDS[i].key; }
+    return "caption";
+  }
+  /* 全局字号缩放 × 逐层缩放：所有文字字号（PNG 与 PSD）统一经这里，保证画布观感与导出一致。 */
+  function artTypeScale() {
+    const v = Number(artTheme().typeScale);
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  }
+  function artSize(size) {
+    const s = Number(size) || 0;
+    if (s <= 0) return s;
+    const st = artTheme();
+    const perLevel = Number(st[typeLevelKeyFor(s) + "Scale"] != null ? st[typeLevelKeyFor(s) + "Scale"] : 1) || 1;
+    const global = artTypeScale();
+    return Math.max(1, Math.round(s * global * (perLevel || 1)));
+  }
+  /* 全局行距缩放（主题 lineHeight），与各调用点自带行距倍数相乘。 */
+  function artLineHeight() {
+    const v = Number(artTheme().lineHeight);
+    return Number.isFinite(v) && v > 0 ? v : 1;
+  }
+  /* 基础字体设置（字重调整 + 字距），不复算字号——供已知缩放后字号的布局点（如 chips）使用。 */
+  function artFontRaw(ctx, finalSize, weight, scope) {
     const key = scope === "body"
       ? (state.doc.bodyFont || state.doc.headingFont || state.doc.fontFamily || "sans")
       : (state.doc.headingFont || state.doc.fontFamily || "sans");
-    ctx.font = artWeight(weight || 400) + " " + size + "px " + C.fontStack(key);
+    ctx.font = artWeight(artAdjustedWeight(weight, scope)) + " " + finalSize + "px " + C.fontStack(key);
+    try {
+      const ls = Number(artTheme().letterSpacing) || 0;
+      ctx.letterSpacing = ls + "px";
+    } catch (error) { /* 不支持则忽略 */ }
+  }
+  function artFont(ctx, size, weight, scope) {
+    artFontRaw(ctx, artSize(size), weight, scope);
   }
   function artInk() {
-    return "#20251f";
+    const v = artTheme().ink;
+    return (v && /^#[0-9a-f]{6}$/i.test(v)) ? v : "#20251f";
   }
   function artMuted() {
-    return "#6a706c";
+    const v = artTheme().muted;
+    return (v && /^#[0-9a-f]{6}$/i.test(v)) ? v : "#6a706c";
   }
   function alphaColor(value, alpha) {
     const raw = hexToRgba(value, alpha);
@@ -1471,7 +1627,8 @@
     ctx.fillStyle = color || artInk();
     ctx.textAlign = align || "left";
     ctx.textBaseline = "alphabetic";
-    const step = Math.round(size * (lineMul || 1.45));
+    const finalSize = artSize(size);
+    const step = Math.round(finalSize * (lineMul || 1.45) * artLineHeight());
     const lines = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth));
     lines.forEach(function (line, index) { ctx.fillText(line, x, y + index * step); });
     ctx.restore();
@@ -1481,7 +1638,8 @@
   function textBlockInfo(ctx, value, maxWidth, size, weight, lineMul, scope) {
     ctx.save();
     artFont(ctx, size, weight || 400, scope);
-    const step = Math.round(size * (lineMul || 1.45));
+    const finalSize = artSize(size);
+    const step = Math.round(finalSize * (lineMul || 1.45) * artLineHeight());
     const count = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth)).length;
     ctx.restore();
     return { count: count, step: step, height: Math.max(1, count) * step };
@@ -1491,7 +1649,8 @@
     const info = textBlockInfo(ctx, value, maxWidth, size, weight, lineMul, scope);
     const step = info.step;
     const count = info.count;
-    const yStart = bottom - (count - 1) * step - Math.round(size * 0.3);
+    const finalSize = artSize(size);
+    const yStart = bottom - (count - 1) * step - Math.round(finalSize * 0.3);
     ctx.save();
     artFont(ctx, size, weight, scope);
     ctx.fillStyle = color || artInk();
@@ -1500,19 +1659,19 @@
     const lines = wrapLines(ctx, String(value || ""), Math.max(10, maxWidth));
     lines.forEach(function (line, index) { ctx.fillText(line, x, yStart + index * step); });
     ctx.restore();
-    return yStart - Math.round(size * 0.78);
+    return yStart - Math.round(finalSize * 0.78);
   }
-  /* 圆角胶囊 chips：自动换行；返回下一行起始 y。 */
+  /* 圆角胶囊 chips：自动换行；返回下一行起始 y。布局尺寸随主题字号缩放同步放大，避免字体变大框不变。 */
   function drawChips(ctx, items, x, y, maxWidth, opt) {
     if (!items || !items.length) return y;
     const o = opt || {};
     const shape = o.shape || artTheme().chips || "pill";
-    const size = o.size || 23;
+    const size = artSize(o.size || 23);
     const gap = Math.round(size * 0.6);
     const padX = Math.round(size * 0.95);
     const lh = Math.round(size * 1.85);
     ctx.save();
-    artFont(ctx, size, o.weight || 500, o.scope);
+    artFontRaw(ctx, size, o.weight || 500, o.scope);
     ctx.textAlign = "left";
     const measure = function (label) { return { label: label, bw: ctx.measureText(label).width + padX * 2 }; };
     const rowsLayout = [];
@@ -1558,10 +1717,11 @@
   }
   /* 只量 chips 高度（行数 × 行高），供「先铺底、后排版」的布局预估。 */
   function chipRowCount(ctx, items, maxWidth, size, scope) {
-    const gap = Math.round(size * 0.6);
-    const padX = Math.round(size * 0.95);
+    const finalSize = artSize(size);
+    const gap = Math.round(finalSize * 0.6);
+    const padX = Math.round(finalSize * 0.95);
     ctx.save();
-    artFont(ctx, size, 500, scope);
+    artFontRaw(ctx, finalSize, 500, scope);
     let rows = 1; let rowW = 0;
     (items || []).forEach(function (item) {
       const label = String(item || "");
@@ -1572,7 +1732,7 @@
     });
     ctx.restore();
     if (!items || !items.filter(function (i) { return String(i || ""); }).length) return 0;
-    return rows * Math.round(size * 1.85);
+    return rows * Math.round(finalSize * 1.85);
   }
   function drawDividerShape(ctx, data, x, y, w, color) {
     const themeDiv = artTheme().divider || "wave";
@@ -2697,7 +2857,7 @@
     downloadBlob(content, "only-box-banner-fonts.zip");
     return { ok: ok, fail: fail };
   }
-  global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); } };
+  global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); }, buildPsdChildren: function () { return legacyExportPsd({ childrenOnly: true }); } };
   /* 导出倍率（1x = 750 设计宽；默认 2x = 1500 高清），文档级可配 doc.exportScale */
   function exportScale() { return Number(state.doc.exportScale) || 2; }
 
@@ -2834,7 +2994,7 @@
     return { name: name, canvas: c };
   }
 
-  async function legacyExportPsd() {
+  async function legacyExportPsd(opts) {
     if (!global.agPsd || typeof global.agPsd.writePsd !== "function") { global.alert("PSD 引擎尚未加载，请刷新页面后重试。"); return null; }
     const page = activePage(); const size = pageSize();
     const full = await drawPageToCanvas(page);
@@ -2992,6 +3152,7 @@
       }
       children.push(group);
     }
+    if (opts && opts.childrenOnly) return { width: size.pageWidth, height: pageHeight, children: children, silence: silence };
     try {
       const buffer = global.agPsd.writePsd({ width: size.pageWidth, height: pageHeight, children: children }, { generateThumbnail: true });
       downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + (activePageIndex() + 1) + ".psd");
@@ -3139,6 +3300,8 @@
     });
     /* ===== 微调主题 ===== */
     if (els.tweakThemeBtn) els.tweakThemeBtn.addEventListener("click", showThemeTweakModal);
+    /* ===== 排版微调 ===== */
+    if (els.typeTweakBtn) els.typeTweakBtn.addEventListener("click", showTypeTweakModal);
     /* ===== 左侧栏：板块库 / 图层 切换 ===== */
     if (els.sideTabs) els.sideTabs.addEventListener("click", function (event) {
       const button = event.target.closest("[data-side]");
@@ -3157,6 +3320,54 @@
       if (action === "layer-module-up" || action === "layer-module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "layer-module-up" ? -1 : 1); renderAll(); return; }
       if (action === "layer-module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); }
     });
+    /* ===== 图层树跨屏拖拽：板块行可拖到任意屏的模块列表（目标屏），实现跨屏移动 ===== */
+    if (els.layerTree) {
+      let dragModuleId = null;
+      els.layerTree.addEventListener("dragstart", function (event) {
+        const row = event.target.closest("[data-drag-module]");
+        if (!row) return;
+        dragModuleId = row.dataset.dragModule;
+        try { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", dragModuleId); } catch (e) { /* ignore */ }
+        row.classList.add("is-dragging");
+      });
+      els.layerTree.addEventListener("dragend", function (event) {
+        [].slice.call(els.layerTree.querySelectorAll(".is-dragging")).forEach(function (n) { n.classList.remove("is-dragging"); });
+        [].slice.call(els.layerTree.querySelectorAll(".bb-drop-over")).forEach(function (n) { n.classList.remove("bb-drop-over"); });
+        dragModuleId = null;
+      });
+      els.layerTree.addEventListener("dragover", function (event) {
+        if (!dragModuleId) return;
+        const list = event.target.closest("[data-drop-target='page']");
+        if (!list) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        [].slice.call(els.layerTree.querySelectorAll(".bb-drop-over")).forEach(function (n) { if (n !== list) n.classList.remove("bb-drop-over"); });
+        list.classList.add("bb-drop-over");
+      });
+      els.layerTree.addEventListener("drop", function (event) {
+        const list = event.target.closest("[data-drop-target='page']");
+        if (!list || !dragModuleId) return;
+        event.preventDefault();
+        const targetPageId = list.dataset.pageId;
+        /* 计算目标下标：落在某模块行上半部 → 插到该行之前；下半部 → 之后；空列表 → 末尾 */
+        let targetIndex = -1;
+        const rowUnder = event.target.closest("[data-drag-module]");
+        if (rowUnder) {
+          const hostPage = list.dataset.pageId;
+          const hit = M.findModule(state.doc, rowUnder.dataset.dragModule);
+          if (hit.module && hit.page.id === hostPage) {
+            const rect = rowUnder.getBoundingClientRect();
+            const before = (event.clientY - rect.top) < rect.height / 2;
+            targetIndex = hit.index + (before ? 0 : 1);
+          }
+        }
+        M.moveModuleAcross(state.doc, dragModuleId, targetPageId, targetIndex < 0 ? null : targetIndex);
+        state.selectedModuleId = dragModuleId;
+        state.activePageId = targetPageId;
+        if (state.step === "setup") state.step = "edit";
+        renderAll();
+      });
+    }
     /* 图层视图里新增屏（与顶部「新增屏」一致） */
     if (els.addPageBtnSide) els.addPageBtnSide.addEventListener("click", function () {
       const page = M.addPage(state.doc); state.activePageId = page.id; state.selectedModuleId = null; renderAll();
@@ -3410,6 +3621,184 @@
     }
   }
 
+  /* ===== 排版微调：字号缩放 / 字重 / 行距 / 字距 / 文字颜色（写入 doc.themeOverrides） ===== */
+  const TYPE_SCALE_FIELDS = [
+    { key: "typeScale", label: "全局字号缩放", min: 0.7, max: 1.5, step: 0.05 },
+    { key: "h1Scale", label: "主标题 H1", min: 0.7, max: 1.3, step: 0.05 },
+    { key: "h2Scale", label: "板块标题 H2", min: 0.7, max: 1.3, step: 0.05 },
+    { key: "h3Scale", label: "小标题 H3", min: 0.7, max: 1.3, step: 0.05 },
+    { key: "bodyScale", label: "正文", min: 0.7, max: 1.3, step: 0.05 },
+    { key: "captionScale", label: "图注", min: 0.7, max: 1.3, step: 0.05 },
+  ];
+  const TYPE_WEIGHT_FIELDS = [
+    { key: "headingWeight", label: "标题字重" },
+    { key: "bodyWeight", label: "正文字重" },
+  ];
+  const TYPE_SPACING_FIELDS = [
+    { key: "lineHeight", label: "行距倍率", min: 0.8, max: 2.0, step: 0.05 },
+    { key: "letterSpacing", label: "字距 (px)", min: -2, max: 8, step: 0.5 },
+  ];
+  const TYPE_COLOR_FIELDS = [
+    { key: "ink", label: "正文墨色" },
+    { key: "muted", label: "弱化说明色" },
+  ];
+  const WEIGHT_OPTIONS = [400, 500, 600, 700, 800, 900];
+  function showTypeTweakModal() {
+    const existing = document.getElementById("bb-type-tweak-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+    const base = C.themeStyle(state.doc.theme);
+
+    const mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-type-tweak-modal";
+    const modal = document.createElement("div");
+    modal.className = "bb-modal";
+    modal.appendChild(el("h3", null, "排版微调「" + (base.label || state.doc.theme) + "」"));
+    modal.appendChild(el("p", null, "手动覆盖字号缩放、字重、行距、字距与文字颜色。继承预设项显示原值，改动实时反映到画布与 PNG / PSD 导出；恢复默认即清除该项覆盖。"));
+
+    const body = el("div");
+    body.style.marginTop = "6px";
+
+    function section(title) {
+      const d = el("div", "bb-tweak-section", title);
+      body.appendChild(d);
+    }
+
+    function overrideOf(key) { return themeOverride(key); }
+    function setOverride(key, value) {
+      state.doc.themeOverrides = state.doc.themeOverrides || {};
+      state.doc.themeOverrides[key] = value;
+      renderAll();
+    }
+    function clearOverride(key) {
+      if (state.doc.themeOverrides) delete state.doc.themeOverrides[key];
+      renderAll();
+      maskRemove();
+    }
+    function appendInherit(row, cur) {
+      const flag = el("span", "bb-tweak-inherit");
+      flag.textContent = cur == null ? "继承预设" : "已覆盖";
+      const clear = el("a", "bb-tweak-clear", "恢复默认");
+      clear.style.display = cur == null ? "none" : "inline";
+      row.appendChild(flag); row.appendChild(clear);
+      return { flag: flag, clear: clear };
+    }
+
+    /* 滑杆字段（缩放 / 行距 / 字距） */
+    function renderRangeField(fields) {
+      fields.forEach(function (field) {
+        const cur = overrideOf(field.key);
+        const preset = base[field.key] != null ? base[field.key] : 1;
+        const value = cur != null ? cur : preset;
+        const row = el("div", "bb-tweak-row");
+        row.appendChild(el("span", "bb-tweak-label", field.label));
+        const slider = el("input", "bb-tweak-range");
+        slider.type = "range"; slider.min = String(field.min); slider.max = String(field.max); slider.step = String(field.step);
+        slider.value = String(value);
+        const num = el("input", "bb-tweak-val");
+        num.type = "number"; num.min = String(field.min); num.max = String(field.max); num.step = String(field.step);
+        num.value = String(value);
+        const parts = appendInherit(row, cur);
+        function applyRange() {
+          const v = Number(num.value);
+          const clamped = Number.isFinite(v) ? Math.min(field.max, Math.max(field.min, v)) : field.min;
+          slider.value = String(clamped); num.value = String(clamped);
+          setOverride(field.key, clamped);
+          parts.flag.textContent = "已覆盖"; parts.clear.style.display = "inline";
+        }
+        slider.addEventListener("input", function () { num.value = slider.value; applyRange(); });
+        num.addEventListener("change", applyRange);
+        parts.clear.addEventListener("click", function () { clearOverride(field.key); });
+        row.appendChild(slider); row.appendChild(num);
+        body.appendChild(row);
+      });
+    }
+
+    /* 字重字段（档位下拉） */
+    function renderWeightField(fields) {
+      fields.forEach(function (field) {
+        const cur = overrideOf(field.key);
+        const preset = base[field.key] != null ? base[field.key] : (field.key === "headingWeight" ? 800 : 400);
+        const value = cur != null ? cur : preset;
+        const row = el("div", "bb-tweak-row");
+        row.appendChild(el("span", "bb-tweak-label", field.label));
+        const sel = el("select", "bb-tweak-select");
+        WEIGHT_OPTIONS.forEach(function (w) { const o = el("option", null, String(w)); o.value = String(w); sel.appendChild(o); });
+        sel.value = String(value);
+        const parts = appendInherit(row, cur);
+        sel.addEventListener("change", function () {
+          setOverride(field.key, Number(sel.value));
+          parts.flag.textContent = "已覆盖"; parts.clear.style.display = "inline";
+        });
+        parts.clear.addEventListener("click", function () { clearOverride(field.key); });
+        row.appendChild(sel);
+        body.appendChild(row);
+      });
+    }
+
+    /* 文字颜色字段 */
+    function renderColorField(fields) {
+      fields.forEach(function (field) {
+        const cur = overrideOf(field.key);
+        const preset = base[field.key] || "#20251f";
+        const row = el("div", "bb-tweak-row");
+        row.appendChild(el("span", "bb-tweak-label", field.label));
+        const colorInput = el("input", "bb-tweak-input");
+        colorInput.type = "color";
+        colorInput.value = hexToColor(cur != null ? cur : preset);
+        const hex = el("input", "bb-tweak-hex");
+        hex.value = cur != null ? cur : preset;
+        hex.readOnly = cur == null;
+        hex.style.opacity = cur == null ? "0.55" : "1";
+        const parts = appendInherit(row, cur);
+        function applyHex() {
+          const value = hexToColor(hex.value);
+          setOverride(field.key, value);
+          colorInput.value = value; hex.value = value;
+          parts.flag.textContent = "已覆盖"; parts.clear.style.display = "inline";
+        }
+        colorInput.addEventListener("input", function () { hex.value = colorInput.value; applyHex(); });
+        hex.addEventListener("change", applyHex);
+        parts.clear.addEventListener("click", function () { clearOverride(field.key); });
+        row.appendChild(colorInput); row.appendChild(hex);
+        body.appendChild(row);
+      });
+    }
+
+    section("字号缩放");
+    renderRangeField(TYPE_SCALE_FIELDS);
+    section("字重");
+    renderWeightField(TYPE_WEIGHT_FIELDS);
+    section("行距与字距");
+    renderRangeField(TYPE_SPACING_FIELDS);
+    section("文字颜色");
+    renderColorField(TYPE_COLOR_FIELDS);
+    modal.appendChild(body);
+
+    const actionRow = el("div", "bb-modal-actions");
+    const TYPE_KEYS = TYPE_SCALE_FIELDS.concat(TYPE_WEIGHT_FIELDS, TYPE_SPACING_FIELDS, TYPE_COLOR_FIELDS).map(function (f) { return f.key; });
+    const resetAll = el("button", "bb-btn ghost", "全部恢复预设");
+    resetAll.type = "button";
+    resetAll.addEventListener("click", function () {
+      TYPE_KEYS.forEach(function (key) { if (state.doc.themeOverrides) delete state.doc.themeOverrides[key]; });
+      renderAll(); maskRemove();
+    });
+    resetAll.title = "清空本面板全部排版覆盖，回退到预设主题";
+    const closeBtn = el("button", "bb-btn primary", "完成");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", function () { maskRemove(); });
+    actionRow.appendChild(resetAll);
+    actionRow.appendChild(closeBtn);
+    modal.appendChild(actionRow);
+    mask.appendChild(modal);
+    mask.addEventListener("click", function (e) { if (e.target === mask) maskRemove(); });
+    document.body.appendChild(mask);
+
+    function maskRemove() {
+      if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+    }
+  }
+
   function syncPickMode() {
     if (!els.pickModuleToggle) return;
     const on = state.pickMode === "module";
@@ -3541,7 +3930,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;

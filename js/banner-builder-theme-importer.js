@@ -29,7 +29,9 @@
 
   var STYLE_DEFAULTS = {
     cardStyle: "card", radius: 13, shadow: "soft", divider: "wave",
-    chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: ""
+    chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: "",
+    ink: "#20251f", muted: "#6a706c", headingWeight: 800, bodyWeight: 400, lineHeight: 1, letterSpacing: 0, typeScale: 1,
+    h1Scale: 1, h2Scale: 1, h3Scale: 1, bodyScale: 1, captionScale: 1
   };
 
   function isValidHex(value) {
@@ -76,6 +78,39 @@
     if (obj.radius != null && (typeof obj.radius !== "number" || obj.radius < 0 || obj.radius > 100)) {
       errors.push("radius 必须是 0-100 的数字");
     }
+
+    // 选填：文字色（为主题追加的排版字段）
+    ["ink", "muted"].forEach(function (key) {
+      if (obj[key] != null && !isValidHex(obj[key])) {
+        errors.push(key + " 可选，必须是 #RRGGBB 格式的十六进制颜色");
+      }
+    });
+
+    // 选填：字重
+    [["headingWeight", 400, 900], ["bodyWeight", 300, 900]].forEach(function (pair) {
+      var key = pair[0], min = pair[1], max = pair[2];
+      if (obj[key] != null && (typeof obj[key] !== "number" || obj[key] < min || obj[key] > max)) {
+        errors.push(key + " 可选，必须是 " + min + "-" + max + " 的数字");
+      }
+    });
+
+    // 选填：行距 / 字距
+    if (obj.lineHeight != null && (typeof obj.lineHeight !== "number" || obj.lineHeight < 0.8 || obj.lineHeight > 2)) {
+      errors.push("lineHeight 可选，必须是 0.8-2 的数字（行距缩放倍率，1=不缩放）");
+    }
+    if (obj.letterSpacing != null && (typeof obj.letterSpacing !== "number" || obj.letterSpacing < -5 || obj.letterSpacing > 20)) {
+      errors.push("letterSpacing 可选，必须是 -5 到 20 的数字（像素字距）");
+    }
+
+    // 选填：字号缩放
+    if (obj.typeScale != null && (typeof obj.typeScale !== "number" || obj.typeScale < 0.5 || obj.typeScale > 2)) {
+      errors.push("typeScale 可选，必须是 0.5-2 的数字（全局字号缩放）");
+    }
+    ["h1Scale", "h2Scale", "h3Scale", "bodyScale", "captionScale"].forEach(function (k) {
+      if (obj[k] != null && (typeof obj[k] !== "number" || obj[k] < 0.5 || obj[k] > 2)) {
+        errors.push(k + " 可选，必须是 0.5-2 的数字（该层级字号缩放）");
+      }
+    });
 
     // 选填：字体键
     ["headingFont", "bodyFont"].forEach(function (key) {
@@ -205,7 +240,21 @@
       '  "avatarStyle": "none",      // 可选头像装饰: none / ring / glow / badge / frame / polaroid（作用于演出阵容头像）',
       '  "headingFont": "",          // 可选字体键，留空跟随全局。可用字体：',
       fontList,
-      '  "bodyFont": ""              // 同上',
+      '  "bodyFont": "",             // 同上',
+      "",
+      "  以下为排版与文字样式（可选，不写则用默认值）：",
+      '  "ink": "#2b2f2a",           // 正文墨色（正文字号的大段文字颜色）',
+      '  "muted": "#6a706c",         // 弱化说明色（图注/辅助信息颜色）',
+      '  "headingWeight": 800,       // 标题字重，400-900（主标题/板块标题/醒目数字）',
+      '  "bodyWeight": 400,          // 正文字重，300-900（正文/说明/图注）',
+      '  "lineHeight": 1,            // 全局行距缩放倍率，0.8-2（1=不缩放保持各层级原行距，1.2=整体放 20%）',
+      '  "letterSpacing": 0,         // 全局字距（像素），-5 到 20',
+      '  "typeScale": 1,             // 全局字号缩放，0.5-2（所有文字统一放大/缩小）',
+      '  "h1Scale": 1,               // 大标题字号缩放（60px 以上），0.5-2',
+      '  "h2Scale": 1,               // 板块标题字号缩放（44-59px），0.5-2',
+      '  "h3Scale": 1,               // 卡片标题字号缩放（32-43px），0.5-2',
+      '  "bodyScale": 1,             // 正文字号缩放（26-31px），0.5-2',
+      '  "captionScale": 1,          // 小字/图注缩放（26px 以下），0.5-2',
       "}",
       "",
       "规则：",
@@ -214,6 +263,8 @@
       "- primary 和 accent 要有足够的对比度区分",
       "- primarySoft 应比 primary 明显更浅",
       "- line 介于 soft 和 primarySoft 之间",
+      "- ink 建议采用接近深灰/主题深色的低饱和色，保证大段正文可读；muted 比 ink 更浅一档",
+      "- 字重/字号缩放/行距/字距请用数字，不要带单位",
       "- 只输出 JSON，不要其他文字"
     ].join("\n");
   }
