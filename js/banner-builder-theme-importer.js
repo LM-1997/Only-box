@@ -24,11 +24,12 @@
   var VALID_CHIPS = ["pill", "squared", "tag"];
   var VALID_TITLE_DECOR = ["none", "bar", "bracket", "stitch", "kicker"];
   var VALID_PATTERNS = ["none", "grid", "dots", "stripes", "paper", "noise"];
+  var VALID_AVATAR_STYLES = ["none", "ring", "glow", "badge", "frame", "polaroid"];
   var VALID_FONT_KEYS = Object.keys(C.FONTS);
 
   var STYLE_DEFAULTS = {
     cardStyle: "card", radius: 13, shadow: "soft", divider: "wave",
-    chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: ""
+    chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: ""
   };
 
   function isValidHex(value) {
@@ -61,7 +62,8 @@
     var enumChecks = [
       ["cardStyle", VALID_CARD_STYLES], ["shadow", VALID_SHADOWS],
       ["divider", VALID_DIVIDERS], ["chips", VALID_CHIPS],
-      ["titleDecor", VALID_TITLE_DECOR], ["pattern", VALID_PATTERNS]
+      ["titleDecor", VALID_TITLE_DECOR], ["pattern", VALID_PATTERNS],
+      ["avatarStyle", VALID_AVATAR_STYLES]
     ];
     enumChecks.forEach(function (pair) {
       var key = pair[0], valid = pair[1];
@@ -200,6 +202,7 @@
       '  "chips": "pill",            // 可选: pill / squared / tag',
       '  "titleDecor": "none",       // 可选: none / bar / bracket / stitch / kicker',
       '  "pattern": "none",          // 可选: none / grid / dots / stripes / paper / noise',
+      '  "avatarStyle": "none",      // 可选头像装饰: none / ring / glow / badge / frame / polaroid（作用于演出阵容头像）',
       '  "headingFont": "",          // 可选字体键，留空跟随全局。可用字体：',
       fontList,
       '  "bodyFont": ""              // 同上',

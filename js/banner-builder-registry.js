@@ -107,13 +107,8 @@
     opt("3:4", "3:4 竖版"),
     opt("1:1.4", "1:1.4 竖版"),
   ];
-  /* 头像装饰 */
-  const AVATAR_STYLE_OPTIONS = [
-    opt("none", "无装饰"),
-    opt("ring", "描边一圈"),
-    opt("glow", "柔光晕"),
-    opt("badge", "角标色块"),
-  ];
+  /* 头像装饰已收归主题体系（themeStyle().avatarStyle 下放），不再作为成员级字段暴露。
+     主题决定整个演出阵容的头像装饰，保证各主题风格统一、不因成员不同而五花八门。 */
   /* 演出阵容角色标签（可留空） */
   const CAST_ROLE_OPTIONS = [
     opt("", "不标角色"),
@@ -126,6 +121,13 @@
 
   function countLabel(n, unit) {
     return n + " " + unit;
+  }
+
+  /* 角色标签显示名映射（value 存机器可读键，渲染时转中文，避免大小写/语言混杂泄漏到画面）。 */
+  function castRoleLabel(value) {
+    if (!value) return "";
+    const hit = CAST_ROLE_OPTIONS.filter(function (item) { return item.value === value; })[0];
+    return hit ? hit.label : String(value);
   }
 
   function pickImages(list, limit) {
@@ -188,7 +190,7 @@
       template: "",
       sectionTitle: "",
       width: "full",
-      contentAlign: "center",
+      contentAlign: "left",
       blockBgColor: "",
       blockBorderColor: "",
       blockBgImage: null,
@@ -228,6 +230,7 @@
       label: "封面",
       createDefault: function () {
         return withLayout({
+          contentAlign: "center",
           mainImage: null,
           title: "",
           subtitle: "",
@@ -497,7 +500,6 @@
             { key: "name", label: "名称", type: "text", placeholder: "例如：DJ 某 / 某某乐队" },
             { key: "avatar", label: "头像图", type: "image" },
             { key: "avatarRatio", label: "头像比例", type: "select", options: AVATAR_RATIO_OPTIONS },
-            { key: "avatarStyle", label: "头像装饰", type: "select", options: AVATAR_STYLE_OPTIONS },
             { key: "time", label: "演出时间段（可选）", type: "text", placeholder: "例如：20:00–21:00" },
             { key: "bio", label: "简介（可选）", type: "textarea", rows: 3 },
             {
@@ -693,10 +695,10 @@
     COLUMN_OPTIONS,
     MEDIA_SIDE_OPTIONS,
     AVATAR_RATIO_OPTIONS,
-    AVATAR_STYLE_OPTIONS,
     CAST_ROLE_OPTIONS,
     getDef,
     typeLabel,
+    castRoleLabel,
     moduleSummary,
     moduleThumbs,
     templateOptions,

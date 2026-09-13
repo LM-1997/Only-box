@@ -19,7 +19,7 @@
   const THEMES = global.BannerBuilderBuiltinThemes || {};
 
   /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。 */
-  const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" };
+  const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", avatarStyle: "none", headingFont: "", bodyFont: "" };
   function themeStyle(key) {
     var importer = global.BannerBuilderThemeImporter;
     var merged = THEMES;

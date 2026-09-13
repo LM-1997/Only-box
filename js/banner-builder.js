@@ -240,6 +240,9 @@
         item.value = option.value;
         input.appendChild(item);
       });
+    } else if (field.type === "color") {
+      input = el("input", "bb-input bb-color-input");
+      input.type = "color";
     } else {
       input = el("input", "bb-input");
       input.type = field.type === "number" ? "number" : "text";
@@ -249,12 +252,20 @@
     }
     input.id = id;
     input.value = obj[field.key] == null ? "" : String(obj[field.key]);
+    if (field.type === "color" && !input.value) input.value = field.fallback || "#ffffff";
     if (field.placeholder) input.placeholder = field.placeholder;
     input.addEventListener(field.type === "select" ? "change" : "input", function () {
       obj[field.key] = field.type === "number" ? Number(input.value) || 0 : input.value;
       if (field.type === "select") renderAll(); else scheduleCanvas();
     });
     wrap.appendChild(input);
+    if (field.type === "color" && field.optional) {
+      const clear = el("button", "bb-mini-btn", "跟随默认");
+      clear.type = "button";
+      clear.title = "清除本屏底色，跟随整条背景";
+      clear.addEventListener("click", function () { obj[field.key] = ""; renderAll(); });
+      wrap.appendChild(clear);
+    }
     if (field.options === R.LEVEL_OPTIONS) {
       const warning = C.captionWarning(obj[field.key], pageSize().pageWidth);
       wrap.appendChild(el("p", "bb-hint" + (warning ? " warn" : ""), warning || "字号按画布宽度比例保存"));
@@ -642,7 +653,8 @@
       }
     }
     function buildAvatar(member) {
-      const media = el("div", "bb-cast-media " + (member.avatarStyle || "none"));
+      const style = artTheme().avatarStyle || "none";
+      const media = el("div", "bb-cast-media " + style);
       const size = avatarSize(member.avatarRatio || "1:1");
       const img = visualImage(imageSrc(member.avatar), "bb-cast-avatar", "头像");
       if (img) { img.style.width = size.w + "px"; img.style.height = size.h + "px"; media.appendChild(img); }
@@ -670,7 +682,7 @@
       const c = el("div", "bb-cast-info");
       const head = el("div", "bb-cast-head");
       head.appendChild(el("strong", "bb-art-h3", text(member.name, "成员名称")));
-      if (member.role) head.appendChild(el("span", "bb-cast-role", member.role));
+      if (member.role) head.appendChild(el("span", "bb-cast-role", R.castRoleLabel(member.role)));
       if (member.time) head.appendChild(el("span", "bb-cast-time", member.time));
       c.appendChild(head);
       if (member.bio) c.appendChild(el("p", "bb-cast-bio", member.bio));
@@ -796,7 +808,7 @@
     box.style.padding = styleCardPad(Math.min(80, Math.max(17, px2(Number(data.padding) != null ? Number(data.padding) : 16))), st) + "px";
     box.style.marginBottom = Math.max(px2(Number(data.marginBottom) || 18), 24) + "px";
     box.style.borderRadius = cardRadius(data, st) + "px";
-    box.style.textAlign = data.contentAlign || "center";
+    box.style.textAlign = data.contentAlign || "left";
     box.style.backgroundColor = cardBaseFill(st, data, opacity);
     box.style.borderStyle = st.cardStyle === "ticket" ? "dashed" : "solid";
     box.style.borderWidth = (st.cardStyle === "panel" ? 2.5 : st.cardStyle === "sticker" ? 7 : st.cardStyle === "glass" ? 1.5 : st.cardStyle === "ink" ? 2 : 2) + "px";
@@ -927,6 +939,10 @@
     Array.prototype.forEach.call(els.ratioGroup.querySelectorAll("[data-ratio]"), function (button) { const active = button.dataset.ratio === state.doc.ratio; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     els.zoomValue.textContent = Math.round(state.zoom * 100) + "%"; els.stats.textContent = state.doc.pages.length + " 屏 · " + M.countModules(state.doc) + " 个板块";
     els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans"; els.headingFontSelect.value = state.doc.headingFont || ""; els.bodyFontSelect.value = state.doc.bodyFont || "";
+    if (els.backgroundColorInput) {
+      const scopeColor = (els.backgroundScope && els.backgroundScope.value === "page") ? activePage().backgroundColor : state.doc.backgroundColor;
+      els.backgroundColorInput.value = (scopeColor || "#ffffff");
+    }
     Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     syncPickMode();
   }
@@ -1029,9 +1045,9 @@
   function buildSurfacePanel() {
     const wrap = el("div"); wrap.appendChild(el("p", "bb-hint", "点击画布空白处编辑整条或当前屏背景。"));
     wrap.appendChild(buildField({ key: "name", label: "草稿名称", type: "text" }, state.doc));
-    wrap.appendChild(buildField({ key: "backgroundColor", label: "整条底色", type: "text", placeholder: "#ffffff" }, state.doc));
+    wrap.appendChild(buildField({ key: "backgroundColor", label: "整条底色", type: "color", fallback: "#ffffff" }, state.doc));
     wrap.appendChild(buildField({ key: "backgroundImage", label: "整条底图", type: "image" }, state.doc));
-    const page = activePage(); if (page) { wrap.appendChild(el("div", "bb-panel-divider", "当前第 " + (activePageIndex() + 1) + " 屏")); wrap.appendChild(buildField({ key: "backgroundColor", label: "本屏底色", type: "text" }, page)); wrap.appendChild(buildField({ key: "backgroundImage", label: "本屏底图", type: "image" }, page)); }
+    const page = activePage(); if (page) { wrap.appendChild(el("div", "bb-panel-divider", "当前第 " + (activePageIndex() + 1) + " 屏")); wrap.appendChild(buildField({ key: "backgroundColor", label: "本屏底色", type: "color", fallback: state.doc.backgroundColor || "#ffffff", optional: true }, page)); wrap.appendChild(buildField({ key: "backgroundImage", label: "本屏底图", type: "image" }, page)); }
     return wrap;
   }
 
@@ -1999,12 +2015,27 @@
     const drawMember = async function (member, mx, my, mw) {
       const img = member.avatar && member.avatar.url ? await loadImage(member.avatar) : null;
       const dims = avatarDims(member.avatarRatio || "1:1");
+      const avatarStyle = P.avatarStyle || "none";
       let cy = my;
       const leftW = img ? dims.w + 25 : 0;
       if (img) {
-        ctx.save(); roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.clip(); coverDraw(ctx, img, mx, my, dims.w, dims.h); ctx.restore();
-        if (member.avatarStyle === "ring") { roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.strokeStyle = P.primary; ctx.lineWidth = 3; ctx.stroke(); }
-        else if (member.avatarStyle === "glow") { roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.strokeStyle = alphaColor(P.accent, 0.6); ctx.lineWidth = 5; ctx.stroke(); }
+        if (avatarStyle === "polaroid") {
+          ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, mx - 8, my - 8, dims.w + 16, dims.h + 26, 4); ctx.fill();
+          ctx.restore();
+          ctx.save(); roundRectPath(ctx, mx, my, dims.w, dims.h, 3); ctx.clip(); coverDraw(ctx, img, mx, my, dims.w, dims.h); ctx.restore();
+        } else {
+          ctx.save(); roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.clip(); coverDraw(ctx, img, mx, my, dims.w, dims.h); ctx.restore();
+        }
+        if (avatarStyle === "ring" || avatarStyle === "frame") {
+          roundRectPath(ctx, mx, my, dims.w, dims.h, avatarStyle === "frame" ? 3 : 14);
+          ctx.strokeStyle = P.primary; ctx.lineWidth = avatarStyle === "frame" ? 5 : 3; ctx.stroke();
+          if (avatarStyle === "frame") { roundRectPath(ctx, mx - 4, my - 4, dims.w + 8, dims.h + 8, 5); ctx.strokeStyle = P.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
+        } else if (avatarStyle === "glow") {
+          ctx.save(); ctx.shadowColor = alphaColor(P.primary, 0.65); ctx.shadowBlur = 24; roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.strokeStyle = alphaColor(P.accent, 0.7); ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+        } else if (avatarStyle === "badge") {
+          ctx.save(); ctx.fillStyle = P.accent; roundRectPath(ctx, mx + dims.w - 20, my + dims.h - 20, 16, 16, 4); ctx.fill();
+          ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mx + dims.w - 12, my + dims.h - 12, 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+        }
       }
       const tx = mx + leftW;
       const tw = mw - leftW;
@@ -2013,7 +2044,7 @@
       if (name) { headY = drawRich(ctx, name, tx, headY, tw, 33, 800, P.primaryDark, "left", 1.3); }
       if (member.role || member.time) {
         headY = name ? headY + 8 : headY;
-        const tag = [member.role, member.time].filter(Boolean).join("  ·  ");
+        const tag = [R.castRoleLabel(member.role), member.time].filter(Boolean).join("  ·  ");
         headY = drawRich(ctx, tag, tx, headY, tw, 21, 700, P.accent, "left", 1);
       }
       if (member.bio) { headY = drawRich(ctx, member.bio, tx, headY + 8, tw, 23, 400, ink, "left", 1.5, "body"); }
@@ -2808,7 +2839,7 @@
         case "performerCard": {
           let pcy = headY + 70;
           (data.cast || []).forEach(function (member) {
-            if (member.name) { addT("成员", [member.role, member.name, member.time].filter(Boolean).join("  "), cardLeft, pcy, 30, st.primaryDark, "left"); pcy += 44; }
+            if (member.name) { addT("成员", [R.castRoleLabel(member.role), member.name, member.time].filter(Boolean).join("  "), cardLeft, pcy, 30, st.primaryDark, "left"); pcy += 44; }
             if (member.bio) { addT("简介", member.bio, cardLeft, pcy, 23, inkColor, data.bodyAlign || "left", "body"); pcy += 60; }
             const setlist = (member.setlist || []).filter(function (s) { return s && (s.song || s.coverBy); });
             if (setlist.length) {
@@ -2890,7 +2921,6 @@
         name: legacy.name || "",
         avatar: (legacy.images && legacy.images[0]) || null,
         avatarRatio: "1:1",
-        avatarStyle: "none",
         time: "",
         bio: legacy.bio || "",
         setlist: setlist,
@@ -2915,6 +2945,17 @@
       else state.doc.backgroundImage = value;
       renderAll();
       this.value = "";
+    });
+    if (els.backgroundColorInput) els.backgroundColorInput.addEventListener("input", function () {
+      const value = this.value || "#ffffff";
+      if (els.backgroundScope.value === "page") activePage().backgroundColor = value;
+      else state.doc.backgroundColor = value;
+      renderCanvas(); renderPanel();
+    });
+    if (els.backgroundScope && els.backgroundColorInput) els.backgroundScope.addEventListener("change", function () {
+      const scopeColor = this.value === "page" ? activePage().backgroundColor : state.doc.backgroundColor;
+      els.backgroundColorInput.value = scopeColor || "#ffffff";
+      if (this.value === "doc") renderCanvas();
     });
     els.themeSelect.addEventListener("change", function () {
       const prev = state.doc.theme;
@@ -3187,7 +3228,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;

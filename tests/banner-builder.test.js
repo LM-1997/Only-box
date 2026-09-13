@@ -226,4 +226,24 @@ assert.equal(MI.extractJson("```json\n{\"id\":\"x\"}\n``` ").id, "x", "板块 JS
 });
 assert.equal(R.getDef("freeText").createDefault().align, "left", "自由文本默认左对齐");
 
+/* 板块内容默认左对齐，封面保持居中（大标题成果、正文左对齐） */
+assert.equal(R.getDef("announcement").createDefault().contentAlign, "left", "普通板块内容默认左对齐");
+assert.equal(R.getDef("cover").createDefault().contentAlign, "center", "封面默认居中");
+
+/* 角色标签值存机器可读键，显示名转中文 */
+assert.equal(R.castRoleLabel("band"), "乐队", "角色 band 映射为乐队");
+assert.equal(R.castRoleLabel("producer"), "制作人", "角色 producer 映射为制作人");
+assert.equal(R.castRoleLabel(""), "", "空角色映射为空");
+
+/* 头像装饰已收归主题（不再作为成员级字段，performerCard 默认无 avatarStyle） */
+{
+  const def = R.getDef("performerCard");
+  const castField = def.fields.filter(function (f) { return f.key === "cast"; })[0];
+  const avatarStyleField = (castField && castField.fields || []).filter(function (f) { return f.key === "avatarStyle"; })[0];
+  assert.equal(avatarStyleField, undefined, "成员级 avatarStyle 字段已移除");
+  const memberDefaults = [];
+  // cast 子字段的默认值由 newEntry 产生，此处仅验证字段定义不含 avatarStyle
+  assert.ok((castField.fields || []).some(function (f) { return f.key === "avatarRatio"; }), "成员仍可调头像比例");
+}
+
 console.log("banner-builder 测试全部通过");
