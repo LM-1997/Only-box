@@ -177,6 +177,34 @@
     .bb-tweak-num{width:60px;min-height:27px;padding:0 7px;border:1px solid var(--bb-line);border-radius:7px;color:var(--ob-ink);background:#fff;font-size:11px}
     .bb-workbench.hide-library{grid-template-columns:minmax(0,1fr) 312px}
     .bb-workbench.hide-library .library-col{display:none}
+    /* ===== 左侧栏：板块库 / 图层 双视图 ===== */
+    .bb-side-seg{width:100%}.bb-side-seg button{flex:1;justify-content:center;white-space:nowrap}
+    .bb-col-head .bb-side-seg{margin:0 0 7px}
+    .bb-col-body.layer-pane{padding:9px;overflow:auto}
+    .bb-layer-toolbar{display:flex;flex:0 0 auto;align-items:center;gap:6px;margin-bottom:8px}
+    .bb-layer-toolbar .bb-btn{flex:0 0 auto}
+    .bb-layer-tip{color:var(--ob-muted);font-size:10px;font-weight:700;line-height:1.4}
+    .bb-layer-page{margin-bottom:8px;border:1px solid var(--bb-line);border-radius:11px;background:#fff;overflow:hidden}
+    .bb-layer-page.is-active{border-color:var(--ob-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--ob-primary) 14%,transparent)}
+    .bb-layer-page-head{display:flex;align-items:center;gap:7px;min-height:34px;padding:5px 8px;border-bottom:1px solid var(--bb-line);background:var(--bb-soft);cursor:pointer;user-select:none}
+    .bb-layer-page-head:hover{border-color:var(--ob-primary)}
+    .bb-layer-page-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ob-ink);font-size:11.5px;font-weight:850}
+    .bb-layer-page-count{flex:0 0 auto;padding:1px 6px;border-radius:6px;color:var(--ob-primary-dark);background:var(--ob-primary-soft);font-size:9.5px;font-weight:800}
+    .bb-layer-page-del{flex:0 0 auto;display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:5px;color:#b54a35;background:transparent;font-size:12px;font-weight:900;cursor:pointer}
+    .bb-layer-page-del:hover{background:var(--ob-accent-soft)}
+    .bb-layer-modules{padding:5px}
+    .bb-layer-module{display:flex;align-items:center;gap:6px;min-height:32px;padding:3px 5px;border:1px solid transparent;border-radius:8px;cursor:pointer;user-select:none}
+    .bb-layer-module:hover{background:var(--ob-primary-soft)}
+    .bb-layer-module.is-active{border-color:var(--ob-primary);background:var(--ob-primary-soft)}
+    .bb-layer-module-no{flex:0 0 auto;width:20px;color:var(--ob-accent);font-size:10px;font-weight:900;text-align:center}
+    .bb-layer-module-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ob-ink);font-size:11px;font-weight:750}
+    .bb-layer-module-ops{flex:0 0 auto;display:none;gap:1px}
+    .bb-layer-module:hover .bb-layer-module-ops,.bb-layer-module.is-active .bb-layer-module-ops{display:inline-flex}
+    .bb-layer-module-ops button{display:grid;width:20px;height:20px;place-items:center;border:0;border-radius:5px;color:var(--ob-muted);background:transparent;font-size:12px;font-weight:900;cursor:pointer;line-height:1}
+    .bb-layer-module-ops button:hover:not(:disabled){color:var(--ob-primary-dark);background:var(--ob-primary-soft)}
+    .bb-layer-module-ops button:disabled{opacity:.3;cursor:not-allowed}
+    .bb-layer-module-ops button.danger:hover{color:#b54a35;background:var(--ob-accent-soft)}
+    .bb-layer-empty{margin:6px 0;padding:12px 10px;border:1px dashed var(--bb-line);border-radius:9px;color:var(--ob-muted);font-size:10.5px;line-height:1.6;text-align:center}
     .bb-export-panel{padding:4px 2px}
     .bb-export-hint{margin:0 0 12px;padding:10px 12px;border:1px solid var(--bb-line);border-radius:10px;background:var(--bb-soft);color:var(--ob-ink);font-size:11px;line-height:1.7}
     .bb-export-main{display:grid;gap:8px}
@@ -216,7 +244,7 @@
       <button class="bb-btn ghost" id="exportPngBtn" type="button" title="导出当前屏 PNG">导出当前屏</button><button class="bb-btn ghost" id="exportAllBtn" type="button" title="逐屏导出全部 PNG（多屏时逐个间隔下载）">导出全部屏</button><button class="bb-btn ghost" id="exportStripBtn" type="button" title="把全部屏拼成一张连续 PNG，整条背景跨屏连续">导出连续长图</button><button class="bb-btn ghost" id="exportPsdBtn" type="button" title="导出可编辑图层 PSD">导出 PSD</button><label class="bb-btn ghost" id="packFontsLabel" title="导出 PSD 时同时打包所用字体文件"><input type="checkbox" id="packFontsToggle" style="margin-right:4px;accent-color:var(--ob-primary)">打包字体</label><button class="bb-btn ghost" id="saveDraftBtn" type="button" title="备份草稿（含图片数据，跨会话恢复不丢图）">备份草稿</button><label class="bb-btn ghost" for="loadDraftInput">恢复<input class="bb-file-input" id="loadDraftInput" type="file"></label>
     </div>
     <div class="bb-workbench" id="workbench" data-page-node-id="zWVvsf2HL3lt8shwl5ltml">
-      <section class="bb-col library-col" aria-label="板块库" data-page-node-id="gRQ35U3EYQkeFkxvh54mz8"><header class="bb-col-head" data-page-node-id="VFdzZDT6k234R800NvetRX"><div data-page-node-id="Sh7lHlNc4lHeoB5Cz20MvH"><h2 data-page-node-id="qe7rConXyrPMvUZPw58WYF">板块库</h2><p class="bb-sub" id="libraryHint" data-page-node-id="ogIkvXV8MsDzObWyTAOUyv">点击板块，添加到第 1 屏</p><button class="bb-btn ghost" id="importModuleBtn" type="button" title="导入 AI 生成的板块模块">导入板块</button></div></header><div class="bb-col-body library" data-page-node-id="libBodyMyTpl01"><div class="bb-mytpl-area" id="myTplArea" hidden data-page-node-id="myTplArea00001"><div class="bb-mytpl-title"><span data-page-node-id="myTplTitl0001">★ 我的模板</span><span class="bb-mytpl-count" id="myTplCount" data-page-node-id="myTplCount000"></span></div><div id="myTplList" data-page-node-id="myTplList0000"></div></div><div id="libraryList" data-page-node-id="srmso8IUsa201JQNCGz5eU"></div></div></section>
+      <section class="bb-col library-col" aria-label="板块与图层"><header class="bb-col-head"><div><div class="bb-seg bb-side-seg" id="sideTabs" role="tablist" aria-label="左侧视图切换"><button type="button" class="is-active" data-side="library" role="tab" aria-selected="true">板块库</button><button type="button" data-side="layers" role="tab" aria-selected="false">图层</button></div><p class="bb-sub" id="libraryHint">点击板块，添加到第 1 屏</p></div><button class="bb-btn ghost" id="importModuleBtn" type="button" title="导入 AI 生成的板块模块">导入板块</button></header><div class="bb-col-body library" id="libraryPane"><div class="bb-mytpl-area" id="myTplArea" hidden><div class="bb-mytpl-title"><span>★ 我的模板</span><span class="bb-mytpl-count" id="myTplCount"></span></div><div id="myTplList"></div></div><div id="libraryList"></div></div><div class="bb-col-body layer-pane" id="layerPane" hidden><div class="bb-layer-toolbar"><button class="bb-btn primary" id="addPageBtnSide" type="button">＋ 新增屏</button><span class="bb-layer-tip" id="layerHint">点板块选中编辑 · ↑↓ 排序</span></div><div id="layerTree"></div></div></section>
       <section class="bb-col" aria-label="长条画布" data-page-node-id="HMhlACpNAdNQfAB6Wb4fCQ"><header class="bb-col-head" data-page-node-id="BG0dzmpRsJJELSLQAsIk9B"><div data-page-node-id="UAUwWZJFMFJ2w37TKEB3vv"><h2 data-page-node-id="z5cTrjOeryKpOHEGFLf7Wh">长条预览</h2><p class="bb-sub" data-page-node-id="vVZRd3qqk6DWamsUxIq8Zj">按观众从上到下的阅读顺序组织多屏内容</p></div><label class="bb-pickmode" id="pickModeSwitch" title="预览点击模式：选整屏=点击屏内任意位置选中该屏；选图层=点击板块选中该板块，点屏内空白选中该屏"><input id="pickModuleToggle" type="checkbox"><span class="bb-pickmode-track"><span class="bb-pickmode-thumb"></span></span><span class="bb-pickmode-text" id="pickModeText">选整屏</span></label></header><div class="bb-col-body" id="canvasBody" data-page-node-id="4IA2t7FEjfnOuzz6yHGKgm"></div></section>
       <section class="bb-col" aria-label="属性面板" data-page-node-id="3taZjOqGwXNDiW11H2rQAB"><header class="bb-col-head" data-page-node-id="o2iuUoxz8PopG44RldzfWj"><div data-page-node-id="SED9acIhbkWkJLl7z9dNxo"><h2 class="bb-panel-title" id="panelTitle" data-page-node-id="7q56F6RA959MBIHxp0EDh7">整条 / 当前屏</h2><p class="bb-panel-sub" id="panelSub" data-page-node-id="IXZTNXHBy040wIUmlo6ua0">画布真实预览 · 点模块编辑板块</p></div></header><div class="bb-col-body" id="panelBody" data-page-node-id="Djbhd6NBhrLdZXaTtiv1Mo"></div></section>
     </div>
@@ -233,6 +261,6 @@
   <script src="../js/banner-builder-module-importer.js?v=20260912-01"></script>
   <script src="../js/vendor/html-to-image.js?v=20260907-20"></script>
   <script src="../js/banner-builder-export.js?v=20260913-02"></script>
-  <script src="../js/banner-builder.js?v=20260913-06"></script>
+  <script src="../js/banner-builder.js?v=20260913-07"></script>
 </body>
 </html>
