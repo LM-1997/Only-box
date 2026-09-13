@@ -244,6 +244,31 @@ assert.deepEqual(MI.validate({ id: "Bad ID", label: "x", type: "ticketInfo", dat
 assert.equal(MI.validate({ id: "my-ticket", label: "我的票务", type: "ticketInfo", data: {} }).length, 0, "合法板块模块通过校验");
 assert.equal(MI.extractJson("```json\n{\"id\":\"x\"}\n``` ").id, "x", "板块 JSON 可从代码块提取");
 
+/* 提示词字段级完整性：字段由注册表自动生成，必须覆盖每一个板块类型的每一项特有字段
+  （含 objectList 嵌套子字段），这样 AI 才不会靠猜字段名、或 registry 加字段后脱节。 */
+{
+  const PROMPT = MI.buildPrompt();
+  const COMMON_KEYS = ["template", "sectionTitle", "width", "contentAlign", "bodyAlign",
+    "blockBgColor", "blockBgImage", "blockOpacity", "imageRatio", "imageFit"];
+  R.MODULE_ORDER.forEach(function (type) {
+    const def = R.getDef(type);
+    (def.fields || []).forEach(function (field) {
+      if (COMMON_KEYS.indexOf(field.key) >= 0) return; /* 通用字段单独一段，逐板块不重复 */
+      assert.ok(PROMPT.indexOf('"' + field.key + '"') >= 0, type + " 特有字段 " + field.key + " 应出现在提示词里");
+      /* objectList 的子字段也要被提及 */
+      if (field.type === "objectList") {
+        (field.fields || []).forEach(function (sub) {
+          assert.ok(PROMPT.indexOf('"' + sub.key + '"') >= 0, type + "." + field.key + " 子字段 " + sub.key + " 应出现在提示词里");
+        });
+      }
+    });
+    /* 每个板块的枚举模板取值也要列出 */
+    R.templateOptions(type).forEach(function (t) {
+      assert.ok(PROMPT.indexOf(t.value) >= 0, type + " 模板 " + t.value + " 应出现在提示词里");
+    });
+  });
+}
+
 /* 高频模块内置模板扩充：5 类至少 4 个模板且含新增样式 */
 [["cover", "split"], ["announcement", "boxed"], ["freeText", "text-card"], ["footer", "footer-pills"], ["ticketInfo", "ticket-hero"]].forEach(function (pair) {
   const options = R.templateOptions(pair[0]);

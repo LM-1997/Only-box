@@ -202,9 +202,11 @@
     wrap.appendChild(img); box.appendChild(wrap);
     const actions = el("div", "bb-crop-actions");
     const cancel = el("button", "bb-btn ghost", "取消"); cancel.type = "button";
-    cancel.addEventListener("click", function () { closeCropModal(); if (cropDone) cropDone(null); });
+    cancel.addEventListener("click", function () { const done = cropDone; closeCropModal(); if (done) done(null); });
     const save = el("button", "bb-btn primary", "应用裁剪"); save.type = "button";
     save.addEventListener("click", async function () {
+      /* 先捕获回调再关闭弹窗：closeCropModal 会把 cropDone 置空，若后取则永远拿不到回调 */
+      const done = cropDone;
       let blob = cropOpened ? cropOpened.blob : null;
       let mime = (blob && blob.type) || "image/png";
       let name = cropFileName || "image.png";
@@ -218,16 +220,16 @@
         } catch (e) { /* 裁剪失败回退原图 */ }
       }
       closeCropModal();
-      if (cropDone && blob) cropDone({ url: URL.createObjectURL(blob), name: name, type: type });
-      else if (cropDone) cropDone(null);
+      if (done && blob) done({ url: URL.createObjectURL(blob), name: name, type: type });
+      else if (done) done(null);
     });
     actions.appendChild(cancel); actions.appendChild(save); box.appendChild(actions);
     cropModal.appendChild(box);
-    cropModal.addEventListener("click", function (e) { if (e.target === cropModal) { closeCropModal(); if (cropDone) cropDone(null); } });
+    cropModal.addEventListener("click", function (e) { if (e.target === cropModal) { const done = cropDone; closeCropModal(); if (done) done(null); } });
     document.body.appendChild(cropModal);
     return img;
   }
-  function openImageWithCrop(file, done) {
+  function openImageWithCrop(file, done, aspectRatio) {
     const MUI = global.MobileImageUpload;
     /* 无裁剪组件或文件非法时降级为「直选不裁」，保证基本功能可用 */
     if (!MUI || typeof MUI.open !== "function" || typeof MUI.ensureCropper !== "function") {
@@ -240,7 +242,10 @@
       const img = buildCropModal(opened.src);
       MUI.ensureCropper().then(function (Cropper) {
         if (!cropModal || !global.Cropper) return;
-        cropCropper = new global.Cropper(img, { viewMode: 1, autoCropArea: 1, dragMode: "move" });
+        /* 锁定展示比例进行裁剪：目标宽高比来自板块图片字段设置；未指定比例时自由裁剪 */
+        const options = { viewMode: 1, autoCropArea: 1, dragMode: "move" };
+        if (aspectRatio && aspectRatio > 0) options.aspectRatio = aspectRatio;
+        cropCropper = new global.Cropper(img, options);
       }).catch(function () { cropCropper = null; });
     }).catch(function (error) {
       cropOpened = null;
@@ -249,7 +254,24 @@
     });
   }
 
-  function imageField(field, obj, id) {
+  /* 根据图片字段语义推断裁剪目标比例（宽/高，0 表示自由裁剪）：
+     - qrImage：二维码正方形语义，不锁比例（裁变形会损坏扫码）
+     - avatar：头像字段，取成员对象自带的 avatarRatio
+     - image：自由图片框主图，取对象自带的 ratio（"auto" 视为自由）
+     - 其余统一回落到模块级 imageRatio（LAYOUT_FIELDS 的图片比例）；模块级数据经 fallbackData 传入，
+       以覆盖 objectList 嵌套图片（obj 是子条目、本身不带 imageRatio 的情况，渲染层会统一套用模块 imageRatio） */
+  function cropAspectForField(field, obj, fallbackData) {
+    const key = field ? field.key : "";
+    if (!obj || !key) return 0;
+    if (key === "qrImage") return 0;
+    if (key === "avatar" && obj.avatarRatio) return ratioNumber(obj.avatarRatio);
+    if (key === "image" && obj.ratio && obj.ratio !== "auto") return ratioNumber(obj.ratio);
+    const src = (obj.imageRatio && obj.imageRatio !== "auto") ? obj : (fallbackData && fallbackData.imageRatio && fallbackData.imageRatio !== "auto" ? fallbackData : null);
+    if (src) return ratioNumber(src.imageRatio);
+    return 0;
+  }
+
+  function imageField(field, obj, id, moduleData) {
     const wrap = el("div", "bb-image-field");
     const preview = el("div", "bb-image-preview");
     const current = obj[field.key];
@@ -272,7 +294,7 @@
       if (!file) return;
       openImageWithCrop(file, function (value) {
         if (value) { obj[field.key] = value; renderAll(); }
-      });
+      }, cropAspectForField(field, obj, moduleData));
       input.value = "";
     });
     pick.appendChild(input);
@@ -303,16 +325,16 @@
     return value;
   }
 
-  function buildField(field, obj, moduleType) {
+  function buildField(field, obj, moduleType, moduleData) {
     const wrap = el("div", "bb-field");
     const id = "bb-input-" + (++inputId);
     if (field.dynamicOptions === "templates") {
       field = Object.assign({}, field, { options: R.templateOptions(moduleType) });
     }
-    if (field.type === "image") return imageField(field, obj, id);
+    if (field.type === "image") return imageField(field, obj, id, moduleData);
     if (field.type === "stringList") return buildStringList(field, obj, wrap);
-    if (field.type === "objectList") return buildObjectList(field, obj, wrap);
-    if (field.type === "imageList") return buildImageList(field, obj, wrap);
+    if (field.type === "objectList") return buildObjectList(field, obj, wrap, moduleType, moduleData);
+    if (field.type === "imageList") return buildImageList(field, obj, wrap, moduleData);
 
     const label = el("label", "bb-field-label", field.label);
     label.htmlFor = id;
@@ -390,7 +412,7 @@
     return wrap;
   }
 
-  function buildObjectList(field, obj, wrap) {
+  function buildObjectList(field, obj, wrap, moduleType, moduleData) {
     const list = Array.isArray(obj[field.key]) ? obj[field.key] : (obj[field.key] = []);
     const head = el("div", "bb-field-head");
     head.appendChild(el("span", "bb-field-label", field.label));
@@ -409,14 +431,14 @@
       del.addEventListener("click", function () { list.splice(index, 1); renderAll(); });
       title.appendChild(del); card.appendChild(title);
       const body = el("div", "bb-entry-body");
-      (field.fields || []).forEach(function (sub) { body.appendChild(buildField(sub, entry)); });
+      (field.fields || []).forEach(function (sub) { body.appendChild(buildField(sub, entry, moduleType, moduleData)); });
       card.appendChild(body); wrap.appendChild(card);
     });
     if (!list.length) wrap.appendChild(el("p", "bb-hint", "还没有内容，点击添加。"));
     return wrap;
   }
 
-  function buildImageList(field, obj, wrap) {
+  function buildImageList(field, obj, wrap, moduleData) {
     const list = Array.isArray(obj[field.key]) ? obj[field.key] : (obj[field.key] = []);
     const head = el("div", "bb-field-head");
     head.appendChild(el("span", "bb-field-label", field.label));
@@ -431,7 +453,7 @@
       if (!file || list.length >= (field.max || 4)) return;
       openImageWithCrop(file, function (value) {
         if (value) { list.push(value); renderAll(); }
-      });
+      }, cropAspectForField(field, obj, moduleData));
       input.value = "";
     });
     add.appendChild(input); head.appendChild(add); wrap.appendChild(head);
@@ -1233,7 +1255,7 @@
     if (!hit.module) { els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = state.step === "setup" ? "第 1 步 · 设置背景与主题，可从左侧添加板块预览效果" : "画布真实预览 · 点模块编辑板块"; els.panelBody.appendChild(buildSurfacePanel()); return; }
     const def = R.getDef(hit.module.type); els.panelTitle.textContent = def.label; els.panelSub.textContent = "第 " + (hit.pageIndex + 1) + " 屏 · 可编辑文字、图片与版式";
     const saveRow = el("div", "bb-field"); const saveBtn = el("button", "bb-file-btn", "☆ 存为我的模板"); saveBtn.type = "button"; saveBtn.dataset.action = "save-tpl"; saveBtn.title = "把当前这整个板块（含文字、配色、图片与版式）存成「我的模板」，浏览器本地保存，刷新后仍在"; saveRow.appendChild(saveBtn); els.panelBody.appendChild(saveRow);
-    (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type)); });
+    (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type, hit.module.data)); });
   }
 
   /* ===== 第三步导出面板（右侧属性栏），与顶部导出按钮共用同一批导出函数 ===== */
