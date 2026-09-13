@@ -40,94 +40,53 @@
     return out;
   }
 
-  /* 文档级字体：全部为免费可商用字体（SIL OFL / 官方免费授权），经 jsDelivr 在线加载 @fontsource 分包。
-     family 必须与 @fontsource css 内 @font-face 声明的字体名一致；css 数组按字重列出。
-     标题（标题字体）与大标题/板块标题/醒目数字同栈，正文（正文字体）用于正文/说明/图注。 */
-  const FONTS = {
-    sans: { label: "思源黑体（可商用）", family: "Noto Sans SC", css: ["https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5/700.css", "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5/900.css"] },
-    serif: { label: "思源宋体（可商用）", family: "Noto Serif SC", css: ["https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/600.css", "https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-sc@5/700.css"] },
-    kai: { label: "霞鹜文楷（可商用）", family: "LXGW WenKai", css: ["https://cdn.jsdelivr.net/npm/@fontsource/lxgw-wenkai@5/index.css", "https://cdn.jsdelivr.net/npm/@fontsource/lxgw-wenkai@5/700.css"] },
-    rounded: { label: "站酷快乐体（可商用）", family: "ZCOOL KuaiLe", css: ["https://cdn.jsdelivr.net/npm/@fontsource/zcool-kuaile@5/index.css"] },
-    xiaowei: { label: "站酷小薇（可商用）", family: "ZCOOL XiaoWei", css: ["https://cdn.jsdelivr.net/npm/@fontsource/zcool-xiaowei@5/index.css"] },
-    qingke: { label: "站酷庆科黄油体（可商用）", family: "ZCOOL QingKe HuangYou", css: ["https://cdn.jsdelivr.net/npm/@fontsource/zcool-qingke-huangyou@5/index.css"] },
-    mashanzheng: { label: "马善政毛笔楷书", family: "Ma Shan Zheng", css: ["https://cdn.jsdelivr.net/npm/@fontsource/ma-shan-zheng@5/index.css"] },
-    longcang: { label: "龙藏体（手写）", family: "Long Cang", css: ["https://cdn.jsdelivr.net/npm/@fontsource/long-cang@5/index.css"] },
-    zhimangxing: { label: "志莽行书（手写）", family: "Zhi Mang Xing", css: ["https://cdn.jsdelivr.net/npm/@fontsource/zhi-mang-xing@5/index.css"] },
-    liujianmaocao: { label: "柳建草书（手写）", family: "Liu Jian Mao Cao", css: ["https://cdn.jsdelivr.net/npm/@fontsource/liu-jian-mao-cao@5/index.css"] },
-    poppins: { label: "Poppins（几何无衬线）", family: "Poppins", css: ["https://cdn.jsdelivr.net/npm/@fontsource/poppins@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/poppins@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/poppins@5/600.css", "https://cdn.jsdelivr.net/npm/@fontsource/poppins@5/700.css"] },
-    montserrat: { label: "Montserrat（现代无衬线）", family: "Montserrat", css: ["https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5/600.css", "https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5/700.css", "https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5/900.css"] },
-    oswald: { label: "Oswald（窄体标题）", family: "Oswald", css: ["https://cdn.jsdelivr.net/npm/@fontsource/oswald@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5/600.css", "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5/700.css"] },
-    bebas: { label: "Bebas Neue（海报标题）", family: "Bebas Neue", css: ["https://cdn.jsdelivr.net/npm/@fontsource/bebas-neue@5/index.css"] },
-    playfair: { label: "Playfair Display（衬线标题）", family: "Playfair Display", css: ["https://cdn.jsdelivr.net/npm/@fontsource/playfair-display@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/playfair-display@5/700.css", "https://cdn.jsdelivr.net/npm/@fontsource/playfair-display@5/900.css"] },
-    abril: { label: "Abril Fatface（衬线展示）", family: "Abril Fatface", css: ["https://cdn.jsdelivr.net/npm/@fontsource/abril-fatface@5/index.css"] },
-    lato: { label: "Lato（清爽无衬线）", family: "Lato", css: ["https://cdn.jsdelivr.net/npm/@fontsource/lato@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/lato@5/700.css", "https://cdn.jsdelivr.net/npm/@fontsource/lato@5/900.css"] },
-    grotesk: { label: "Space Grotesk（科技感）", family: "Space Grotesk", css: ["https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/700.css"] },
-    robotoCond: { label: "Roboto Condensed（窄体正文）", family: "Roboto Condensed", css: ["https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/700.css"] },
-    ubuntu: { label: "Ubuntu（人文无衬线）", family: "Ubuntu", css: ["https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/700.css"] },
-    /* ===== 用户追加字体（混合源：css=fontsource 分片 / src=单字体文件自建 @font-face） ===== */
-    /* 本地字体 family 以字体文件 name 表实测为准（fonts/ 目录随仓库分发）：
-       - 阿里妈妈数黑体：Alimama ShuHeiTi（OTF）同族，先 CDN woff2 后本地 OTF 兜底
-       - Metal Mania：OFL，走 @fontsource CDN（本地也有副本，无需额外登记）
-       - 标小智无界黑：OTF 家族名「LogoSC Unbounded Sans」、TTF 常规家族名「Unbounded Sans」，两者并存
-       - Helvetica「黑窄版」：name 表家族名为「HelveticaNeue LT 97 BlackCn」 */
-    shuheiti: { label: "阿里妈妈数黑体", family: "Alimama ShuHeiTi", src: [{ url: "https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.woff2", format: "woff2" }, { url: "../fonts/AlimamaShuHeiTi-Bold.otf", format: "opentype" }] },
-    metalmania: { label: "Metal Mania（重金属）", family: "Metal Mania", css: ["https://cdn.jsdelivr.net/npm/@fontsource/metal-mania@5/index.css"] },
-    logosc: { label: "标小智无界黑", family: "LogoSC Unbounded Sans", src: [{ url: "../fonts/LogoSCUnboundedSans.otf", format: "opentype" }] },
-    logosc_regular: { label: "标小智无界黑（常规）", family: "Unbounded Sans", src: [{ url: "../fonts/LogoSCUnboundedSans-Regular.ttf", format: "truetype" }] },
-    helveticalt: { label: "Helvetica 黑窄体加粗", family: "HelveticaNeue LT 97 BlackCn", src: [{ url: "../fonts/Helvetica LT 97 Black Condensed.ttf", format: "truetype" }] },
-  };
-
+  /* 文档级字体：从统一字体清单 data/fonts.js（window.OnlyBoxFonts）派生，与 badge-generator 共用一份清单。
+     清单只存元数据 + CDN 直链（授权与直链由 scripts/font-catalog-check.js 校验）；
+     FONTS 保留旧 key（legacyKeys）映射，旧草稿里的 sans/serif/kai/... 等键值继续有效。
+     family 必须与上游 @font-face 声明一致；css 数组按字重列出，全部注入后任意字重档位都可用真实字形渲染。
+     注意：官方"免费商用但禁止第三方再分发"的字体（阿里妈妈数黑体/东方大楷、钉钉进步体、方正免费系列等）
+     不进清单，用户可从官网下载后用「导入字体」上传（见 docs/fonts-catalog.md 的 excluded 说明）。 */
+  const CATALOG = global.OnlyBoxFonts && Array.isArray(global.OnlyBoxFonts.fonts) ? global.OnlyBoxFonts.fonts : [];
+  const FONTS = {};
+  const FONT_DOWNLOADS = {};
+  CATALOG.forEach(function (font) {
+    const keys = (font.legacyKeys && font.legacyKeys.length) ? font.legacyKeys : [font.id];
+    const load = font.load || {};
+    const entry = { label: font.name || font.nameEn || font.family, family: font.family, category: font.category || "" };
+    if (Array.isArray(load.css)) entry.css = load.css.slice();
+    else if (load.css) entry.css = Object.keys(load.css).sort(function (a, b) { return Number(a) - Number(b); }).map(function (w) { return load.css[w]; });
+    if (load.faces) entry.src = load.faces.map(function (s) { return { url: s.url, format: s.format || "truetype", weight: s.weight || 400 }; });
+    keys.forEach(function (key) {
+      if (FONTS[key]) return; /* 多 legacyKey 指向同一条目时只登记一次 */
+      FONTS[key] = entry;
+      if (font.desktop && font.desktop.url) FONT_DOWNLOADS[key] = { url: font.desktop.url, name: font.desktop.name };
+    });
+  });
   /* 单字体文件源（src 数组）合成 @font-face；css 源走独立 <link> 注入通道，此处返回空。
-     单文件展示字体按 100-900 全字重登记，避免各层级 700/800/900 触发伪粗合成破坏字形。 */
+     单档展示字体按 100-900 全字重登记（与旧行为一致），避免标题 800/900 触发伪粗合成破坏字形；
+     多档字重文件则逐档登记真实 font-weight，浏览器按最近档位匹配、不再合成。 */
   function fontFaceFor(f) {
     if (!f || !Array.isArray(f.src) || !f.src.length) return "";
-    const parts = f.src.map(function (s) {
-      return 'url("' + s.url + '") format("' + (s.format || "truetype") + '")';
-    }).join(", ");
-    return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:100 900;src:' + parts + ';}';
+    if (f.src.length === 1) {
+      const s = f.src[0];
+      return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:100 900;src:url("' + s.url + '") format("' + (s.format || "truetype") + '");}';
+    }
+    return f.src.map(function (s) {
+      return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:' + (s.weight || 400) + ';src:url("' + s.url + '") format("' + (s.format || "truetype") + '");}';
+    }).join("\n");
   }
-  /* 桌面字体文件（供「打包字体」下载）：PS 需安装对应 .ttf/.otf 才能正确渲染文字图层。
-     来源优先 google/fonts（jsDelivr 镜像，CORS 友好）；思源宋体走 raw.githubusercontent；
-     霞鹜文楷走官方 release（部分网络环境下 fetch 可能受限，打包时容错跳过并提示）。 */
-  const FONT_DOWNLOADS = {
-    sans: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf", name: "NotoSansSC.ttf" },
-    serif: { url: "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf", name: "NotoSerifSC.ttf" },
-    kai: { url: "https://github.com/lxgw/LxgwWenKai/releases/download/v1.510/LXGWWenKai-Regular.ttf", name: "LXGWWenKai-Regular.ttf" },
-    rounded: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf", name: "ZCOOLKuaiLe-Regular.ttf" },
-    xiaowei: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf", name: "ZCOOLXiaoWei-Regular.ttf" },
-    qingke: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolqingkehuangyou/ZCOOLQingKeHuangYou-Regular.ttf", name: "ZCOOLQingKeHuangYou-Regular.ttf" },
-    mashanzheng: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/mashanzheng/MaShanZheng-Regular.ttf", name: "MaShanZheng-Regular.ttf" },
-    longcang: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/longcang/LongCang-Regular.ttf", name: "LongCang-Regular.ttf" },
-    zhimangxing: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zhimangxing/ZhiMangXing-Regular.ttf", name: "ZhiMangXing-Regular.ttf" },
-    liujianmaocao: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/liujianmaocao/LiuJianMaoCao-Regular.ttf", name: "LiuJianMaoCao-Regular.ttf" },
-    poppins: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf", name: "Poppins-Regular.ttf" },
-    montserrat: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/Montserrat%5Bwght%5D.ttf", name: "Montserrat-Variable.ttf" },
-    oswald: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/oswald/Oswald%5Bwght%5D.ttf", name: "Oswald-Variable.ttf" },
-    bebas: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/bebasneue/BebasNeue-Regular.ttf", name: "BebasNeue-Regular.ttf" },
-    playfair: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf", name: "PlayfairDisplay-Variable.ttf" },
-    abril: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/abrilfatface/AbrilFatface-Regular.ttf", name: "AbrilFatface-Regular.ttf" },
-    lato: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lato/Lato-Regular.ttf", name: "Lato-Regular.ttf" },
-    grotesk: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf", name: "SpaceGrotesk-Variable.ttf" },
-    robotoCond: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf", name: "RobotoCondensed-Variable.ttf" },
-    ubuntu: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ufl/ubuntu/Ubuntu-Regular.ttf", name: "Ubuntu-Regular.ttf" },
-    shuheiti: { url: "https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.ttf", name: "AlimamaShuHeiTi-Bold.ttf" },
-    metalmania: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/metalmania/MetalMania-Regular.ttf", name: "MetalMania-Regular.ttf" },
-    logosc: { url: "", name: "LogoSCUnboundedSans.otf" },
-    logosc_regular: { url: "", name: "LogoSCUnboundedSans-Regular.ttf" },
-    helveticalt: { url: "", name: "Helvetica LT 97 Black Condensed.ttf" },
-  };
-  /* 本地字体（src 为相对路径、无 css 源）的打包策略：FONT_DOWNLOADS.url 留空表示
-     无需联网下载，而是提示用户手动安装（本地字体已随仓库/用户机器存在）。 */
-  function fontFallback(key) {
-    if (key === "serif" || key === "xiaowei" || key === "playfair" || key === "abril") return "'Songti SC',serif";
-    if (key === "kai" || key === "mashanzheng" || key === "longcang" || key === "zhimangxing" || key === "liujianmaocao") return "'KaiTi',serif";
-    if (key === "rounded" || key === "qingke") return "'Yuanti SC',cursive,sans-serif";
-    if (key === "shuheiti" || key === "metalmania" || key === "logosc" || key === "logosc_regular" || key === "helveticalt") return "'Microsoft YaHei',sans-serif";
+  /* 按清单 category 回落系统字体栈（在线字体加载失败时保底，尽量保持字形气质）。 */
+  function fontFallback(category) {
+    if (category === "宋体") return "'Songti SC','SimSun',serif";
+    if (category === "楷体" || category === "手写") return "'KaiTi','STKaiti',serif";
+    if (category === "圆体") return "'Yuanti SC','Microsoft YaHei',sans-serif";
+    if (category === "等宽") return "Consolas,'Courier New',monospace";
+    if (category === "展示" || category === "艺术体") return "'Arial Black','Microsoft YaHei',sans-serif";
     return "'Microsoft YaHei',sans-serif";
   }
   function fontStack(key) {
     const f = FONTS[key] || FONTS.sans;
-    return '"' + f.family + '",' + fontFallback(key);
+    return '"' + f.family + '",' + fontFallback(f.category);
   }
   /* 分角色字体栈（审计 P7 配套）：headingFontStack 用于主/板块标题与醒目数字，
      bodyFontStack 用于正文、说明、图注；两者可独立设置。 */

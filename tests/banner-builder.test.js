@@ -4,7 +4,7 @@ const vm = require("node:vm");
 
 const window = {};
 const ctx = vm.createContext({ window, console });
-["js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js"].forEach(function (file) {
+["data/fonts.js", "js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js"].forEach(function (file) {
   vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
 });
 
@@ -303,3 +303,28 @@ assert.equal(R.castRoleLabel(""), "", "空角色映射为空");
 }
 
 console.log("banner-builder 测试全部通过");
+
+/* ============ 统一字体清单派生（data/fonts.js → BannerBuilderConstants） ============ */
+const catalog = window.OnlyBoxFonts;
+assert.ok(Array.isArray(catalog.fonts) && catalog.fonts.length >= 30, "清单不少于 30 款字体");
+assert.ok(catalog.fonts.length <= 50, "首批清单不超过 50 款");
+
+assert.ok(C.FONTS.sans && C.FONTS.sans.family === "Noto Sans SC", "legacyKey sans 映射思源黑体");
+assert.ok(C.FONTS.serif && C.FONTS.serif.family === "Noto Serif SC", "legacyKey serif 映射思源宋体");
+assert.ok(C.FONTS.kai && C.FONTS.kai.family === "LXGW WenKai", "legacyKey kai 映射霞鹜文楷");
+assert.ok(C.FONTS.logosc && C.FONTS.logosc.family === "Unbounded Sans", "旧 key logosc 映射到 OFL 版无界黑（本地字体已移除）");
+assert.equal(C.FONTS.shuheiti, undefined, "阿里妈妈数黑体（禁止再分发）已移出内置清单");
+assert.equal(C.FONTS.helveticalt, undefined, "Helvetica 商用字体已移出内置清单");
+assert.equal(C.fontStack("shuheiti").indexOf("Noto Sans SC"), 1, "已移除 key 的旧草稿回落到思源黑体");
+
+assert.ok(C.FONTS.sans.css.length >= 9, "思源黑体注入全字重 css（字重档位真实可渲染）");
+assert.ok(C.FONTS.logosc.src && C.FONTS.logosc.src.length === 1, "无界黑为单文件 src 源");
+assert.ok(C.fontFaceFor(C.FONTS.logosc).includes("font-weight:100 900"), "单文件展示字体按 100-900 登记（避免伪粗）");
+
+const fontOpts = C.getFontOptions();
+assert.ok(fontOpts.length >= catalog.fonts.length, "字体下拉选项覆盖全部清单条目（含多 legacyKey）");
+assert.equal(fontOpts[0].value, "sans", "下拉第一项为思源黑体（rank 1）");
+assert.ok(Object.keys(C.FONT_DOWNLOADS).length >= 20, "桌面字体下载表已从清单派生");
+assert.ok(!C.FONT_DOWNLOADS.helveticalt, "Helvetica 不再提供打包下载");
+
+console.log("字体清单派生测试全部通过");

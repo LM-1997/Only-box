@@ -539,6 +539,36 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
 .compact-mode .align-actions .btn{min-height:27px;padding:3px 9px}
 .compact-mode .canvas-stage{width:min(100%,360px,calc((100vh - 315px)*.75))}
 .compact-mode .canvas-stage.has-background{width:min(100%,calc(min(80vh,740px)*var(--stage-ar)),calc((100vh - 315px)*var(--stage-ar)))}
+/* ================= 统一字体选择器（内置清单 + 自定义上传） ================= */
+.bfp-host{position:relative;display:block;min-width:0}
+.bfp-trigger{display:flex;width:100%;min-height:34px;align-items:center;gap:8px;padding:4px 9px;border:1px solid var(--bdg-line);border-radius:9px;background:#fff;cursor:pointer;text-align:left;transition:.15s}
+.bfp-trigger:hover,.bfp-trigger.is-open{border-color:#bdd6c6;background:#f4f8f4}
+.bfp-trigger-glyph{flex:0 0 auto;display:inline-flex;width:22px;height:22px;align-items:center;justify-content:center;border-radius:6px;background:var(--bdg-soft);font-size:13px;font-weight:700;color:var(--ob-ink);font-family:inherit;overflow:hidden}
+.bfp-trigger-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:650;color:var(--ob-ink)}
+.bfp-caret{flex:0 0 auto;color:var(--ob-muted);font-size:10px;transition:.15s}
+.bfp-trigger.is-open .bfp-caret{transform:rotate(180deg)}
+.bfp-panel{position:absolute;z-index:60;top:calc(100% + 5px);left:0;width:100%;max-width:420px;padding:8px;border:1px solid var(--bdg-line);border-radius:12px;background:#fff;box-shadow:0 14px 34px rgba(23,76,56,.16)}
+.bfp-search input{width:100%;min-height:30px;padding:5px 10px;border:1px solid var(--bdg-line);border-radius:8px;font-size:12px}
+.bfp-search input:focus{outline:2px solid rgba(35,107,79,.25);border-color:#bdd6c6}
+.bfp-list{max-height:280px;overflow-y:auto;margin-top:7px}
+.bfp-group{margin:7px 2px 4px;font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--ob-muted)}
+.bfp-row{display:flex;width:100%;align-items:center;gap:9px;padding:6px 8px;border:0;border-radius:9px;background:transparent;cursor:pointer;text-align:left;transition:.12s}
+.bfp-row:hover{background:var(--bdg-soft)}
+.bfp-row.is-selected{background:rgba(35,107,79,.1)}
+.bfp-row.is-selected .bfp-name:after{content:" ✓";color:var(--ob-primary);font-weight:800}
+.bfp-preview{flex:0 0 auto;min-width:52px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:1.25;color:var(--ob-ink)}
+.bfp-meta{flex:1;min-width:0}
+.bfp-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:650;color:var(--ob-ink)}
+.bfp-name small{color:var(--ob-muted);font-weight:550}
+.bfp-tags{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--ob-muted)}
+.bfp-row-custom .bfp-name{color:var(--ob-primary-dark)}
+.bfp-empty{padding:14px 8px;font-size:11px;color:var(--ob-muted);text-align:center}
+.bfp-foot{margin-top:7px;border-top:1px dashed var(--bdg-line);padding-top:7px}
+.bfp-upload{width:100%;min-height:30px;padding:4px 10px;border:1px dashed var(--bdg-line);border-radius:8px;background:#fafcfa;color:var(--ob-primary-dark);font-size:11px;font-weight:700;cursor:pointer;transition:.15s}
+.bfp-upload:hover{border-color:#bdd6c6;background:#f4f8f4}
+.weight-host{display:flex;gap:8px;align-items:center;min-width:0}
+.weight-host select{flex:1;min-width:0}
+.weight-host input[type=range]{flex:1;min-width:0;accent-color:var(--ob-primary)}
 </style>
 </head>
 <body>
@@ -613,12 +643,16 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
                 <div class="ghead"><h3 class="gtitle">姓名字体</h3><div class="font-seg" role="tablist" aria-label="字体设置方式"><button type="button" role="tab" aria-selected="true">选择默认字体</button><button type="button" role="tab" aria-selected="false">上传字体文件</button></div></div>
                 <div id="fontPickPane">
                   <div class="lang-placeholders">
-                    <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="fontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option></select></span></div>
-                    <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="fontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
-                    <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="fontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
+                    <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1 bfp-host" data-bfp-for="fontFamilyZh" data-bfp-lang="zh"></span></div>
+                    <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1 bfp-host" data-bfp-for="fontFamilyEn" data-bfp-lang="en"></span></div>
+                    <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1 bfp-host" data-bfp-for="fontFamilyJa" data-bfp-lang="ja"></span></div>
+                    <div class="lang-pair"><span class="lang-tag">字重</span><span class="select-flex1 weight-host"><select id="nameWeight" aria-label="姓名字重"></select><input id="nameWeightSlider" type="range" min="100" max="900" step="1" hidden aria-label="可变字体字重轴"></span></div>
                   </div>
-                  <p class="slot-note">姓名会根据字符自动使用对应语言字体，混合姓名可同时用三套字体。非默认字体为在线字体，选中后自动加载。</p>
+                  <p class="slot-note">内置开源字体（可免费商用）与上传的自定义字体在同一个选择器中选择；姓名按字符自动匹配中/英/日字体。字重档位为三套所选字体实际提供的字重，选择后预览与导出同步生效。</p>
                   <p id="webfontStatus" class="slot-note" hidden></p>
+                  <select id="fontFamilyZh" hidden></select>
+                  <select id="fontFamilyEn" hidden></select>
+                  <select id="fontFamilyJa" hidden></select>
                   <select id="fontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select>
                 </div>
                 <div id="fontUploadPane" hidden>
@@ -738,10 +772,14 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
               <div class="fgroup">
                 <div class="ghead"><h3 class="gtitle">姓名字体与颜色</h3></div>
                 <div class="lang-placeholders" style="margin-top:0">
-                  <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1"><select id="editorFontFamilyZh"><option value="Noto Sans SC">Noto Sans SC（默认，OFL 1.1）</option><option value="Noto Serif SC">Noto Serif SC（思源宋体，OFL 1.1）</option><option value="ZCOOL KuaiLe">ZCOOL KuaiLe（站酷快乐体，免费商用）</option><option value="ZCOOL QingKe HuangYou">ZCOOL QingKe HuangYou（庆科黄油体，免费商用）</option><option value="ZCOOL XiaoWei">ZCOOL XiaoWei（站酷小薇体，免费商用）</option><option value="Ma Shan Zheng">Ma Shan Zheng（马善政毛笔楷，OFL 1.1）</option><option value="Long Cang">Long Cang（龙藏体，OFL 1.1）</option></select></span></div>
-                  <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1"><select id="editorFontFamilyEn"><option value="Noto Sans">Noto Sans（默认，Apache 2.0）</option><option value="Roboto">Roboto（Apache 2.0）</option><option value="Open Sans">Open Sans（OFL 1.1）</option><option value="Lato">Lato（OFL 1.1）</option><option value="Montserrat">Montserrat（OFL 1.1）</option><option value="Oswald">Oswald（OFL 1.1）</option><option value="Playfair Display">Playfair Display（OFL 1.1）</option><option value="JetBrains Mono">JetBrains Mono（OFL 1.1）</option></select></span></div>
-                  <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1"><select id="editorFontFamilyJa"><option value="Noto Sans JP">Noto Sans JP（默认，OFL 1.1）</option><option value="Noto Serif JP">Noto Serif JP（思源宋体，OFL 1.1）</option><option value="Zen Kaku Gothic New">Zen Kaku Gothic New（OFL 1.1）</option><option value="M PLUS 1p">M PLUS 1p（OFL 1.1）</option><option value="Sawarabi Gothic">Sawarabi Gothic（OFL 1.1）</option><option value="Kosugi Maru">Kosugi Maru（小丸ゴシック，OFL 1.1）</option></select></span></div>
+                  <div class="lang-pair"><span class="lang-tag">中文</span><span class="select-flex1 bfp-host" data-bfp-for="editorFontFamilyZh" data-bfp-lang="zh"></span></div>
+                  <div class="lang-pair"><span class="lang-tag">英文</span><span class="select-flex1 bfp-host" data-bfp-for="editorFontFamilyEn" data-bfp-lang="en"></span></div>
+                  <div class="lang-pair"><span class="lang-tag">日文</span><span class="select-flex1 bfp-host" data-bfp-for="editorFontFamilyJa" data-bfp-lang="ja"></span></div>
+                  <div class="lang-pair"><span class="lang-tag">字重</span><span class="select-flex1 weight-host"><select id="editorNameWeight" aria-label="单条姓名字重"></select><input id="editorNameWeightSlider" type="range" min="100" max="900" step="1" hidden aria-label="单条可变字体字重轴"></span></div>
                 </div>
+                <select id="editorFontFamilyZh" hidden></select>
+                <select id="editorFontFamilyEn" hidden></select>
+                <select id="editorFontFamilyJa" hidden></select>
                 <select id="editorFontFamily" hidden aria-hidden="true"><option value="NotoSansCJKsc">兼容旧配置</option></select>
                 <div class="mini-grid2" style="margin-top:13px">
                   <div class="field"><label for="editorFontSize" class="sub-label">字号</label><input id="editorFontSize" type="number" min="8" step="1"></div>
@@ -761,11 +799,13 @@ body:has(.compact-mode) .nav-inner{min-height:54px}
   </main>
   <footer class="site-footer"><div class="footer-inner"><span>Only-box · 批量证件生成</span><a href="../index.html">返回工具箱首页 &rarr;</a></div></footer>
   <div id="cropDialog" class="crop-dialog" hidden><div class="crop-box" role="dialog" aria-modal="true" aria-labelledby="cropTitle"><h2 id="cropTitle">裁剪头像</h2><div class="crop-image-wrap"><img id="cropImage" alt="头像裁剪预览"></div><div class="crop-actions"><button id="cancelCropBtn" class="btn ghost" type="button">取消</button><button id="saveCropBtn" class="btn primary" type="button">应用裁剪</button></div></div></div>
+  <script src="../data/fonts.js?v=20260913-12"></script>
   <script src="../js/mobile-image-upload.js"></script>
   <script src="../js/canvas-utils.js"></script>
   <script src="../js/badge-edge-detect.js?v=20260901-7"></script>
-  <script src="../js/badge-generator.js?v=20260901-13"></script>
+  <script src="../js/badge-generator.js?v=20260913-01"></script>
   <script src="../js/badge-wizard.js"></script>
-  <script src="../js/badge-webfonts.js"></script>
+  <script src="../js/font-file-meta.js?v=20260913-01"></script>
+  <script src="../js/badge-font-picker.js?v=20260913-01"></script>
 </body>
 </html>

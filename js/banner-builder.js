@@ -2855,8 +2855,8 @@
         ok.push(label);
         continue;
       }
-      /* 本地字体（url 为空）：随仓库/系统已存在，无需联网，直接提示手动安装 */
-      if (!dl.url) { fail.push(label + "（本地字体，安装 fonts/" + dl.name + "）"); continue; }
+      /* 无直链的字体：无法自动下载，提示手动获取（清单内字体均有直链，此为防御分支） */
+      if (!dl.url) { fail.push(label + "（未能自动下载，请从字体官网获取后安装）"); continue; }
       try {
         const resp = await fetch(dl.url, { mode: "cors" });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -3524,6 +3524,16 @@
     const ov = state.doc.themeOverrides || {};
     return ov[key] == null || ov[key] === "" ? null : ov[key];
   }
+  /* select 赋值兜底：预设/草稿里的值可能不在选项列表（如 AI 主题字重 750），不补项会显示空白 */
+  function ensureSelectValue(select, value) {
+    select.value = String(value);
+    if (select.selectedIndex < 0) {
+      const opt = el("option", null, String(value));
+      opt.value = String(value);
+      select.appendChild(opt);
+      select.value = String(value);
+    }
+  }
   function showThemeTweakModal() {
     const existing = document.getElementById("bb-tweak-modal");
     if (existing) existing.parentNode.removeChild(existing);
@@ -3599,9 +3609,9 @@
       } else {
         input = el("select", "bb-tweak-select");
         field.options.forEach(function (pair) {
-          const opt = el("option", pair[1]); opt.value = pair[0]; input.appendChild(opt);
+          const opt = el("option", null, pair[1]); opt.value = pair[0]; input.appendChild(opt);
         });
-        input.value = cur != null ? cur : preset;
+        ensureSelectValue(input, cur != null ? cur : preset);
       }
       const flag = el("span", "bb-tweak-inherit");
       flag.textContent = cur == null ? "继承预设" : "已覆盖";
@@ -3746,7 +3756,7 @@
         row.appendChild(el("span", "bb-tweak-label", field.label));
         const sel = el("select", "bb-tweak-select");
         WEIGHT_OPTIONS.forEach(function (w) { const o = el("option", null, String(w)); o.value = String(w); sel.appendChild(o); });
-        sel.value = String(value);
+        ensureSelectValue(sel, value);
         const parts = appendInherit(row, cur);
         sel.addEventListener("change", function () {
           setOverride(field.key, Number(sel.value));
