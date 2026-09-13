@@ -100,6 +100,9 @@ R.MODULE_ORDER.forEach(function (type) {
   assert.equal(doc.screenMode, "split", "默认分屏模式");
   assert.equal(doc.pages.length, 1, "默认 1 页");
   assert.equal(doc.pages[0].modules.length, 0, "新页没有模块");
+  assert.ok(Object.prototype.hasOwnProperty.call(doc, "themeOverrides"), "文档含 themeOverrides 字段");
+  assert.equal(typeof doc.themeOverrides, "object", "themeOverrides 是对象");
+  assert.equal(Object.keys(doc.themeOverrides).length, 0, "themeOverrides 默认为空");
 
   const second = M.addPage(doc);
   assert.equal(doc.pages.length, 2, "新增页");

@@ -11,6 +11,7 @@
     selectedModuleId: null,
     pickMode: "screen",
     zoom: 0.46,
+    step: "setup",
   };
   const els = {};
   let inputId = 0;
@@ -132,7 +133,7 @@
      现在所有主题一律走这里，CSS 规则保留仅为兜底。 */
   function applyThemeVars(rootEl) {
     if (!rootEl || !rootEl.style) return;
-    const theme = C.themeStyle(state.doc.theme);
+    const theme = artTheme();
     rootEl.style.setProperty("--ob-primary", theme.primary);
     rootEl.style.setProperty("--ob-primary-dark", theme.primaryDark);
     rootEl.style.setProperty("--ob-primary-soft", theme.primarySoft);
@@ -890,7 +891,7 @@
       const pageImage = page.backgroundImage || state.doc.backgroundImage;
       if (pageImage && pageImage.url) { canvas.style.backgroundImage = docBackgroundStyle(pageImage); canvas.style.backgroundSize = "cover"; }
     }
-    if (!page.modules.length) { const emptyTip = el("div", "bb-page-empty bb-dom-only", "从左侧添加第一个板块，开始制作真实长条。"); canvas.appendChild(emptyTip); }
+    if (!page.modules.length) { const emptyTip = el("div", "bb-page-empty bb-dom-only", state.step === "edit" ? "从左侧添加第一个板块，开始制作真实长条。" : "切换到「编辑」步骤，开始添加板块内容。"); canvas.appendChild(emptyTip); }
     else {
       const rows = M.packModuleRows(page.modules);
       rows.forEach(function (row) {
@@ -944,7 +945,26 @@
       els.backgroundColorInput.value = (scopeColor || "#ffffff");
     }
     Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    const scale = Number(state.doc.exportScale) || 2;
+    if (els.exportScaleGroup) Array.prototype.forEach.call(els.exportScaleGroup.querySelectorAll("[data-scale]"), function (button) { const active = Number(button.dataset.scale) === scale; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    if (els.exportSizeReadout) els.exportSizeReadout.textContent = (size.pageWidth * scale) + " × " + (size.pageHeight * scale) + " px";
+    syncStep();
     syncPickMode();
+  }
+
+  /* ===== 三步向导：同步步骤条、对应工具栏显隐、工作区库栏显隐、属性面板 ===== */
+  function syncStep() {
+    if (!els.stepBar) return;
+    Array.prototype.forEach.call(els.stepBar.querySelectorAll(".bb-step"), function (button) {
+      const active = button.dataset.step === state.step;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    ["setup", "edit", "export"].forEach(function (key) {
+      const bar = els.stepToolbars[key];
+      if (bar) bar.hidden = key !== state.step;
+    });
+    if (els.workbench) els.workbench.classList.toggle("hide-library", state.step !== "edit");
   }
 
   function renderLibrary() {
@@ -1052,11 +1072,49 @@
   }
 
   function renderPanel() {
-    const hit = M.findModule(state.doc, state.selectedModuleId); els.panelBody.textContent = "";
-    if (!hit.module) { els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = "画布真实预览 · 点模块编辑板块"; els.panelBody.appendChild(buildSurfacePanel()); return; }
+    els.panelBody.textContent = "";
+    if (state.step === "export") { els.panelTitle.textContent = "导出与备份"; els.panelSub.textContent = "选择输出方式，导出高清图片或可编辑文件"; els.panelBody.appendChild(buildExportPanel()); return; }
+    const hit = M.findModule(state.doc, state.selectedModuleId);
+    if (!hit.module) { els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = state.step === "setup" ? "第 1 步 · 设置整条背景与名称" : "画布真实预览 · 点模块编辑板块"; els.panelBody.appendChild(buildSurfacePanel()); return; }
     const def = R.getDef(hit.module.type); els.panelTitle.textContent = def.label; els.panelSub.textContent = "第 " + (hit.pageIndex + 1) + " 屏 · 可编辑文字、图片与版式";
     const saveRow = el("div", "bb-field"); const saveBtn = el("button", "bb-file-btn", "☆ 存为我的模板"); saveBtn.type = "button"; saveBtn.dataset.action = "save-tpl"; saveBtn.title = "把当前这整个板块（含文字、配色、图片与版式）存成「我的模板」，浏览器本地保存，刷新后仍在"; saveRow.appendChild(saveBtn); els.panelBody.appendChild(saveRow);
     (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type)); });
+  }
+
+  /* ===== 第三步导出面板（右侧属性栏），与顶部导出按钮共用同一批导出函数 ===== */
+  function buildExportPanel() {
+    const wrap = el("div", "bb-export-panel");
+    const size = pageSize();
+    const scale = Number(state.doc.exportScale) || 2;
+    const hint = el("p", "bb-export-hint");
+    hint.innerHTML = "";
+    hint.appendChild(document.createTextNode("当前输出倍率 " + scale + "x，单屏导出为 " + (size.pageWidth * scale) + " × " + (size.pageHeight * scale) + " 像素。倍率越高越清晰、文件越大。"));
+    wrap.appendChild(hint);
+
+    const main = el("div", "bb-export-main");
+    function btn(cls, label, sub, handler, primary) {
+      const b = el("button", cls + (primary ? " primary" : ""), label);
+      b.type = "button";
+      if (sub) b.appendChild(el("small", null, sub));
+      b.addEventListener("click", function () { handler(); });
+      main.appendChild(b);
+    }
+    main.appendChild(el("div", "bb-panel-divider", "图片导出"));
+    btn("bb-export-btn", "导出当前屏", "PNG · " + (size.pageWidth * scale) + "×" + (size.pageHeight * scale), function () { exportPng(false); }, true);
+    btn("bb-export-btn", "导出全部屏", "多屏逐个下载 PNG", function () { exportPng(true); });
+    btn("bb-export-btn", "导出连续长图", "全部屏拼成一张 PNG（需连续模式）", exportStripPng);
+    main.appendChild(el("div", "bb-panel-divider", "可编辑文件"));
+    btn("bb-export-btn", "导出 PSD", "分层可编辑（可选打包字体）", function () {
+      exportPsd().then(function (result) {
+        if (result && els.packFontsToggle && els.packFontsToggle.checked) {
+          packFontsZip().catch(function (e) { if (global.alert) global.alert("字体打包失败：" + ((e && e.message) || e)); });
+        }
+      }).catch(function (e) { if (global.alert) global.alert("导出失败：" + ((e && e.message) || e)); });
+    });
+    main.appendChild(el("div", "bb-panel-divider", "草稿"));
+    btn("bb-export-btn", "备份草稿", "含图片，跨会话不丢", saveDraft);
+    wrap.appendChild(main);
+    return wrap;
   }
 
   function renderAll() {
@@ -1121,9 +1179,17 @@
      卡片底色/边框/圆角、图文排版），供分屏 / 全部 / 连续长图导出共用。
      ================================================================ */
 
-  /* 主题色：与 DOM 预览同源（C.THEMES[theme]），保证导出观感随主题变化。 */
+  /* 主题色：与 DOM 预览同源（C.THEMES[theme]），保证导出观感随主题变化。
+     themeOverrides（设置步骤「微调主题」）在此叠加：用户手动覆盖的字段优先，未覆盖回退预设。 */
   function artTheme() {
-    return C.themeStyle(state.doc.theme);
+    const base = C.themeStyle(state.doc.theme);
+    const ov = state.doc.themeOverrides || {};
+    const merged = Object.assign({}, base);
+    Object.keys(ov).forEach(function (k) {
+      const v = ov[k];
+      if (v !== null && v !== undefined && v !== "") merged[k] = v;
+    });
+    return merged;
   }
 
   /* ===== 主题风格绘制辅助（卡片骨架/形状/底纹），DOM 与 Canvas 双侧共用同名概念 ===== */
@@ -2928,7 +2994,7 @@
     }
     return module;
   }
-  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); (parsed.pages || []).forEach(function (page) { (page.modules || []).forEach(migrateModuleData); }); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; if (state.doc.headingFont) ensureFont(state.doc.headingFont); if (state.doc.bodyFont) ensureFont(state.doc.bodyFont); if (state.doc.fontFamily) ensureFont(state.doc.fontFamily); renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
+  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); (parsed.pages || []).forEach(function (page) { (page.modules || []).forEach(migrateModuleData); }); state.doc = parsed; if (!state.doc.themeOverrides) state.doc.themeOverrides = {}; if (!state.doc.exportScale) state.doc.exportScale = 2; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; if (state.doc.headingFont) ensureFont(state.doc.headingFont); if (state.doc.bodyFont) ensureFont(state.doc.bodyFont); if (state.doc.fontFamily) ensureFont(state.doc.fontFamily); renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
 
   function bindEvents() {
     els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
@@ -2995,6 +3061,26 @@
     if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
     if (els.importThemeBtn) els.importThemeBtn.addEventListener("click", showThemeImportModal);
     if (els.importModuleBtn) els.importModuleBtn.addEventListener("click", showModuleImportModal);
+    /* ===== 三步向导切换 ===== */
+    if (els.stepBar) els.stepBar.addEventListener("click", function (event) {
+      const button = event.target.closest(".bb-step[data-step]");
+      if (!button) return;
+      const next = button.dataset.step;
+      if (next === state.step) return;
+      state.step = next;
+      /* 进入编辑步骤清除选中，避免属性栏在库栏隐藏时残留孤板块面板 */
+      if (next !== "edit") state.selectedModuleId = null;
+      renderAll();
+    });
+    /* ===== 导出倍率 ===== */
+    if (els.exportScaleGroup) els.exportScaleGroup.addEventListener("click", function (event) {
+      const button = event.target.closest("[data-scale]");
+      if (!button) return;
+      state.doc.exportScale = Number(button.dataset.scale);
+      renderToolbar(); renderPanel();
+    });
+    /* ===== 微调主题 ===== */
+    if (els.tweakThemeBtn) els.tweakThemeBtn.addEventListener("click", showThemeTweakModal);
   }
 
   /* ===== 主题导入弹窗 ===== */
@@ -3094,6 +3180,152 @@
       msgArea.style.display = "block";
       msgArea.className = type === "error" ? "bb-modal-error" : "bb-modal-success";
       msgArea.textContent = text;
+    }
+  }
+
+  /* ===== 微调主题：在当前预设主题基础上手动覆盖颜色与风格字段（写入 doc.themeOverrides） ===== */
+  const THEME_COLOR_FIELDS = [
+    { key: "primary", label: "主色" },
+    { key: "primaryDark", label: "深主色" },
+    { key: "primarySoft", label: "浅底" },
+    { key: "accent", label: "强调色" },
+    { key: "accentSoft", label: "强调浅底" },
+    { key: "line", label: "线色 / 描边" },
+    { key: "soft", label: "软底 / 卡片空底" },
+  ];
+  const THEME_STYLE_FIELDS = [
+    { key: "cardStyle", label: "卡片骨架", options: [["card", "细边框白底"], ["panel", "深色硬边"], ["glass", "磨砂玻璃"], ["ticket", "打孔票据"], ["sticker", "白底粗描边贴纸"], ["ink", "双层描边纸感"]] },
+    { key: "radius", label: "圆角 (px)", type: "number" },
+    { key: "shadow", label: "阴影", options: [["soft", "柔和"], ["hard", "硬偏移"], ["glow", "霓虹光晕"], ["none", "无"]] },
+    { key: "divider", label: "分割线", options: [["wave", "波浪"], ["dots", "圆点"], ["line", "直线"], ["glitch", "故障线"], ["thread", "缝线"], ["dashed", "虚线"]] },
+    { key: "chips", label: "标签块形状", options: [["pill", "胶囊"], ["squared", "方角"], ["tag", "单边缺角"]] },
+    { key: "titleDecor", label: "大标题装饰", options: [["none", "无"], ["bar", "色条"], ["bracket", "括号"], ["stitch", "缝线"], ["kicker", "斜杠序号"]] },
+    { key: "pattern", label: "页面底纹", options: [["none", "无"], ["grid", "网格"], ["dots", "圆点"], ["stripes", "斜条纹"], ["paper", "纸纹"], ["noise", "噪点"]] },
+    { key: "avatarStyle", label: "头像装饰", options: [["none", "无"], ["ring", "描边圈"], ["glow", "光晕"], ["badge", "角标"], ["frame", "相框"], ["polaroid", "拍立得"]] },
+  ];
+  function hexToColor(value) {
+    return String(value || "").match(/^#[0-9a-f]{6}$/i) ? value.toLowerCase() : "#000000";
+  }
+  function themeOverride(key) {
+    const ov = state.doc.themeOverrides || {};
+    return ov[key] == null || ov[key] === "" ? null : ov[key];
+  }
+  function showThemeTweakModal() {
+    const existing = document.getElementById("bb-tweak-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+    const base = C.themeStyle(state.doc.theme);
+
+    const mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-tweak-modal";
+    const modal = document.createElement("div");
+    modal.className = "bb-modal";
+    modal.appendChild(el("h3", null, "微调主题「" + (base.label || state.doc.theme) + "」"));
+    modal.appendChild(el("p", null, "在预设主题基础上手动覆盖颜色与风格。未覆盖的项显示为「继承预设」，恢复默认即清除该项覆盖。改动实时反映到画布与导出。"));
+
+    const body = el("div");
+    body.style.marginTop = "6px";
+
+    function section(title) {
+      const d = el("div", "bb-tweak-section", title);
+      body.appendChild(d);
+    }
+
+    /* 颜色覆盖 */
+    section("颜色覆盖");
+    THEME_COLOR_FIELDS.forEach(function (field) {
+      const cur = themeOverride(field.key);
+      const preset = base[field.key] || "#ffffff";
+      const row = el("div", "bb-tweak-row");
+      row.appendChild(el("span", "bb-tweak-label", field.label));
+      const colorInput = el("input", "bb-tweak-input");
+      colorInput.type = "color";
+      colorInput.value = hexToColor(cur != null ? cur : preset);
+      const hex = el("input", "bb-tweak-hex");
+      hex.value = cur != null ? cur : preset;
+      hex.readOnly = cur == null;
+      hex.style.opacity = cur == null ? "0.55" : "1";
+      const flag = el("span", "bb-tweak-inherit");
+      flag.textContent = cur == null ? "继承预设" : "已覆盖";
+      const clear = el("a", "bb-tweak-clear", "恢复默认");
+      clear.style.display = cur == null ? "none" : "inline";
+      clear.title = "清除该颜色覆盖，回退到预设主题";
+      function applyHex() {
+        const value = hexToColor(hex.value);
+        state.doc.themeOverrides = state.doc.themeOverrides || {};
+        state.doc.themeOverrides[field.key] = value;
+        colorInput.value = value;
+        hex.value = value;
+        flag.textContent = "已覆盖";
+        clear.style.display = "inline";
+        renderAll();
+      }
+      colorInput.addEventListener("input", function () { hex.value = colorInput.value; applyHex(); });
+      hex.addEventListener("change", applyHex);
+      clear.addEventListener("click", function () {
+        if (state.doc.themeOverrides) delete state.doc.themeOverrides[field.key];
+        renderAll(); maskRemove();
+      });
+      row.appendChild(colorInput); row.appendChild(hex); row.appendChild(flag); row.appendChild(clear);
+      body.appendChild(row);
+    });
+
+    /* 风格覆盖 */
+    section("风格覆盖");
+    THEME_STYLE_FIELDS.forEach(function (field) {
+      const cur = themeOverride(field.key);
+      const preset = field.type === "number" ? (base[field.key] != null ? base[field.key] : 13) : (base[field.key] || (field.options && field.options[0][0]));
+      const row = el("div", "bb-tweak-row");
+      row.appendChild(el("span", "bb-tweak-label", field.label));
+      let input;
+      if (field.type === "number") {
+        input = el("input", "bb-tweak-num");
+        input.type = "number"; input.min = "0"; input.max = "100"; input.step = "1";
+        input.value = cur != null ? cur : preset;
+      } else {
+        input = el("select", "bb-tweak-select");
+        field.options.forEach(function (pair) {
+          const opt = el("option", pair[1]); opt.value = pair[0]; input.appendChild(opt);
+        });
+        input.value = cur != null ? cur : preset;
+      }
+      const flag = el("span", "bb-tweak-inherit");
+      flag.textContent = cur == null ? "继承预设" : "已覆盖";
+      const clear = el("a", "bb-tweak-clear", "恢复默认");
+      clear.style.display = cur == null ? "none" : "inline";
+      function applyValue() {
+        state.doc.themeOverrides = state.doc.themeOverrides || {};
+        state.doc.themeOverrides[field.key] = field.type === "number" ? (Number(input.value) || 0) : input.value;
+        flag.textContent = "已覆盖";
+        clear.style.display = "inline";
+        renderAll();
+      }
+      input.addEventListener(field.type === "number" ? "input" : "change", applyValue);
+      clear.addEventListener("click", function () {
+        if (state.doc.themeOverrides) delete state.doc.themeOverrides[field.key];
+        renderAll(); maskRemove();
+      });
+      row.appendChild(input); row.appendChild(flag); row.appendChild(clear);
+      body.appendChild(row);
+    });
+    modal.appendChild(body);
+
+    const actionRow = el("div", "bb-modal-actions");
+    const resetAll = el("button", "bb-btn ghost", "全部恢复预设");
+    resetAll.type = "button";
+    resetAll.addEventListener("click", function () { state.doc.themeOverrides = {}; renderAll(); maskRemove(); });
+    const closeBtn = el("button", "bb-btn primary", "完成");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", function () { maskRemove(); });
+    actionRow.appendChild(resetAll);
+    actionRow.appendChild(closeBtn);
+    modal.appendChild(actionRow);
+    mask.appendChild(modal);
+    mask.addEventListener("click", function (e) { if (e.target === mask) maskRemove(); });
+    document.body.appendChild(mask);
+
+    function maskRemove() {
+      if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
     }
   }
 
@@ -3228,7 +3460,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;

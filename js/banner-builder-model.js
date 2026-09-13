@@ -31,6 +31,7 @@
       screenMode: "split",
       backgroundColor: "#ffffff",
       backgroundImage: imageValue(),
+      themeOverrides: {},
       pages: [createPage()],
     };
   }

@@ -11,8 +11,8 @@
     [hidden]{display:none!important}
     .bb-page{display:flex;height:100dvh;min-height:100dvh;overflow:hidden;flex-direction:column}
     .bb-page .site-nav,.bb-page .site-footer{flex:0 0 auto}
-    .bb-page .site-footer{width:min(1440px,calc(100% - 32px));margin:0 auto;padding:14px 0 18px}
-    .bb-shell{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;width:min(1440px,calc(100% - 32px));margin:0 auto}
+    .bb-page .site-footer{width:min(var(--ob-content),calc(100% - 40px));margin:0 auto;padding:14px 0 18px}
+    .bb-shell{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;width:min(var(--ob-content),calc(100% - 40px));margin:0 auto}
     .bb-toolbar{display:flex;flex:0 0 auto;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:8px 0;padding:6px 10px;border:1px solid var(--bb-line);border-radius:var(--ob-radius);background:var(--bb-panel);box-shadow:var(--ob-shadow)}
     .bb-toolbar-label{color:var(--ob-muted);font-size:10.5px;font-weight:800;letter-spacing:.02em}
     .bb-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--bb-line);border-radius:8px;background:var(--bb-soft)}
@@ -153,19 +153,69 @@
     .bb-theme-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:800;color:var(--ob-primary-dark);background:var(--ob-primary-soft)}
     .bb-modal-error{margin:10px 0;padding:9px 12px;border-radius:9px;background:var(--ob-accent-soft);color:#b54a35;font-size:11px;font-weight:700}
     .bb-modal-success{margin:10px 0;padding:9px 12px;border-radius:9px;background:var(--ob-primary-soft);color:var(--ob-primary-dark);font-size:11px;font-weight:700}
+    /* ===== 三步向导 ===== */
+    .bb-stepper,.bb-stepbar{display:flex;align-items:stretch;margin:10px 0 0;padding:0}
+    .bb-step{position:relative;display:flex;align-items:center;gap:9px;min-height:44px;padding:6px 16px 6px 12px;border:1px solid var(--bb-line);border-radius:12px;background:var(--bb-panel);color:var(--ob-muted);font-family:inherit;cursor:pointer;text-align:left;box-shadow:var(--ob-shadow)}
+    .bb-step:hover{border-color:var(--ob-primary)}
+    .bb-step.is-active{border-color:var(--ob-primary);background:var(--ob-primary-soft);color:var(--ob-primary-dark);box-shadow:0 0 0 3px color-mix(in srgb,var(--ob-primary) 12%,transparent)}
+    .bb-step-no{display:grid;width:24px;height:24px;flex:0 0 auto;place-items:center;border-radius:50%;background:var(--ob-muted);color:#fff;font-size:12px;font-weight:850;line-height:1}
+    .bb-step.is-active .bb-step-no{background:var(--ob-primary)}
+    .bb-step-txt{display:flex;flex-direction:column;line-height:1.25;font-size:13px;font-weight:850}
+    .bb-step-txt em{font-style:normal;font-size:10.5px;font-weight:700;color:var(--ob-muted)}
+    .bb-step.is-active .bb-step-txt em{color:var(--ob-primary-dark);opacity:.72}
+    .bb-step-line{flex:1;align-self:center;height:1px;min-width:14px;background:var(--bb-line);margin:0 -6px}
+    .bb-stepbar[hidden]{display:none}
+    .bb-tweak-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .bb-tweak-label{flex:0 0 84px;color:var(--ob-ink);font-size:11px;font-weight:800}
+    .bb-tweak-input{width:34px;height:26px;padding:0;border:1px solid var(--bb-line);border-radius:6px;background:#fff;cursor:pointer}
+    .bb-tweak-input::-webkit-color-swatch-wrapper{padding:2px}.bb-tweak-input::-webkit-color-swatch{border:0;border-radius:3px}
+    .bb-tweak-hex{width:76px;min-height:26px;padding:0 7px;border:1px solid var(--bb-line);border-radius:6px;color:var(--ob-ink);background:#fff;font-size:11px;font-family:monospace}
+    .bb-tweak-inherit{flex:0 0 auto;color:var(--ob-muted);font-size:10px;font-weight:800}
+    .bb-tweak-clear{display:inline-block;padding:0;border:0;color:#b54a35;background:transparent;font-size:10px;font-weight:800;cursor:pointer;text-decoration:underline}
+    .bb-tweak-section{margin:14px 0 6px;padding-top:12px;border-top:1px solid var(--bb-line);color:var(--ob-primary-dark);font-size:11px;font-weight:850}
+    .bb-tweak-select{min-height:27px;padding:0 6px;border:1px solid var(--bb-line);border-radius:7px;color:var(--ob-ink);background:#fff;font-size:11px}
+    .bb-tweak-num{width:60px;min-height:27px;padding:0 7px;border:1px solid var(--bb-line);border-radius:7px;color:var(--ob-ink);background:#fff;font-size:11px}
+    .bb-workbench.hide-library{grid-template-columns:minmax(0,1fr) 312px}
+    .bb-workbench.hide-library .library-col{display:none}
+    .bb-export-panel{padding:4px 2px}
+    .bb-export-hint{margin:0 0 12px;padding:10px 12px;border:1px solid var(--bb-line);border-radius:10px;background:var(--bb-soft);color:var(--ob-ink);font-size:11px;line-height:1.7}
+    .bb-export-main{display:grid;gap:8px}
+    .bb-export-btn{display:flex;width:100%;min-height:40px;align-items:center;justify-content:space-between;gap:10px;padding:0 13px;border:1px solid var(--bb-line);border-radius:11px;color:var(--ob-ink);background:#fff;font-size:12px;font-weight:800;cursor:pointer;text-align:left}
+    .bb-export-btn:hover{border-color:var(--ob-primary);color:var(--ob-primary-dark);background:var(--ob-primary-soft)}
+    .bb-export-btn small{color:var(--ob-muted);font-weight:700;font-size:10px}
+    .bb-export-btn.primary{border-color:var(--ob-primary);background:var(--ob-primary);color:#fff}
+    .bb-export-btn.primary small{color:rgba(255,255,255,.85)}
+    .bb-export-btn.primary:hover{background:var(--ob-primary-dark)}
+    .bb-toolbar-export .bb-size-readout{display:inline-block}
   </style>
 </head>
 <body class="bb-page" data-page-node-id="gEDCPzwlAU0pHnj4YFuEuf">
   <nav class="site-nav home-nav" aria-label="网站导航" data-page-node-id="rdzRU0lG4hmR3HVeO1AIeL"><div class="nav-inner" data-page-node-id="lQFp2iRIvgLzR6o7r3jBup"><a class="brand-link" href="../index.html" data-page-node-id="J04S79IvhhnF9gAzvGYbTq"><span class="brand-mark" data-page-node-id="tHbeSOJcBKi5GwoONjqfC2"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-page-node-id="ZDlPqsjmywQZLybhmxFZ2x"><path d="M5 6.5 12 3l7 3.5v11L12 21l-7-3.5v-11Z" stroke="currentColor" stroke-width="1.8" data-page-node-id="iCmOBPUf7hRran6nUlOrGq"/><path d="m5.5 7 6.5 3.3L18.5 7M12 10.3V20" stroke="currentColor" stroke-width="1.8" data-page-node-id="CPQhHg6nJHJtdy3Zadp9ga"/></svg></span>Only-box</a><div class="nav-links" data-page-node-id="17YEEEfBMtJtLjYUKLdpYL"><a href="../about.html" data-page-node-id="LY9fP5Aiy0l5qj8LX83mkv">关于本项目</a></div></div></nav>
   <main class="bb-shell" data-page-node-id="LENZqLGIl107ewTDJEqwCT">
-    <div class="bb-toolbar" role="toolbar" aria-label="长条排版工具栏" data-page-node-id="08palQUDdKhjenw9hec3TT">
-      <span class="bb-toolbar-label" data-page-node-id="LoftwZ260szaFbHh6ztOkR">画布比例</span><div class="bb-seg" id="ratioGroup" role="group" data-page-node-id="BeXkAVf7SErKwdDpx77FJl"><button type="button" data-ratio="9:16" class="is-active" aria-pressed="true" data-page-node-id="xd8CKNP9oaeRfc3GAFsKji">9:16 竖屏</button><button type="button" data-ratio="3:4" aria-pressed="false" data-page-node-id="NArwXkk1Edgd5kdgsHls1j">3:4 竖屏</button></div><span class="bb-size-readout" id="sizeReadout" data-page-node-id="gG32OzVt4BPIXVbv2iy3Ay">1242 × 2208 px</span>
-      <span class="bb-toolbar-label">屏幕</span><div class="bb-seg" id="screenModeGroup" role="group" aria-label="屏幕衔接方式" data-page-node-id="sM1ScreenModeGrp0"><button type="button" data-screen="split" class="is-active" aria-pressed="true" data-page-node-id="sM1SplitBtn000">分屏</button><button type="button" data-screen="continuous" aria-pressed="false" data-page-node-id="sM1ContBtn0000">连续</button></div>
-      <button class="bb-btn primary" id="addPageBtn" type="button" data-page-node-id="QMlAooGqKpZA3YN3Pw0sk5">＋ 新增屏</button><select class="bb-input bb-toolbar-select" id="themeSelect" title="主题配色" aria-label="主题配色"></select><button class="bb-btn ghost" id="importThemeBtn" type="button" title="导入 AI 生成的主题配色">主题</button><select class="bb-input bb-toolbar-select" id="fontSelect" title="全局字体（标题正文未单独设置时生效）" aria-label="全局字体"></select><select class="bb-input bb-toolbar-select" id="headingFontSelect" title="标题字体（主标题/板块标题）" aria-label="标题字体"></select><select class="bb-input bb-toolbar-select" id="bodyFontSelect" title="正文字体（正文/说明/图注）" aria-label="正文字体"></select><button class="bb-btn ghost" id="importFontBtn" type="button" title="导入本地字体文件（.ttf/.otf/.woff/.woff2），导入后可在字体下拉中选用">导入字体</button><select class="bb-input bb-toolbar-select" id="backgroundScope" aria-label="背景作用范围" data-page-node-id="ZhEzTik32c9m4UVC5KO4EG"><option value="doc" data-page-node-id="RbpKFY3YmUShANUazpa32f">整条长条背景</option><option value="page" data-page-node-id="kqkn4CbFVjusxBQD30vDRC">当前屏背景</option></select><input class="bb-btn ghost bb-bg-color" id="backgroundColorInput" type="color" value="#ffffff" title="设置背景底色（可与背景图叠加，底色在下、底图在上）" aria-label="背景底色"><label class="bb-btn ghost bb-import-btn" for="backgroundInput" data-page-node-id="niFZGtiDjQE5fCTElrvvvF">导入背景图<input class="bb-file-input" id="backgroundInput" type="file" accept="image/*" data-page-node-id="DqxSwVo1uvlWxSlMndHSrU"></label><span class="bb-spacer" data-page-node-id="Q44rn6k1vN3WKKD1CGXaMs"></span><span class="bb-stats" id="docStats" data-page-node-id="xmTr0oow9A7IOk0BpzF4iF">1 屏 · 0 个板块</span>
-      <button class="bb-btn ghost" id="exportPngBtn" type="button" title="导出当前屏 PNG" data-page-node-id="GPPQqtW68mLyeikbAwDWjC">导出当前屏</button><button class="bb-btn ghost" id="exportAllBtn" type="button" title="逐屏导出全部 PNG（多屏时逐个间隔下载；若浏览器提示，请选择允许下载多个文件）" data-page-node-id="3ZDlf7KPvxelyE0ICyS5Im">导出全部屏</button><button class="bb-btn ghost" id="exportStripBtn" type="button" title="把全部屏拼成一张连续 PNG，整条背景跨屏连续">导出连续长图</button><button class="bb-btn ghost" id="exportPsdBtn" type="button" title="导出可编辑图层 PSD" data-page-node-id="b0wj0gWgXlG6Z2q4mDqc6L">导出 PSD</button><label class="bb-btn ghost" id="packFontsLabel" title="导出 PSD 时同时打包所用字体文件（.ttf/.otf），在 Photoshop 中打开前先安装字体即可正确渲染文字"><input type="checkbox" id="packFontsToggle" style="margin-right:4px;accent-color:var(--ob-primary)">打包字体</label><button class="bb-btn ghost" id="saveDraftBtn" type="button" title="备份草稿（含图片数据，跨会话恢复不丢图）" data-page-node-id="3VWeSUjSzlMUmHubRUNlwX">备份草稿</button><label class="bb-btn ghost" for="loadDraftInput" data-page-node-id="yhQuhflH0P8Aq2YyOw0mEA">恢复<input class="bb-file-input" id="loadDraftInput" type="file" data-page-node-id="r0wtqXAeegQALI4qj3muwU"></label>
-      <div class="bb-zoom" data-page-node-id="8gEiR46mbhDHs3KQUo20uh"><span data-page-node-id="gQeRmcRjkItJ338uA6GwKl" hidden></span><button id="zoomOutBtn" type="button" aria-label="缩小" data-page-node-id="kbFO5Q8Ck0LrdhDU9Pnpy9">−</button><span class="bb-zoom-value" id="zoomValue" data-page-node-id="rOlM5gD1BQ5IEFuPevwIPM">46%</span><button id="zoomInBtn" type="button" aria-label="放大" data-page-node-id="Ejr1DTL4a1tt5njvz2wejh">＋</button><button class="bb-btn ghost" id="zoomFitBtn" type="button" data-page-node-id="kE542VjOARLF9jiwA8yypi">适配</button></div>
+    <div class="bb-stepbar" id="stepBar" role="tablist" aria-label="制作步骤">
+      <button class="bb-step is-active" id="stepSetup" type="button" data-step="setup" role="tab" aria-selected="true"><span class="bb-step-no">1</span><span class="bb-step-txt">设置<em>背景与主题</em></span></button>
+      <span class="bb-step-line"></span>
+      <button class="bb-step" id="stepEdit" type="button" data-step="edit" role="tab" aria-selected="false"><span class="bb-step-no">2</span><span class="bb-step-txt">编辑<em>内容排版</em></span></button>
+      <span class="bb-step-line"></span>
+      <button class="bb-step" id="stepExport" type="button" data-step="export" role="tab" aria-selected="false"><span class="bb-step-no">3</span><span class="bb-step-txt">导出<em>输出与备份</em></span></button>
     </div>
-    <div class="bb-workbench" data-page-node-id="zWVvsf2HL3lt8shwl5ltml">
+    <div class="bb-toolbar bb-toolbar-setup" role="toolbar" aria-label="设置：背景与主题" data-panel="setup">
+      <span class="bb-toolbar-label">画布比例</span><div class="bb-seg" id="ratioGroup" role="group"><button type="button" data-ratio="9:16" class="is-active" aria-pressed="true">9:16 竖屏</button><button type="button" data-ratio="3:4" aria-pressed="false">3:4 竖屏</button></div><span class="bb-size-readout" id="sizeReadout">1242 × 2208 px</span>
+      <span class="bb-toolbar-label">屏幕</span><div class="bb-seg" id="screenModeGroup" role="group" aria-label="屏幕衔接方式"><button type="button" data-screen="split" class="is-active" aria-pressed="true">分屏</button><button type="button" data-screen="continuous" aria-pressed="false">连续</button></div>
+      <select class="bb-input bb-toolbar-select" id="themeSelect" title="主题配色" aria-label="主题配色"></select><button class="bb-btn ghost" id="importThemeBtn" type="button" title="导入 AI 生成的主题配色">导入主题</button><button class="bb-btn ghost" id="tweakThemeBtn" type="button" title="在预设主题基础上手动微调 7 项颜色与 8 项风格">微调主题</button>
+      <select class="bb-input bb-toolbar-select" id="fontSelect" title="全局字体（标题正文未单独设置时生效）" aria-label="全局字体"></select><select class="bb-input bb-toolbar-select" id="headingFontSelect" title="标题字体（主标题/板块标题）" aria-label="标题字体"></select><select class="bb-input bb-toolbar-select" id="bodyFontSelect" title="正文字体（正文/说明/图注）" aria-label="正文字体"></select><button class="bb-btn ghost" id="importFontBtn" type="button" title="导入本地字体文件（.ttf/.otf/.woff/.woff2），导入后可在字体下拉中选用">导入字体</button>
+      <select class="bb-input bb-toolbar-select" id="backgroundScope" aria-label="背景作用范围"><option value="doc">整条长条背景</option><option value="page">当前屏背景</option></select><input class="bb-btn ghost bb-bg-color" id="backgroundColorInput" type="color" value="#ffffff" title="设置背景底色（可与背景图叠加，底色在下、底图在上）" aria-label="背景底色"><label class="bb-btn ghost bb-import-btn" for="backgroundInput">导入背景图<input class="bb-file-input" id="backgroundInput" type="file" accept="image/*"></label>
+    </div>
+    <div class="bb-toolbar bb-toolbar-edit" role="toolbar" aria-label="编辑：内容排版" data-panel="edit" hidden>
+      <button class="bb-btn primary" id="addPageBtn" type="button">＋ 新增屏</button>
+      <span class="bb-spacer"></span><span class="bb-stats" id="docStats">1 屏 · 0 个板块</span>
+      <div class="bb-zoom"><button id="zoomOutBtn" type="button" aria-label="缩小">−</button><span class="bb-zoom-value" id="zoomValue">46%</span><button id="zoomInBtn" type="button" aria-label="放大">＋</button><button class="bb-btn ghost" id="zoomFitBtn" type="button">适配</button></div>
+    </div>
+    <div class="bb-toolbar bb-toolbar-export" role="toolbar" aria-label="导出：输出与备份" data-panel="export" hidden>
+      <span class="bb-toolbar-label">输出倍率</span><div class="bb-seg" id="exportScaleGroup" role="group" aria-label="导出倍率"><button type="button" data-scale="1" aria-pressed="false">1x</button><button type="button" data-scale="2" class="is-active" aria-pressed="true">2x</button><button type="button" data-scale="3" aria-pressed="false">3x</button></div><span class="bb-size-readout" id="exportSizeReadout">1500 × 2668 px</span>
+      <button class="bb-btn ghost" id="exportPngBtn" type="button" title="导出当前屏 PNG">导出当前屏</button><button class="bb-btn ghost" id="exportAllBtn" type="button" title="逐屏导出全部 PNG（多屏时逐个间隔下载）">导出全部屏</button><button class="bb-btn ghost" id="exportStripBtn" type="button" title="把全部屏拼成一张连续 PNG，整条背景跨屏连续">导出连续长图</button><button class="bb-btn ghost" id="exportPsdBtn" type="button" title="导出可编辑图层 PSD">导出 PSD</button><label class="bb-btn ghost" id="packFontsLabel" title="导出 PSD 时同时打包所用字体文件"><input type="checkbox" id="packFontsToggle" style="margin-right:4px;accent-color:var(--ob-primary)">打包字体</label><button class="bb-btn ghost" id="saveDraftBtn" type="button" title="备份草稿（含图片数据，跨会话恢复不丢图）">备份草稿</button><label class="bb-btn ghost" for="loadDraftInput">恢复<input class="bb-file-input" id="loadDraftInput" type="file"></label>
+    </div>
+    <div class="bb-workbench" id="workbench" data-page-node-id="zWVvsf2HL3lt8shwl5ltml">
       <section class="bb-col library-col" aria-label="板块库" data-page-node-id="gRQ35U3EYQkeFkxvh54mz8"><header class="bb-col-head" data-page-node-id="VFdzZDT6k234R800NvetRX"><div data-page-node-id="Sh7lHlNc4lHeoB5Cz20MvH"><h2 data-page-node-id="qe7rConXyrPMvUZPw58WYF">板块库</h2><p class="bb-sub" id="libraryHint" data-page-node-id="ogIkvXV8MsDzObWyTAOUyv">点击板块，添加到第 1 屏</p><button class="bb-btn ghost" id="importModuleBtn" type="button" title="导入 AI 生成的板块模块">导入板块</button></div></header><div class="bb-col-body library" data-page-node-id="libBodyMyTpl01"><div class="bb-mytpl-area" id="myTplArea" hidden data-page-node-id="myTplArea00001"><div class="bb-mytpl-title"><span data-page-node-id="myTplTitl0001">★ 我的模板</span><span class="bb-mytpl-count" id="myTplCount" data-page-node-id="myTplCount000"></span></div><div id="myTplList" data-page-node-id="myTplList0000"></div></div><div id="libraryList" data-page-node-id="srmso8IUsa201JQNCGz5eU"></div></div></section>
       <section class="bb-col" aria-label="长条画布" data-page-node-id="HMhlACpNAdNQfAB6Wb4fCQ"><header class="bb-col-head" data-page-node-id="BG0dzmpRsJJELSLQAsIk9B"><div data-page-node-id="UAUwWZJFMFJ2w37TKEB3vv"><h2 data-page-node-id="z5cTrjOeryKpOHEGFLf7Wh">长条预览</h2><p class="bb-sub" data-page-node-id="vVZRd3qqk6DWamsUxIq8Zj">按观众从上到下的阅读顺序组织多屏内容</p></div><label class="bb-pickmode" id="pickModeSwitch" title="预览点击模式：选整屏=点击屏内任意位置选中该屏；选图层=点击板块选中该板块，点屏内空白选中该屏"><input id="pickModuleToggle" type="checkbox"><span class="bb-pickmode-track"><span class="bb-pickmode-thumb"></span></span><span class="bb-pickmode-text" id="pickModeText">选整屏</span></label></header><div class="bb-col-body" id="canvasBody" data-page-node-id="4IA2t7FEjfnOuzz6yHGKgm"></div></section>
       <section class="bb-col" aria-label="属性面板" data-page-node-id="3taZjOqGwXNDiW11H2rQAB"><header class="bb-col-head" data-page-node-id="o2iuUoxz8PopG44RldzfWj"><div data-page-node-id="SED9acIhbkWkJLl7z9dNxo"><h2 class="bb-panel-title" id="panelTitle" data-page-node-id="7q56F6RA959MBIHxp0EDh7">整条 / 当前屏</h2><p class="bb-panel-sub" id="panelSub" data-page-node-id="IXZTNXHBy040wIUmlo6ua0">画布真实预览 · 点模块编辑板块</p></div></header><div class="bb-col-body" id="panelBody" data-page-node-id="Djbhd6NBhrLdZXaTtiv1Mo"></div></section>
@@ -183,6 +233,6 @@
   <script src="../js/banner-builder-module-importer.js?v=20260912-01"></script>
   <script src="../js/vendor/html-to-image.js?v=20260907-20"></script>
   <script src="../js/banner-builder-export.js?v=20260913-02"></script>
-  <script src="../js/banner-builder.js?v=20260913-05"></script>
+  <script src="../js/banner-builder.js?v=20260913-06"></script>
 </body>
 </html>
