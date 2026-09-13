@@ -69,6 +69,20 @@
       return cssText.replace(urlRe, function () { return 'url("' + (dataUrls[i++] || "") + '")'; });
     });
   }
+  /* src 型字体（本地相对路径 / 裸字体 URL）的 @font-face 内联：把 url(...) 里的
+     任意路径（http 或相对路径）转成 dataURL，保证 SVG-as-image 沙箱内可用。 */
+  function inlineFontFaceUrls(cssText) {
+    const urlRe = /url\((['"]?)([^'")]+)\1\)/g;
+    const jobs = [];
+    let m;
+    while ((m = urlRe.exec(cssText)) !== null) jobs.push(m[2]);
+    if (!jobs.length) return Promise.resolve(cssText);
+    return Promise.all(jobs.map(function (u) { return fetchAsDataUrl(u); })).then(function (dataUrls) {
+      let i = 0;
+      return cssText.replace(urlRe, function () { return 'url("' + (dataUrls[i++] || "") + '")'; });
+    });
+  }
+
   async function buildFontCss() {
     const doc = BB().doc;
     const keys = [];
@@ -80,6 +94,12 @@
     for (let i = 0; i < keys.length; i++) {
       const f = C.FONTS[keys[i]];
       if (!f || !f.family) continue;
+      /* 用户追加 / 本地字体：src 型，直接合成 @font-face 并内联 dataURL */
+      if (Array.isArray(f.src) && f.src.length && typeof C.fontFaceFor === "function") {
+        const faceCss = C.fontFaceFor(f);
+        if (faceCss) { try { out.push(await inlineFontFaceUrls(faceCss)); } catch (e) { /* 单条失败跳过 */ } }
+        continue;
+      }
       const sheets = [];
       try {
         for (let j = 0; j < document.styleSheets.length; j++) {

@@ -4,6 +4,7 @@
   const C = global.BannerBuilderConstants;
   const R = global.BannerBuilderRegistry;
   const M = global.BannerBuilderModel;
+  const MI = global.BannerBuilderModuleImporter;
   const state = {
     doc: M.createDoc(C.DEFAULT_RATIO),
     activePageId: null,
@@ -27,6 +28,19 @@
       link.href = url;
       document.head.appendChild(link);
     });
+    /* 单字体文件源（用户追加 / 本地字体）：无 @fontsource css 可引，改由 C.fontFaceFor
+       合成 @font-face 内联注入，按 family 去重（同族只注入一次）。 */
+    if (Array.isArray(f.src) && f.src.length) {
+      const faceKey = "faceref:" + f.family;
+      if (fontLinks[faceKey]) return;
+      fontLinks[faceKey] = true;
+      const css = C.fontFaceFor(f);
+      if (!css) return;
+      const style = document.createElement("style");
+      style.id = "bb-font-face-" + key;
+      style.textContent = css;
+      document.head.appendChild(style);
+    }
   }
 
   function showFontFallbackNotice(family) {
@@ -47,7 +61,7 @@
     try {
       const faces = await document.fonts.load("400 24px \"" + f.family + "\"", payload);
       await document.fonts.load("700 24px \"" + f.family + "\"", payload);
-      if (f.css.length > 3) await document.fonts.load("900 24px \"" + f.family + "\"", payload);
+      if (f.css && f.css.length > 3) await document.fonts.load("900 24px \"" + f.family + "\"", payload);
       if (!faces || !faces.length) showFontFallbackNotice(f.family);
     } catch (error) { /* 字体加载失败时使用回退字体渲染 */ }
   }
@@ -118,7 +132,7 @@
      现在所有主题一律走这里，CSS 规则保留仅为兜底。 */
   function applyThemeVars(rootEl) {
     if (!rootEl || !rootEl.style) return;
-    const theme = C.THEMES[state.doc.theme] || C.THEMES.forest;
+    const theme = C.themeStyle(state.doc.theme);
     rootEl.style.setProperty("--ob-primary", theme.primary);
     rootEl.style.setProperty("--ob-primary-dark", theme.primaryDark);
     rootEl.style.setProperty("--ob-primary-soft", theme.primarySoft);
@@ -616,33 +630,74 @@
   }
 
   function renderPerformer(box, data, tpl) {
-    const portraits = el("div", "bb-art-portraits");
-    (data.images || []).forEach(function (item) { const img = visualImage(imageSrc(item), "bb-art-portrait", "嘉宾照片"); if (img) portraits.appendChild(img); });
-    const hasPortraits = portraits.childNodes.length > 0;
-    function makeCopy() {
-      const c = el("div");
-      c.appendChild(el("strong", "bb-art-h3", text(data.name, "嘉宾名称")));
-      c.appendChild(el("p", "bb-art-body", text(data.bio, "嘉宾简介")));
-      const setlist = data.setlist || [];
-      if (setlist.length) { const ul = el("div", "bb-performer-setlist"); setlist.forEach(function (s) { ul.appendChild(el("div", "bb-setlist-item", s)); }); c.appendChild(ul); }
+    const cast = data.cast || [];
+    /* 头像尺寸（按比例换算高度，宽度固定为设计宽的一定比例） */
+    function avatarSize(ratio) {
+      const w = 150;
+      switch (ratio) {
+        case "1:1": return { w: w, h: Math.round(w) };
+        case "3:4": return { w: w, h: Math.round(w * 4 / 3) };
+        case "1:1.4": return { w: w, h: Math.round(w * 1.4) };
+        default: return { w: w, h: Math.round(w) };
+      }
+    }
+    function buildAvatar(member) {
+      const media = el("div", "bb-cast-media " + (member.avatarStyle || "none"));
+      const size = avatarSize(member.avatarRatio || "1:1");
+      const img = visualImage(imageSrc(member.avatar), "bb-cast-avatar", "头像");
+      if (img) { img.style.width = size.w + "px"; img.style.height = size.h + "px"; media.appendChild(img); }
+      else { const ph = el("div", "bb-cast-avatar placeholder"); ph.style.width = size.w + "px"; ph.style.height = size.h + "px"; ph.textContent = "未设头像"; media.appendChild(ph); }
+      return media;
+    }
+    function buildSetlist(member) {
+      const list = (member.setlist || []).filter(function (s) { return s && (s.song || s.coverBy); });
+      if (!list.length) return null;
+      const hasCover = list.some(function (s) { return s.coverBy; });
+      const wrap = el("div", "bb-setlist" + (hasCover ? "" : " single"));
+      const head = el("div", "bb-setlist-head");
+      head.appendChild(el("span", null, "歌单"));
+      if (hasCover) head.appendChild(el("span", null, "原唱 / Cover"));
+      wrap.appendChild(head);
+      list.forEach(function (s) {
+        const row = el("div", "bb-setlist-row");
+        row.appendChild(el("span", "bb-setlist-song", s.song || ""));
+        if (hasCover) row.appendChild(el("span", "bb-setlist-cover", s.coverBy || ""));
+        wrap.appendChild(row);
+      });
+      return wrap;
+    }
+    function buildCopy(member) {
+      const c = el("div", "bb-cast-info");
+      const head = el("div", "bb-cast-head");
+      head.appendChild(el("strong", "bb-art-h3", text(member.name, "成员名称")));
+      if (member.role) head.appendChild(el("span", "bb-cast-role", member.role));
+      if (member.time) head.appendChild(el("span", "bb-cast-time", member.time));
+      c.appendChild(head);
+      if (member.bio) c.appendChild(el("p", "bb-cast-bio", member.bio));
+      const sl = buildSetlist(member);
+      if (sl) c.appendChild(sl);
       return c;
     }
-    if (tpl === "performer-poster") {
-      const poster = el("div", "bb-performer-poster");
-      if (hasPortraits) poster.appendChild(portraits);
-      const overlay = el("div", "bb-performer-poster-copy");
-      overlay.appendChild(el("strong", "bb-art-h3", text(data.name, "嘉宾名称")));
-      overlay.appendChild(el("p", "bb-art-body", text(data.bio, "嘉宾简介")));
-      poster.appendChild(overlay); box.appendChild(poster); return;
+    if (tpl === "cast-cards") {
+      const grid = el("div", "bb-cast-cards");
+      cast.forEach(function (member) {
+        const card = el("div", "bb-cast-card");
+        card.appendChild(buildAvatar(member));
+        card.appendChild(buildCopy(member));
+        grid.appendChild(card);
+      });
+      if (!cast.length) grid.appendChild(el("p", "bb-art-caption", "暂无阵容"));
+      box.appendChild(grid); return;
     }
-    if (tpl === "performer-grid") {
-      const grid = el("div", "bb-performer-grid");
-      if (hasPortraits) grid.appendChild(portraits);
-      grid.appendChild(makeCopy()); box.appendChild(grid); return;
-    }
-    const row = el("div", "bb-art-split");
-    if (hasPortraits) row.appendChild(portraits);
-    row.appendChild(makeCopy()); box.appendChild(row);
+    const list = el("div", "bb-cast-list");
+    cast.forEach(function (member) {
+      const row = el("div", "bb-cast-member");
+      row.appendChild(buildAvatar(member));
+      row.appendChild(buildCopy(member));
+      list.appendChild(row);
+    });
+    if (!cast.length) list.appendChild(el("p", "bb-art-caption", "暂无阵容"));
+    box.appendChild(list);
   }
 
   function renderBooth(box, data, tpl) {
@@ -784,7 +839,7 @@
     const remove = el("button", "bb-icon-btn danger", "×"); remove.type = "button"; remove.title = "删除模块"; remove.dataset.action = "module-del"; remove.dataset.moduleId = module.id;
     actions.appendChild(up); actions.appendChild(down); actions.appendChild(remove); head.appendChild(actions); box.appendChild(head);
     addVisualBody(box, module);
-    box.querySelectorAll(".bb-art-body,.bb-art-caption,.bb-setlist-item,.bb-cover-qq,.bb-quote-source,.bb-art-free-text,.bb-art-info,.bb-art-subtitle").forEach(applyBodyFontScope);
+    box.querySelectorAll(".bb-art-body,.bb-art-caption,.bb-setlist-item,.bb-setlist-song,.bb-setlist-cover,.bb-cast-bio,.bb-cover-qq,.bb-quote-source,.bb-art-free-text,.bb-art-info,.bb-art-subtitle").forEach(applyBodyFontScope);
     box.querySelectorAll("img").forEach(function (image) {
       image.style.objectFit = dataImageFit(module.data);
       if (module.data.imageRatio && module.data.imageRatio !== "auto") image.style.aspectRatio = module.data.imageRatio.replace(":", " / ");
@@ -879,6 +934,14 @@
   function renderLibrary() {
     els.libraryList.textContent = ""; const frag = document.createDocumentFragment();
     R.MODULE_ORDER.forEach(function (type) { const button = el("button", "bb-lib-item"); button.type = "button"; button.dataset.action = "lib-add"; button.dataset.type = type; button.appendChild(el("span", "bb-lib-text", R.getDef(type).label)); button.appendChild(el("span", "bb-lib-plus", "+")); frag.appendChild(button); });
+    if (MI) {
+      MI.loadAll().forEach(function (record) {
+        const button = el("button", "bb-lib-item bb-lib-custom"); button.type = "button"; button.dataset.action = "lib-add-custom"; button.dataset.customId = record.id;
+        button.appendChild(el("span", "bb-lib-text", "★ " + record.label)); button.appendChild(el("span", "bb-lib-plus", "+"));
+        if (record.description) button.title = record.description;
+        frag.appendChild(button);
+      });
+    }
     els.libraryList.appendChild(frag); els.libraryHint.textContent = "点击板块，添加到第 " + (activePageIndex() + 1) + " 屏";
   }
 
@@ -914,6 +977,36 @@
     } catch (error) { if (global.alert) global.alert("模板保存失败（浏览器可能不支持本地存储）：" + ((error && error.message) || error)); }
   }
 
+  function addCustomModuleToPage(customId) {
+    if (!MI) return;
+    const record = MI.loadAll().filter(function (item) { return item.id === customId; })[0];
+    if (!record) return;
+    const module = M.addModule(state.doc, activePage().id, record.type);
+    if (!module) return;
+    module.data = Object.assign({}, module.data, JSON.parse(JSON.stringify(record.data || {})));
+    migrateModuleData(module);
+    state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView();
+  }
+
+  function showModuleImportModal() {
+    if (!MI) return;
+    const existing = document.getElementById("bb-module-modal"); if (existing) existing.remove();
+    const mask = document.createElement("div"); mask.className = "bb-modal-mask"; mask.id = "bb-module-modal";
+    const modal = document.createElement("div"); modal.className = "bb-modal";
+    const title = document.createElement("h3"); title.textContent = "导入板块模块"; modal.appendChild(title);
+    const intro = document.createElement("p"); intro.textContent = "复制提示词给其他 AI，让 AI 输出 JSON；导入后会出现在板块库的自定义模块区域。"; modal.appendChild(intro);
+    const promptArea = document.createElement("textarea"); promptArea.className = "bb-input bb-modal-textarea"; promptArea.readOnly = true; promptArea.value = MI.promptText; modal.appendChild(promptArea);
+    const inputArea = document.createElement("textarea"); inputArea.className = "bb-input bb-modal-textarea"; inputArea.placeholder = "把 AI 返回的 JSON 粘贴到这里"; modal.appendChild(inputArea);
+    const msg = document.createElement("div"); modal.appendChild(msg);
+    const actions = document.createElement("div"); actions.className = "bb-modal-actions";
+    const copyBtn = document.createElement("button"); copyBtn.className = "bb-btn ghost"; copyBtn.type = "button"; copyBtn.textContent = "复制提示词";
+    copyBtn.addEventListener("click", function () { promptArea.select(); try { document.execCommand("copy"); msg.className = "bb-modal-success"; msg.textContent = "提示词已复制"; } catch (error) { msg.textContent = "请手动复制上方提示词"; } });
+    const importBtn = document.createElement("button"); importBtn.className = "bb-btn primary"; importBtn.type = "button"; importBtn.textContent = "导入模块";
+    importBtn.addEventListener("click", function () { const obj = MI.extractJson(inputArea.value); if (!obj) { msg.className = "bb-modal-error"; msg.textContent = "JSON 格式解析失败"; return; } const errors = MI.validate(obj); if (errors.length) { msg.className = "bb-modal-error"; msg.textContent = "校验不通过：" + errors.join("；"); return; } try { MI.add(obj); renderLibrary(); msg.className = "bb-modal-success"; msg.textContent = "板块模块「" + obj.label + "」已导入"; } catch (error) { msg.className = "bb-modal-error"; msg.textContent = "保存失败：" + error.message; } });
+    const closeBtn = document.createElement("button"); closeBtn.className = "bb-btn ghost"; closeBtn.type = "button"; closeBtn.textContent = "关闭"; closeBtn.addEventListener("click", function () { mask.remove(); });
+    actions.appendChild(copyBtn); actions.appendChild(importBtn); actions.appendChild(closeBtn); modal.appendChild(actions); mask.appendChild(modal); document.body.appendChild(mask);
+  }
+
   async function addTemplateToPage(tplId) {
     if (!global.BannerBuilderMyTemplates) return;
     let rows = [];
@@ -923,6 +1016,7 @@
     const module = M.addModule(state.doc, activePage().id, row.type);
     if (!module) return;
     module.data = Object.assign({}, module.data, global.BannerBuilderMyTemplates.cloneTemplateData(row.data));
+    migrateModuleData(module);
     state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView();
   }
 
@@ -982,6 +1076,16 @@
 
   function downloadBlob(blob, name) { const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; link.click(); setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000); }
   function downloadText(content, name) { downloadBlob(new Blob([content], { type: "application/json;charset=utf-8" }), name); }
+  function dataUrlToBlob(dataUrl) {
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) throw new Error("数据格式错误");
+    const meta = dataUrl.slice(0, comma).match(/^data:([^;]+)/);
+    const mime = meta ? meta[1] : "application/octet-stream";
+    const bin = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
 
   const wrapCache = new Map();
   function wrapLines(ctx, value, maxWidth) {
@@ -1884,45 +1988,78 @@
 
   async function paintPerformer(ctx, data, x0, y0, w) {
     const P = artTheme(); const ink = artInk();
-    const tpl = data.template || "performer-side";
-    const portraits = (await Promise.all((data.images || []).map(function (item) { return loadImage(item); }))).filter(Boolean);
-    const name = text(data.name, "嘉宾名称");
-    const bio = data.bio || "嘉宾简介";
-    const setlist = (data.setlist || []).filter(Boolean);
-    const drawCopy = function (yy, width) {
-      let cy = yy;
-      cy = drawRich(ctx, name, x0, cy, width, 33, 800, P.primaryDark, "left", 1.3) + 12;
-      cy = drawRich(ctx, bio, x0, cy, width, 27, 400, ink, "left", 1.62, "body") + 10;
-      for (const s of setlist) { cy = drawRich(ctx, "♪ " + s, x0, cy, width, 23, 600, P.accent, "left", 1.5, "body"); }
+    const tpl = data.template || "cast-list";
+    const cast = data.cast || [];
+    const avatarDims = function (ratio) {
+      const aw = 150;
+      if (ratio === "3:4") return { w: aw, h: Math.round(aw * 4 / 3) };
+      if (ratio === "1:1.4") return { w: aw, h: Math.round(aw * 1.4) };
+      return { w: aw, h: aw };
+    };
+    const drawMember = async function (member, mx, my, mw) {
+      const img = member.avatar && member.avatar.url ? await loadImage(member.avatar) : null;
+      const dims = avatarDims(member.avatarRatio || "1:1");
+      let cy = my;
+      const leftW = img ? dims.w + 25 : 0;
+      if (img) {
+        ctx.save(); roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.clip(); coverDraw(ctx, img, mx, my, dims.w, dims.h); ctx.restore();
+        if (member.avatarStyle === "ring") { roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.strokeStyle = P.primary; ctx.lineWidth = 3; ctx.stroke(); }
+        else if (member.avatarStyle === "glow") { roundRectPath(ctx, mx, my, dims.w, dims.h, 14); ctx.strokeStyle = alphaColor(P.accent, 0.6); ctx.lineWidth = 5; ctx.stroke(); }
+      }
+      const tx = mx + leftW;
+      const tw = mw - leftW;
+      let headY = cy;
+      const name = text(member.name, "");
+      if (name) { headY = drawRich(ctx, name, tx, headY, tw, 33, 800, P.primaryDark, "left", 1.3); }
+      if (member.role || member.time) {
+        headY = name ? headY + 8 : headY;
+        const tag = [member.role, member.time].filter(Boolean).join("  ·  ");
+        headY = drawRich(ctx, tag, tx, headY, tw, 21, 700, P.accent, "left", 1);
+      }
+      if (member.bio) { headY = drawRich(ctx, member.bio, tx, headY + 8, tw, 23, 400, ink, "left", 1.5, "body"); }
+      cy = headY + 10;
+      const setlist = (member.setlist || []).filter(function (s) { return s && (s.song || s.coverBy); });
+      if (setlist.length) {
+        cy = cy + 14;
+        drawRich(ctx, "歌单", tx, cy, tw, 19, 800, artMuted(), "left", 1);
+        cy += 30;
+        const hasCover = setlist.some(function (s) { return s.coverBy; });
+        for (const s of setlist) {
+          if (hasCover) {
+            drawRich(ctx, s.song || "", tx, cy, Math.round(tw * 0.62), 23, 600, ink, "left", 1.2, "body");
+            drawRich(ctx, s.coverBy || "", tx + Math.round(tw * 0.62), cy, Math.round(tw * 0.38), 19, 500, artMuted(), "right", 1.2, "body");
+          } else {
+            drawRich(ctx, s.song || "", tx, cy, tw, 23, 600, ink, "left", 1.2, "body");
+          }
+          cy += 30;
+        }
+      }
       return cy;
     };
-    if (tpl === "performer-poster") {
-      const ph = Math.round(w * 0.92);
-      if (portraits.length) {
-        ctx.save(); roundRectPath(ctx, x0, y0, w, ph, 26); ctx.clip();
-        if (portraits.length === 1) coverDraw(ctx, portraits[0], x0, y0, w, ph);
-        else { const hw = w / 2; coverDraw(ctx, portraits[0], x0, y0, hw, ph); coverDraw(ctx, portraits[1], x0 + hw, y0, hw, ph); }
-        ctx.restore();
-        drawGradientOverlay(ctx, x0, y0 + Math.round(ph * 0.44), w, ph - Math.round(ph * 0.44), P.primaryDark, 0.02, 0.9);
-      } else { ctx.save(); roundRectPath(ctx, x0, y0, w, Math.round(ph * 0.56), 26); ctx.fillStyle = P.primaryDark; ctx.fill(); ctx.restore(); }
-      const cx = x0 + w / 2; const cw = w - 66; const photoH = portraits.length ? ph : Math.round(ph * 0.56);
-      let bottom = y0 + photoH - 33;
-      if (bio) { bottom = paintUpText(ctx, capText(bio, 90), cx, bottom - 8, cw, 25, 500, "rgba(255,255,255,.92)", "center", 1.55, "body"); bottom -= 21; }
-      paintUpText(ctx, name, cx, bottom - 5, cw, 54, 900, "#ffffff", "center", 1.3);
-      return y0 + photoH + 24;
+    const gap = 25;
+    if (tpl === "cast-cards") {
+      const cols = Math.max(1, Math.floor(w / 260));
+      const cw = Math.floor((w - gap * (cols - 1)) / cols);
+      const rows = Math.ceil(Math.max(cast.length, 1) / cols);
+      const ch = 340;
+      for (let i = 0; i < Math.max(cast.length, 1); i += 1) {
+        const col = i % cols; const row = Math.floor(i / cols);
+        const member = cast[i] || {};
+        const cx = x0 + col * (cw + gap);
+        const cy0 = y0 + row * (ch + gap);
+        ctx.save(); roundRectPath(ctx, cx, cy0, cw, ch, 17); ctx.fillStyle = alphaColor("#ffffff", 0.72); ctx.fill(); ctx.restore();
+        ctx.save(); roundRectPath(ctx, cx, cy0, cw, ch, 17); ctx.strokeStyle = alphaColor(P.primary, 0.16); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+        await drawMember(member, cx + 16, cy0 + 16, cw - 32);
+      }
+      return y0 + rows * (ch + gap) - gap;
     }
-    if (portraits.length) {
-      const side = Math.min(Math.round(w * 0.4), 210);
-      const ph = Math.round(side * 0.74);
-      portraits.slice(0, 2).forEach(function (img, i) {
-        ctx.save(); roundRectPath(ctx, x0, y0 + i * (ph + 12), side, ph, 14); ctx.clip(); coverDraw(ctx, img, x0, y0 + i * (ph + 12), side, ph); ctx.restore();
-      });
-      const tx = x0 + side + 34;
-      const copyTop = Math.min(Math.round(portraits.length * (ph + 12) * 0.16), 33);
-      const copyEnd = drawCopy(y0 + copyTop, w - side - 34);
-      return Math.max(y0 + portraits.length * (ph + 12) - 12, copyEnd + 12);
+    let y = y0;
+    const shown = cast.length ? cast : [{}];
+    for (const member of shown) {
+      y = await drawMember(member, x0, y, w);
+      if (cast.length) y += gap;
     }
-    return drawCopy(y0, w);
+    return cast.length ? y - gap : y;
   }
 
   async function paintBooth(ctx, data, x0, y0, w) {
@@ -2378,6 +2515,14 @@
       const dl = C.FONT_DOWNLOADS[key];
       if (!dl) continue;
       const label = C.FONTS[key] ? C.FONTS[key].label : key;
+      /* 用户导入字体：dataURL 直存，直接还原打包 */
+      if (dl.dataUrl) {
+        zip.file("fonts/" + dl.name, dataUrlToBlob(dl.dataUrl));
+        ok.push(label);
+        continue;
+      }
+      /* 本地字体（url 为空）：随仓库/系统已存在，无需联网，直接提示手动安装 */
+      if (!dl.url) { fail.push(label + "（本地字体，安装 fonts/" + dl.name + "）"); continue; }
       try {
         const resp = await fetch(dl.url, { mode: "cors" });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -2594,8 +2739,8 @@
         await addImg("联动方图标", data.icon, item.x, px(headY + 20), 120, 120, "contain");
       } else if (module.type === "ticketInfo" && data.qrImage) {
         await addImg("购票二维码", data.qrImage, px(item.x + item.w - 228), px(headY + 20), 208, 208, "contain");
-      } else if (module.type === "performerCard" && data.images && data.images[0]) {
-        await addImg("人物照片", data.images[0], item.x, px(headY + 20), 240, 300, imgFit);
+      } else if (module.type === "performerCard" && data.cast && data.cast[0] && data.cast[0].avatar) {
+        await addImg("成员头像", data.cast[0].avatar, item.x, px(headY + 20), 160, 160, imgFit);
       } else if (module.type === "programList") {
         const pgItems = data.items || [];
         for (let pi = 0; pi < pgItems.length; pi++) { if (pgItems[pi].image) await addImg("节目配图 " + (pi + 1), pgItems[pi].image, item.x, px(headY + 24), cw, Math.round(cw * 0.4), imgFit); }
@@ -2660,11 +2805,20 @@
           (data.items || []).forEach(function (it, i) { addT("节目 " + (i + 1), [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, py, 25, inkColor, "left", "body"); py += 40; });
           break;
         }
-        case "performerCard":
-          addT("名称", data.name, cardLeft, px(headY + 70), 33, st.primaryDark, "left");
-          addT("简介", data.bio, cardLeft, px(headY + 115), 25, inkColor, data.bodyAlign || "left", "body");
-          addT("曲目单", (data.setlist || []).filter(Boolean).join(" · "), cardLeft, px(headY + 200), 23, mutedColor, "left", "body");
+        case "performerCard": {
+          let pcy = headY + 70;
+          (data.cast || []).forEach(function (member) {
+            if (member.name) { addT("成员", [member.role, member.name, member.time].filter(Boolean).join("  "), cardLeft, pcy, 30, st.primaryDark, "left"); pcy += 44; }
+            if (member.bio) { addT("简介", member.bio, cardLeft, pcy, 23, inkColor, data.bodyAlign || "left", "body"); pcy += 60; }
+            const setlist = (member.setlist || []).filter(function (s) { return s && (s.song || s.coverBy); });
+            if (setlist.length) {
+              addT("歌单", setlist.map(function (s) { return [s.song, s.coverBy].filter(Boolean).join(" / "); }).join("  ·  "), cardLeft, pcy, 21, mutedColor, "left", "body");
+              pcy += 34;
+            }
+            pcy += 8;
+          });
           break;
+        }
         case "boothList": {
           let by = headY + 70;
           (data.items || []).forEach(function (it, i) { addT("摊位 " + (i + 1), [it.name, it.desc].filter(Boolean).join("  "), cardLeft, by, 25, inkColor, "left", "body"); by += 42; });
@@ -2724,7 +2878,27 @@
       downloadText(JSON.stringify(snap, null, 2), "only-box-banner-draft.json");
     } catch (error) { global.alert("草稿保存失败：" + ((error && error.message) || error)); }
   }
-  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
+  function migrateModuleData(module) {
+    /* 旧「嘉宾卡」单嘉宾结构（name/bio/setlist/images）→ 新「演出阵容」列表结构（cast） */
+    if (module && module.type === "performerCard" && module.data && !Array.isArray(module.data.cast)) {
+      const legacy = module.data;
+      const setlist = (legacy.setlist || []).map(function (song) {
+        return { song: String(song).replace(/^♪\s*/, ""), coverBy: "" };
+      });
+      module.data.cast = [{
+        role: "",
+        name: legacy.name || "",
+        avatar: (legacy.images && legacy.images[0]) || null,
+        avatarRatio: "1:1",
+        avatarStyle: "none",
+        time: "",
+        bio: legacy.bio || "",
+        setlist: setlist,
+      }];
+    }
+    return module;
+  }
+  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); (parsed.pages || []).forEach(function (page) { (page.modules || []).forEach(migrateModuleData); }); state.doc = parsed; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; if (state.doc.headingFont) ensureFont(state.doc.headingFont); if (state.doc.bodyFont) ensureFont(state.doc.bodyFont); if (state.doc.fontFamily) ensureFont(state.doc.fontFamily); renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
 
   function bindEvents() {
     els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
@@ -2763,6 +2937,7 @@
     els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; state.doc.fontManual = true; ensureFont(state.doc.fontFamily); renderAll(); });
     els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
     els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
+    if (els.importFontBtn) els.importFontBtn.addEventListener("click", showFontImportModal);
     els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
     els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
     els.zoomFitBtn.addEventListener("click", function () { const avail = (els.canvasBody.clientWidth || 560) - 48; state.zoom = Math.min(1.5, Math.max(.15, avail / pageSize().pageWidth)); renderToolbar(); renderCanvas(); });
@@ -2772,12 +2947,13 @@
     els.exportPsdBtn.addEventListener("click", async function () { const result = await exportPsd(); if (result && els.packFontsToggle && els.packFontsToggle.checked) { try { await packFontsZip(); } catch (error) { if (global.alert) global.alert("字体打包失败：" + (error && error.message || error)); } } });
     els.saveDraftBtn.addEventListener("click", saveDraft);
     els.loadDraftInput.addEventListener("change", function () { if (this.files && this.files[0]) loadDraft(this.files[0]); this.value = ""; });
-    els.libraryList.addEventListener("click", function (event) { const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView(); });
+    els.libraryList.addEventListener("click", function (event) { const custom = event.target.closest("[data-action='lib-add-custom']"); if (custom) { addCustomModuleToPage(custom.dataset.customId); return; } const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); state.selectedModuleId = module.id; renderAll(); if (continuousMode()) scrollSelectedIntoView(); });
     els.myTplList.addEventListener("click", function (event) { const del = event.target.closest("[data-action='tpl-del']"); if (del) { deleteMyTemplate(del.dataset.tplId); return; } const add = event.target.closest("[data-action='tpl-add']"); if (add) addTemplateToPage(add.dataset.tplId); });
     els.panelBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action='save-tpl']"); if (target) saveSelectedModuleAsTemplate(); });
     els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { if (state.pickMode !== "module") { const hostCard = target.closest(".bb-page-card"); state.activePageId = (hostCard && hostCard.dataset.pageId) || M.findModule(state.doc, moduleId).page.id; state.selectedModuleId = null; renderAll(); return; } state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
     if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
     if (els.importThemeBtn) els.importThemeBtn.addEventListener("click", showThemeImportModal);
+    if (els.importModuleBtn) els.importModuleBtn.addEventListener("click", showModuleImportModal);
   }
 
   /* ===== 主题导入弹窗 ===== */
@@ -2888,6 +3064,139 @@
     if (els.canvasBody) els.canvasBody.classList.toggle("bb-pick-module", on);
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.fontSelect.appendChild(op); }); ["headingFontSelect", "bodyFontSelect"].forEach(function (selKey) { const role = selKey === "headingFontSelect" ? "heading" : "body"; const followOpt = el("option", null, role === "heading" ? "跟随全局字体" : "跟随标题字体"); followOpt.value = ""; els[selKey].appendChild(followOpt); C.FONT_OPTIONS.forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els[selKey].appendChild(op); }); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  /* ===== 字体下拉重建（内置字体 + 用户导入字体） ===== */
+  function fillFontSelect(sel, opts, firstOption) {
+    if (!sel) return;
+    sel.textContent = "";
+    if (firstOption) { const o = el("option", null, firstOption.label); o.value = firstOption.value; sel.appendChild(o); }
+    opts.forEach(function (o) {
+      const option = el("option", null, o.label);
+      option.value = o.value;
+      sel.appendChild(option);
+    });
+  }
+  function refreshFontSelects() {
+    const opts = C.getFontOptions();
+    const keep = {
+      font: els.fontSelect.value,
+      heading: els.headingFontSelect.value,
+      body: els.bodyFontSelect.value,
+    };
+    fillFontSelect(els.fontSelect, opts);
+    fillFontSelect(els.headingFontSelect, opts, { value: "", label: "跟随全局字体" });
+    fillFontSelect(els.bodyFontSelect, opts, { value: "", label: "跟随标题字体" });
+    const has = function (v) { return !v || opts.some(function (o) { return o.value === v; }); };
+    els.fontSelect.value = has(keep.font) ? keep.font : "sans";
+    els.headingFontSelect.value = has(keep.heading) ? keep.heading : "";
+    els.bodyFontSelect.value = has(keep.body) ? keep.body : "";
+  }
+
+  /* ===== 用户导入字体弹窗 ===== */
+  function showFontImportModal() {
+    var importer = global.BannerBuilderFontImporter;
+    if (!importer || !importer.isAvailable()) {
+      if (global.alert) global.alert("当前浏览器不支持 IndexedDB，无法保存导入字体。");
+      return;
+    }
+    var existing = document.getElementById("bb-font-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-font-modal";
+    var modal = document.createElement("div");
+    modal.className = "bb-modal";
+
+    modal.appendChild(el("h3", null, "导入本地字体"));
+    modal.appendChild(el("p", null, "选择一个 .ttf / .otf / .woff / .woff2 字体文件，工具会读取字体家族名、保存到浏览器本地，并立即加入上方的「全局 / 标题 / 正文」字体下拉。"));
+
+    var fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2";
+    fileInput.style.cssText = "margin:14px 0;display:block";
+    modal.appendChild(fileInput);
+
+    var msgArea = el("div");
+    msgArea.style.display = "none";
+    modal.appendChild(msgArea);
+
+    function showMsg(type, text) {
+      msgArea.style.display = "block";
+      msgArea.className = type === "error" ? "bb-modal-error" : "bb-modal-success";
+      msgArea.textContent = text;
+    }
+
+    fileInput.addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      if (!file) return;
+      var ext = (file.name.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+      if (["ttf", "otf", "woff", "woff2"].indexOf(String(ext).toLowerCase()) < 0) {
+        showMsg("error", "不支持的文件类型，请选择 .ttf / .otf / .woff / .woff2 字体文件。");
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function () {
+        var dataUrl = String(reader.result);
+        try {
+          var meta = importer.parseFontMeta(arrayBufferFromDataUrl(dataUrl));
+          var family = meta.family || file.name.replace(/\.[a-z0-9]+$/i, "");
+          var record = importer.buildRecord({
+            label: family,
+            family: family,
+            format: meta.format || "truetype",
+            fileName: file.name,
+            dataUrl: dataUrl,
+          });
+          importer.addFont(record).then(function () {
+            return importer.refresh().then(function () {
+              importer.applyToConstants();
+              refreshFontSelects();
+              showMsg("success", "✓ 已导入字体「" + family + "」（" + file.name + "），可在字体下拉中选用。");
+              fileInput.value = "";
+            });
+          }).catch(function (e) {
+            showMsg("error", "导入失败：" + (e && e.message || e));
+          });
+        } catch (e) {
+          showMsg("error", "解析字体失败：" + (e && e.message || e));
+        }
+      };
+      reader.onerror = function () { showMsg("error", "读取字体文件失败。"); };
+      reader.readAsDataURL(file);
+    });
+
+    var actionRow = document.createElement("div");
+    actionRow.className = "bb-modal-actions";
+    var closeBtn = el("button", "bb-btn ghost", "关闭");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", function () { mask.parentNode.removeChild(mask); });
+    actionRow.appendChild(closeBtn);
+    modal.appendChild(actionRow);
+    mask.appendChild(modal);
+    mask.addEventListener("click", function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    document.body.appendChild(mask);
+  }
+
+  function arrayBufferFromDataUrl(dataUrl) {
+    var comma = dataUrl.indexOf(",");
+    if (comma < 0) throw new Error("字体数据格式错误");
+    var b64 = dataUrl.slice(comma + 1);
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
+  function bootstrapUserFonts() {
+    var importer = global.BannerBuilderFontImporter;
+    if (!importer || !importer.isAvailable() || typeof importer.refresh !== "function") return;
+    importer.refresh().then(function (rows) {
+      if (!rows || !rows.length) return;
+      importer.applyToConstants();
+      refreshFontSelects();
+    });
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })(window);

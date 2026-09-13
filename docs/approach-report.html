@@ -120,6 +120,24 @@
     <tr><td class="num">tools/banner-builder.html</td><td>全部板块 CSS 按 ×2.08 与绘制器同值定标（约 125 处）、注册 export.js、版本号 -14</td></tr>
   </table>
 
+  <h2><span class="no">06b</span>分层 PSD（v18 起）</h2>
+  <p>「只有一张图」已重构：导出 PSD 现为<b>分层重建</b>——背景底色层 + 每个板块一个图层组，组内含「该板块合成位图层（可见，保证打开即与预览同构图）」与「隐藏的可编辑文字层（标题/正文/条目，图层名即内容，点亮即可改字）」。样例结构经 ag-psd 读写往返与浏览器真实导出双重核验（图层树枚举见交付记录）。</p>
+  <table>
+    <tr><th>层</th><th>类型</th><th>可见性</th><th>用途</th></tr>
+    <tr><td>背景底色</td><td>位图</td><td>可见</td><td>页面底色，可独立替换</td></tr>
+    <tr><td>板块 N · 类型（组）</td><td>分组</td><td>—</td><td>与预览板块一一对应，按预览堆叠顺序排列</td></tr>
+    <tr><td>└ 类型（合成）</td><td>位图</td><td>可见</td><td>该板块完整渲染结果，保证所见即所得</td></tr>
+    <tr><td>└ 标题/正文/条目 · 可编辑</td><td>文本</td><td>隐藏</td><td>同坐标文字层，点亮即编辑；编辑后隐藏合成层即为纯文字版式</td></tr>
+  </table>
+  <p class="small">已知边界：文本层字体在未安装对应字体的机器上按 PS 规则回退显示（字形与位图可能有差异）；版面一致性由合成位图层保证。文字层的字体名已按角色写入。</p>
+  <h2><span class="no">06c</span>预览点选模式开关（v20 起）</h2>
+  <p>多屏长图中「点板块」与「点屏幕」命中目标重叠（板块铺满屏宽时点板块必然命中板块），此前直接点板块会跳过选屏。现按用户方案改为<b>预览列头滑块开关</b>，两种点选语义二选一：</p>
+  <table>
+    <tr><th>模式</th><th>点击板块</th><th>点击屏内空白 / 屏间隙</th><th>右面板</th></tr>
+    <tr><td><b>选整屏</b>（默认，= 滑块关）</td><td>选中该板块所在屏（不再顺带选中板块）</td><td>选中该屏</td><td>整条 / 当前屏（底色、背景图、屏幕名）</td></tr>
+    <tr><td><b>选图层</b>（= 滑块开）</td><td>选中该板块，进入板块编辑</td><td>选中该屏（回退语义，保证总能选屏）</td><td>板块字段编辑器</td></tr>
+  </table>
+  <p class="small">实现：<code>state.pickMode</code>（"screen" | "module"）驱动 canvasBody 点击委托分流——module-pick 在整屏模式下改取最近 <code>.bb-page-card</code> 的 pageId；开关为原生 checkbox 滑块（label + CSS track/thumb，无图片），change 时同步 <code>renderToolbar</code>/开关文案/<code>canvasBody.bb-pick-module</code> 悬停光标类。改动：banner-builder.js（状态+委托+syncPickMode）、两个工具页（列头开关 UI + CSS，版本号 -20）、selftest 增加 pickCheck 四断言。工具栏「分屏/连续」等原有按钮不受影响。</p>
   <h2><span class="no">07</span>验证与已知边界</h2>
   <div class="verdict">
     <p class="tag">真实运行自检（headless Edge + CDP，10 板块 2 屏样例）</p>
@@ -135,6 +153,7 @@
         <li>导出加固：blob:/http 图片转 dataURL 内联、webfont 已激活分片内嵌（skipFonts 绕过全量拉取）、导出期间 zoom=1 安全区、内容实测高度防裁剪</li>
         <li>三级回退：html-to-image 失败→自研序列化；export.js 加载失败→legacy Canvas 绘制器</li>
         <li><b>二次修正（用户实测反馈）</b>：①连续模式「第 N 屏」标签不再混入导出（导出期间全局隐藏 + 克隆树移除，断言 tagsLeft=0）；②照片 EXIF 方向烘焙（预览摆正、导出端正一致，探针断言 baked:true）；③外链资源拉取加 8s 超时 + 跨域字体样式表不入克隆树（修复弱网/离线导出无限挂死）；④板块上移/下移按钮容器 .bb-art-actions 加入导出隔离名单（断言 actionsLeft=0）；⑤导出根 margin 0 auto 归零（居中偏移被克隆固化导致整图右偏，像素探针 noShift:true）；⑥预览编辑按钮加缩放补偿（任意缩放下保持可点大小）</li>
+        <li><b>三次修正（用户反馈「第二屏板块点不动/按钮极小」）</b>：headless 真实点击六路径排查（分屏/页签切换/连续模式/快速连点/面板对应/上移下移）证实事件绑定层全部健康；真因在 CSS——v17 补偿规则被后方旧 <code>.bb-art-actions .bb-icon-btn{width:24px}</code> 重复定义覆盖，且补偿公式多乘一次 zoom，46% 缩放下按钮屏幕渲染仅 11px 难以点中。修复后按钮屏幕尺寸恒定 24px，真实点击选中/上移/下移全部正常</li>
       </ul>
     </div>
     <div>
@@ -152,7 +171,7 @@
 
   <footer>
     <span>Only-box · 预览即所得改造方案</span>
-    <span>v=20260907-17 · 2026-09-09</span>
+    <span>v=20260907-20 · 2026-09-10</span>
   </footer>
 </div>
 </body>

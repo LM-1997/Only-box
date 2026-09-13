@@ -16,27 +16,7 @@
   const CAPTION_MIN_PX_WARNING = 18;
 
   /* 文档级主题配色：切主题覆盖画布内主色/强调色/线色/浅底变量（line 供边框与分隔线，soft 供卡片空底）。 */
-  const THEMES = {
-    forest: { label: "森林绿", primary: "#1e7a4f", primaryDark: "#124f30", primarySoft: "#e4f2ea", accent: "#f2704b", accentSoft: "#fdeae2", line: "#cfe3d6", soft: "#edf4ee", cardStyle: "card", radius: 23, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" },
-    sakura: { label: "樱花粉紫", primary: "#b8437e", primaryDark: "#7e2a58", primarySoft: "#f7e4ee", accent: "#7a5bd8", accentSoft: "#ece5fb", line: "#e9d2e0", soft: "#faeef5", cardStyle: "sticker", radius: 29, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
-    ocean: { label: "海蓝", primary: "#1f6fb2", primaryDark: "#124d7e", primarySoft: "#e2eef9", accent: "#f59a3c", accentSoft: "#fdf0e0", line: "#cfe2f2", soft: "#eaf3fb", cardStyle: "card", radius: 23, shadow: "soft", divider: "line", chips: "pill", titleDecor: "bar", pattern: "none", headingFont: "", bodyFont: "" },
-    sunset: { label: "落日橙", primary: "#cf6a26", primaryDark: "#9c4313", primarySoft: "#f9ecdf", accent: "#d6453d", accentSoft: "#fbe4e1", line: "#efd8c4", soft: "#fbf0e6", cardStyle: "glass", radius: 32, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "stripes", headingFont: "", bodyFont: "" },
-    mono: { label: "黑白极简", primary: "#373d44", primaryDark: "#14171a", primarySoft: "#eceff1", accent: "#e5484d", accentSoft: "#fbe7e8", line: "#d7dbe0", soft: "#f1f2f4", cardStyle: "panel", radius: 0, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "grid", headingFont: "bebas", bodyFont: "lato" },
-    aurora: { label: "极光紫蓝", primary: "#5a5fd8", primaryDark: "#32349a", primarySoft: "#e9e9fa", accent: "#2fa8a0", accentSoft: "#e0f4f2", line: "#d5d6ef", soft: "#f1f1fb", cardStyle: "glass", radius: 32, shadow: "glow", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "poppins", bodyFont: "" },
-    candy: { label: "糖果派对", primary: "#ef5da8", primaryDark: "#b32d74", primarySoft: "#fdeaf4", accent: "#8f6ee8", accentSoft: "#efeaff", line: "#f3d3e2", soft: "#fbf1f6", cardStyle: "sticker", radius: 32, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
-    cyber: { label: "赛博霓虹", primary: "#8a2be2", primaryDark: "#571a9c", primarySoft: "#f0e6fb", accent: "#00b3a4", accentSoft: "#dff5f2", line: "#ddd2f0", soft: "#f6f1fb", cardStyle: "panel", radius: 0, shadow: "glow", divider: "glitch", chips: "squared", titleDecor: "bar", pattern: "grid", headingFont: "grotesk", bodyFont: "robotoCond" },
-    midnight: { label: "午夜蓝", primary: "#2f56a4", primaryDark: "#1b3570", primarySoft: "#e2e9f6", accent: "#e8993e", accentSoft: "#fbeeda", line: "#d0dcef", soft: "#eef2fa", cardStyle: "panel", radius: 7, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "none", headingFont: "oswald", bodyFont: "lato" },
-    crimson: { label: "中国红金", primary: "#c0392b", primaryDark: "#8c1f14", primarySoft: "#fbe7e3", accent: "#c9a227", accentSoft: "#f8f0d9", line: "#eccdc7", soft: "#faf0ee", cardStyle: "ticket", radius: 18, shadow: "soft", divider: "dashed", chips: "tag", titleDecor: "bracket", pattern: "none", headingFont: "qingke", bodyFont: "" },
-    ink: { label: "水墨青灰", primary: "#3f5c66", primaryDark: "#243b42", primarySoft: "#e8eef0", accent: "#c05b3c", accentSoft: "#f8e6df", line: "#cdd9dc", soft: "#f2f5f5", cardStyle: "ink", radius: 11, shadow: "soft", divider: "thread", chips: "pill", titleDecor: "bracket", pattern: "paper", headingFont: "xiaowei", bodyFont: "kai" },
-    matcha: { label: "抹茶绿", primary: "#5f8f4a", primaryDark: "#3c6130", primarySoft: "#ebf3e4", accent: "#c47a3c", accentSoft: "#f8ecdf", line: "#d3e2c8", soft: "#f3f7ef", cardStyle: "ink", radius: 14, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "stitch", pattern: "paper", headingFont: "xiaowei", bodyFont: "kai" },
-    peach: { label: "蜜桃乌龙", primary: "#e2715a", primaryDark: "#ab432f", primarySoft: "#fdebe4", accent: "#7f6fd0", accentSoft: "#eeeafb", line: "#f0cfc4", soft: "#fbf2ee", cardStyle: "glass", radius: 36, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" },
-    lavender: { label: "薰衣草紫", primary: "#7c6fc0", primaryDark: "#55479b", primarySoft: "#efecfa", accent: "#e08a5e", accentSoft: "#fbece2", line: "#ddd7f0", soft: "#f6f4fb", cardStyle: "card", radius: 29, shadow: "soft", divider: "thread", chips: "pill", titleDecor: "stitch", pattern: "none", headingFont: "playfair", bodyFont: "" },
-    mint: { label: "薄荷青", primary: "#1f9d8e", primaryDark: "#0f6b60", primarySoft: "#e1f3ef", accent: "#f2a03d", accentSoft: "#fdf0dd", line: "#c9e7e0", soft: "#f0f8f5", cardStyle: "card", radius: 18, shadow: "soft", divider: "dots", chips: "squared", titleDecor: "none", pattern: "dots", headingFont: "montserrat", bodyFont: "" },
-    desert: { label: "沙漠落日", primary: "#b5703e", primaryDark: "#7f471f", primarySoft: "#f7ecdf", accent: "#4a8572", accentSoft: "#e3f0ea", line: "#ecdcc8", soft: "#faf4ec", cardStyle: "ticket", radius: 14, shadow: "hard", divider: "dashed", chips: "tag", titleDecor: "bar", pattern: "stripes", headingFont: "abril", bodyFont: "" },
-    noir: { label: "黑金质感", primary: "#46403a", primaryDark: "#262119", primarySoft: "#efede8", accent: "#c2a024", accentSoft: "#f6efd8", line: "#d9d4ca", soft: "#f4f2ed", cardStyle: "panel", radius: 4, shadow: "hard", divider: "line", chips: "squared", titleDecor: "bar", pattern: "noise", headingFont: "playfair", bodyFont: "lato" },
-    grape: { label: "葡萄汽水", primary: "#7b52a8", primaryDark: "#4f2f77", primarySoft: "#f0e9f8", accent: "#e5567c", accentSoft: "#fde8ee", line: "#dccfee", soft: "#f7f3fb", cardStyle: "sticker", radius: 32, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "dots", headingFont: "rounded", bodyFont: "" },
-    berry: { label: "树莓冰茶", primary: "#a4356f", primaryDark: "#6f1f4a", primarySoft: "#f9e7f0", accent: "#3f7fa8", accentSoft: "#e6f1f7", line: "#e5c7d8", soft: "#faf1f6", cardStyle: "glass", radius: 25, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "poppins", bodyFont: "" },
-  };
+  const THEMES = global.BannerBuilderBuiltinThemes || {};
 
   /* 风格合并器：颜色字段直出，形状字段缺省回落（旧草稿/新增主题兼容）。 */
   const STYLE_DEFAULTS = { cardStyle: "card", radius: 13, shadow: "soft", divider: "wave", chips: "pill", titleDecor: "none", pattern: "none", headingFont: "", bodyFont: "" };
@@ -77,7 +57,28 @@
     grotesk: { label: "Space Grotesk（科技感）", family: "Space Grotesk", css: ["https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/space-grotesk@5/700.css"] },
     robotoCond: { label: "Roboto Condensed（窄体正文）", family: "Roboto Condensed", css: ["https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/roboto-condensed@5/700.css"] },
     ubuntu: { label: "Ubuntu（人文无衬线）", family: "Ubuntu", css: ["https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/400.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/500.css", "https://cdn.jsdelivr.net/npm/@fontsource/ubuntu@5/700.css"] },
+    /* ===== 用户追加字体（混合源：css=fontsource 分片 / src=单字体文件自建 @font-face） ===== */
+    /* 本地字体 family 以字体文件 name 表实测为准（fonts/ 目录随仓库分发）：
+       - 阿里妈妈数黑体：Alimama ShuHeiTi（OTF）同族，先 CDN woff2 后本地 OTF 兜底
+       - Metal Mania：OFL，走 @fontsource CDN（本地也有副本，无需额外登记）
+       - 标小智无界黑：OTF 家族名「LogoSC Unbounded Sans」、TTF 常规家族名「Unbounded Sans」，两者并存
+       - Helvetica「黑窄版」：name 表家族名为「HelveticaNeue LT 97 BlackCn」 */
+    shuheiti: { label: "阿里妈妈数黑体", family: "Alimama ShuHeiTi", src: [{ url: "https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.woff2", format: "woff2" }, { url: "../fonts/AlimamaShuHeiTi-Bold.otf", format: "opentype" }] },
+    metalmania: { label: "Metal Mania（重金属）", family: "Metal Mania", css: ["https://cdn.jsdelivr.net/npm/@fontsource/metal-mania@5/index.css"] },
+    logosc: { label: "标小智无界黑", family: "LogoSC Unbounded Sans", src: [{ url: "../fonts/LogoSCUnboundedSans.otf", format: "opentype" }] },
+    logosc_regular: { label: "标小智无界黑（常规）", family: "Unbounded Sans", src: [{ url: "../fonts/LogoSCUnboundedSans-Regular.ttf", format: "truetype" }] },
+    helveticalt: { label: "Helvetica 黑窄体加粗", family: "HelveticaNeue LT 97 BlackCn", src: [{ url: "../fonts/Helvetica LT 97 Black Condensed.ttf", format: "truetype" }] },
   };
+
+  /* 单字体文件源（src 数组）合成 @font-face；css 源走独立 <link> 注入通道，此处返回空。
+     单文件展示字体按 100-900 全字重登记，避免各层级 700/800/900 触发伪粗合成破坏字形。 */
+  function fontFaceFor(f) {
+    if (!f || !Array.isArray(f.src) || !f.src.length) return "";
+    const parts = f.src.map(function (s) {
+      return 'url("' + s.url + '") format("' + (s.format || "truetype") + '")';
+    }).join(", ");
+    return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:100 900;src:' + parts + ';}';
+  }
   /* 桌面字体文件（供「打包字体」下载）：PS 需安装对应 .ttf/.otf 才能正确渲染文字图层。
      来源优先 google/fonts（jsDelivr 镜像，CORS 友好）；思源宋体走 raw.githubusercontent；
      霞鹜文楷走官方 release（部分网络环境下 fetch 可能受限，打包时容错跳过并提示）。 */
@@ -102,11 +103,19 @@
     grotesk: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf", name: "SpaceGrotesk-Variable.ttf" },
     robotoCond: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf", name: "RobotoCondensed-Variable.ttf" },
     ubuntu: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ufl/ubuntu/Ubuntu-Regular.ttf", name: "Ubuntu-Regular.ttf" },
+    shuheiti: { url: "https://cdn.jsdelivr.net/npm/@fontpkg/alimama-shu-hei-ti@1.0.5/AlimamaShuHeiTi-Bold.ttf", name: "AlimamaShuHeiTi-Bold.ttf" },
+    metalmania: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/metalmania/MetalMania-Regular.ttf", name: "MetalMania-Regular.ttf" },
+    logosc: { url: "", name: "LogoSCUnboundedSans.otf" },
+    logosc_regular: { url: "", name: "LogoSCUnboundedSans-Regular.ttf" },
+    helveticalt: { url: "", name: "Helvetica LT 97 Black Condensed.ttf" },
   };
+  /* 本地字体（src 为相对路径、无 css 源）的打包策略：FONT_DOWNLOADS.url 留空表示
+     无需联网下载，而是提示用户手动安装（本地字体已随仓库/用户机器存在）。 */
   function fontFallback(key) {
     if (key === "serif" || key === "xiaowei" || key === "playfair" || key === "abril") return "'Songti SC',serif";
     if (key === "kai" || key === "mashanzheng" || key === "longcang" || key === "zhimangxing" || key === "liujianmaocao") return "'KaiTi',serif";
     if (key === "rounded" || key === "qingke") return "'Yuanti SC',cursive,sans-serif";
+    if (key === "shuheiti" || key === "metalmania" || key === "logosc" || key === "logosc_regular" || key === "helveticalt") return "'Microsoft YaHei',sans-serif";
     return "'Microsoft YaHei',sans-serif";
   }
   function fontStack(key) {
@@ -128,6 +137,11 @@
 
   function optionList(map) {
     return Object.keys(map).map(function (key) { return { value: key, label: map[key].label }; });
+  }
+  /* 字体选项（动态）：FONTS 可被字体导入模块运行时扩充，故每次调用重新枚举，
+     保证「用户导入字体」即时出现在全局/标题/正文三个下拉中。 */
+  function getFontOptions() {
+    return optionList(FONTS);
   }
 
   function pageSize(ratio) {
@@ -171,6 +185,7 @@
     THEME_OPTIONS: optionList(THEMES),
     getThemeOptions: getThemeOptions,
     FONT_OPTIONS: optionList(FONTS),
+    getFontOptions: getFontOptions,
     ROLE_FONT_OPTIONS: [
       { value: "", label: "跟随全局字体" },
       { value: "heading", label: "标题字体" },
@@ -183,6 +198,7 @@
     fontStack,
     headingFontStack,
     bodyFontStack,
+    fontFaceFor,
     themeStyle,
   });
 })(window);

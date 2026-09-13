@@ -4,7 +4,7 @@ const vm = require("node:vm");
 
 const window = {};
 const ctx = vm.createContext({ window, console });
-["js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js"].forEach(function (file) {
+["js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js"].forEach(function (file) {
   vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
 });
 
@@ -12,6 +12,7 @@ const C = window.BannerBuilderConstants;
 const R = window.BannerBuilderRegistry;
 const M = window.BannerBuilderModel;
 const T = window.BannerBuilderMyTemplates;
+const MI = window.BannerBuilderModuleImporter;
 
 /* ============ 常量 ============ */
 /* 跨 vm 上下文对象原型不同，deepStrictEqual 会失败，须逐字段断言。 */assert.equal(C.pageSize("9:16").pageWidth, 750, "9:16 宽度");
@@ -81,10 +82,14 @@ R.MODULE_ORDER.forEach(function (type) {
 
 {
   const module = M.createModule("performerCard");
-  module.data.name = "某乐队";
-  assert.ok(R.moduleSummary(module).some(function (row) { return row.value === "某乐队"; }), "嘉宾卡摘要显示名称");
-  module.data.images = [{ url: "blob:a", name: "a.png" }, { url: "blob:b", name: "b.png" }, { url: "blob:c", name: "c.png" }];
-  assert.equal(R.moduleThumbs(module).length, 2, "嘉宾卡缩略图最多 2 张");
+  module.data.cast = [{ name: "某乐队", avatar: { url: "blob:a", name: "a.png" } }];
+  assert.ok(R.moduleSummary(module).some(function (row) { return row.value === "某乐队"; }), "演出阵容摘要显示成员名");
+  module.data.cast = [
+    { avatar: { url: "blob:a", name: "a.png" } },
+    { avatar: { url: "blob:b", name: "b.png" } },
+    { avatar: { url: "blob:c", name: "c.png" } },
+  ];
+  assert.equal(R.moduleThumbs(module).length, 3, "阵容头像缩略图按成员收集");
 }
 
 /* ============ 文档模型：页面 ============ */
@@ -200,6 +205,13 @@ assert.equal(typeof T.cloneTemplateData, "function", "mytemplates 导出克隆�
   assert.equal(src.nested.arr[0].url, "http://x/y.png", "克隆互不影响");
 }
 assert.equal(T.isAvailable(), false, "Node/无 IndexedDB 环境判不可用（浏览器内为 true）");
+
+/* ============ 可导入板块模块 ============ */
+assert.equal(typeof MI.buildPrompt, "function", "板块导入器提供 AI 提示词");
+assert.ok(MI.buildPrompt().includes("ticketInfo"), "提示词包含可用板块类型");
+assert.deepEqual(MI.validate({ id: "Bad ID", label: "x", type: "ticketInfo", data: {} }).length > 0, true, "非法 id 被拒绝");
+assert.equal(MI.validate({ id: "my-ticket", label: "我的票务", type: "ticketInfo", data: {} }).length, 0, "合法板块模块通过校验");
+assert.equal(MI.extractJson("```json\n{\"id\":\"x\"}\n``` ").id, "x", "板块 JSON 可从代码块提取");
 
 /* 高频模块内置模板扩充：5 类至少 4 个模板且含新增样式 */
 [["cover", "split"], ["announcement", "boxed"], ["freeText", "text-card"], ["footer", "footer-pills"], ["ticketInfo", "ticket-hero"]].forEach(function (pair) {
