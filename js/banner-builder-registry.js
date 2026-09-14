@@ -158,7 +158,10 @@
     venueInfo: [opt("venue-side", "图文侧栏"), opt("venue-focus", "场地重点"), opt("venue-map", "地图说明")],
     routeText: [opt("steps", "步骤路线"), opt("route-list", "路线清单"), opt("route-focus", "重点指引")],
     programList: [opt("program-list", "节目列表"), opt("program-cards", "节目卡片"), opt("program-compact", "紧凑双栏")],
-    performerCard: [opt("cast-list", "阵容列表"), opt("cast-cards", "阵容卡片")],
+    /* 演出阵容拆分为两个独立板块类型：列表式与卡片式版式差异过大，类型即版式，
+       避免 AI/用户在同一类型里选错模板。旧类型 performerCard 由 migrateModuleData 迁移落位。 */
+    castList: [opt("cast-list", "阵容列表")],
+    castCards: [opt("cast-cards", "阵容卡片")],
     boothList: [opt("booth-grid", "摊位网格"), opt("booth-cards", "摊位卡片"), opt("booth-list", "摊位名单")],
     divider: [opt("wave", "波浪分隔"), opt("dots", "圆点分隔"), opt("line", "直线分隔"), opt("glitch", "故障分隔"), opt("thread", "缝线分隔"), opt("dashed", "虚线分隔")],
     footer: [opt("footer-simple", "简洁页脚"), opt("footer-center", "居中页脚"), opt("footer-banner", "信息条"), opt("footer-pills", "胶囊页脚")],
@@ -484,10 +487,54 @@
       },
     },
 
-    performerCard: {
+    castList: {
       label: "演出阵容（嘉宾/乐队/DJ）",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", cast: [] });
+        return withLayout({ bodyAlign: "left", cast: [], template: "cast-list" });
+      },
+      fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
+        {
+          key: "cast",
+          label: "阵容成员",
+          type: "objectList",
+          itemLabel: "成员",
+          fields: [
+            { key: "role", label: "角色标签", type: "select", options: CAST_ROLE_OPTIONS },
+            { key: "name", label: "名称", type: "text", placeholder: "例如：DJ 某 / 某某乐队" },
+            { key: "avatar", label: "头像图", type: "image" },
+            { key: "avatarRatio", label: "头像比例", type: "select", options: AVATAR_RATIO_OPTIONS },
+            { key: "time", label: "演出时间段（可选）", type: "text", placeholder: "例如：20:00–21:00" },
+            { key: "bio", label: "简介（可选）", type: "textarea", rows: 3 },
+            {
+              key: "setlist",
+              label: "歌单",
+              type: "objectList",
+              itemLabel: "曲目",
+              fields: [
+                { key: "song", label: "歌曲名", type: "text", placeholder: "例如：某某某" },
+                { key: "coverBy", label: "原唱/Cover（可选，留空则单列）", type: "text", placeholder: "例如：原唱某乐队" },
+              ],
+            },
+          ],
+        },
+      ]),
+      summary: function (data) {
+        const cast = data.cast || [];
+        return [
+          layoutSummary(data),
+          { label: "成员", value: cast.map(function (member) { return member.name; }).filter(Boolean).join(" / ") || countLabel(cast.length, "位") },
+          { label: "曲目", value: countLabel(cast.reduce(function (sum, member) { return sum + ((member.setlist || []).length); }, 0), "首") },
+        ];
+      },
+      thumbs: function (data) {
+        return withBlockThumb(data, pickImages((data.cast || []).map(function (member) { return member.avatar; }).filter(Boolean), 4));
+      },
+    },
+
+    castCards: {
+      label: "演出阵容卡片（嘉宾/乐队/DJ）",
+      createDefault: function () {
+        return withLayout({ bodyAlign: "left", cast: [], template: "cast-cards" });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         {

@@ -62,6 +62,14 @@
       if (font.desktop && font.desktop.url) FONT_DOWNLOADS[key] = { url: font.desktop.url, name: font.desktop.name };
     });
   });
+  /* CSS 字符串安全化：family/url 来自字体清单、字体文件 name 表或用户文件名（均属不可信输入），
+     统一去除引号/反斜杠/花括号/尖括号/反引号与控制字符，阻断向 @font-face 样式表注入任意 CSS 的路径 */
+  function safeCssToken(value) {
+    return String(value == null ? "" : value)
+      .replace(/["'\\{}<>`]/g, "")
+      .replace(/[\r\n\t\u0000-\u001f]/g, " ")
+      .trim();
+  }
   /* 单字体文件源（src 数组）合成 @font-face；css 源走独立 <link> 注入通道，此处返回空。
      单档展示字体按 100-900 全字重登记（与旧行为一致），避免标题 800/900 触发伪粗合成破坏字形；
      多档字重文件则逐档登记真实 font-weight，浏览器按最近档位匹配、不再合成。 */
@@ -69,10 +77,10 @@
     if (!f || !Array.isArray(f.src) || !f.src.length) return "";
     if (f.src.length === 1) {
       const s = f.src[0];
-      return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:100 900;src:url("' + s.url + '") format("' + (s.format || "truetype") + '");}';
+      return '@font-face{font-family:"' + safeCssToken(f.family) + '";font-style:normal;font-display:swap;font-weight:100 900;src:url("' + safeCssToken(s.url) + '") format("' + safeCssToken(s.format || "truetype") + '");}';
     }
     return f.src.map(function (s) {
-      return '@font-face{font-family:"' + f.family + '";font-style:normal;font-display:swap;font-weight:' + (s.weight || 400) + ';src:url("' + s.url + '") format("' + (s.format || "truetype") + '");}';
+      return '@font-face{font-family:"' + safeCssToken(f.family) + '";font-style:normal;font-display:swap;font-weight:' + (Number(s.weight) || 400) + ';src:url("' + safeCssToken(s.url) + '") format("' + safeCssToken(s.format || "truetype") + '");}';
     }).join("\n");
   }
   /* 按清单 category 回落系统字体栈（在线字体加载失败时保底，尽量保持字形气质）。 */
@@ -86,7 +94,7 @@
   }
   function fontStack(key) {
     const f = FONTS[key] || FONTS.sans;
-    return '"' + f.family + '",' + fontFallback(f.category);
+    return '"' + safeCssToken(f.family) + '",' + fontFallback(f.category);
   }
   /* 分角色字体栈（审计 P7 配套）：headingFontStack 用于主/板块标题与醒目数字，
      bodyFontStack 用于正文、说明、图注；两者可独立设置。 */
@@ -162,6 +170,7 @@
     captionWarning,
     uid,
     fontStack,
+    safeCssToken,
     headingFontStack,
     bodyFontStack,
     fontFaceFor,

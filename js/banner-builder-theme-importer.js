@@ -2,8 +2,11 @@
    用户复制 AI 提示词 → 让其他 AI 生成 JSON → 粘贴回本工具导入。
    数据存 localStorage，与内置主题合并后供全局使用。
 
-   AI 提示词要求其他 AI 输出符合 schema 的 JSON 块，字段含义与枚举值
-   已在 prompt 中完整定义，任何主流 LLM 均可正确生成。
+   AI 提示词要求其他 AI 输出符合 schema 的 JSON 块（示例为合法 JSON，字段说明在示例之外，
+   避免 AI 照抄注释导致解析失败），字段含义与枚举值已在 prompt 中完整定义。
+
+   校验范围与「微调主题 / 排版微调」手动界面保持一致；同 ID（含内置主题）拒绝覆盖；
+   存储失败向上抛错，由调用方统一反馈。
 
    对外暴露 BannerBuilderThemeImporter。 */
 
@@ -25,7 +28,12 @@
   var VALID_TITLE_DECOR = ["none", "bar", "bracket", "stitch", "kicker"];
   var VALID_PATTERNS = ["none", "grid", "dots", "stripes", "paper", "noise"];
   var VALID_AVATAR_STYLES = ["none", "ring", "glow", "badge", "frame", "polaroid"];
-  var VALID_FONT_KEYS = Object.keys(C.FONTS);
+
+  /* 字体 key 动态读取：用户导入的本地字体会运行时扩充 C.FONTS，
+     静态捕获会让后导入字体无法通过校验/出现在提示词。 */
+  function validFontKeys() {
+    return Object.keys(C.FONTS);
+  }
 
   var STYLE_DEFAULTS = {
     cardStyle: "card", radius: 13, shadow: "soft", divider: "wave",
@@ -36,6 +44,13 @@
 
   function isValidHex(value) {
     return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+  }
+
+  /* 与手动微调界面完全一致的范围（排版微调面板：typeScale 0.7-1.5、各级 0.7-1.3、
+     lineHeight 0.8-2 步进 0.05、letterSpacing -2 到 8 步进 0.5；字重档位 400-900）。 */
+  function checkStep(value, min, step) {
+    var units = (value - min) / step;
+    return Math.abs(units - Math.round(units)) < 1e-8;
   }
 
   function validateTheme(obj) {
@@ -86,36 +101,36 @@
       }
     });
 
-    // 选填：字重
-    [["headingWeight", 400, 900], ["bodyWeight", 300, 900]].forEach(function (pair) {
-      var key = pair[0], min = pair[1], max = pair[2];
-      if (obj[key] != null && (typeof obj[key] !== "number" || obj[key] < min || obj[key] > max)) {
-        errors.push(key + " 可选，必须是 " + min + "-" + max + " 的数字");
+    // 选填：字重（与手动档位一致：400/500/600/700/800/900）
+    ["headingWeight", "bodyWeight"].forEach(function (key) {
+      if (obj[key] != null && [400, 500, 600, 700, 800, 900].indexOf(obj[key]) < 0) {
+        errors.push(key + " 可选，只能为 400 / 500 / 600 / 700 / 800 / 900");
       }
     });
 
-    // 选填：行距 / 字距
-    if (obj.lineHeight != null && (typeof obj.lineHeight !== "number" || obj.lineHeight < 0.8 || obj.lineHeight > 2)) {
-      errors.push("lineHeight 可选，必须是 0.8-2 的数字（行距缩放倍率，1=不缩放）");
+    // 选填：行距 / 字距（与排版微调面板一致）
+    if (obj.lineHeight != null && (typeof obj.lineHeight !== "number" || obj.lineHeight < 0.8 || obj.lineHeight > 2 || !checkStep(obj.lineHeight, 0.8, 0.05))) {
+      errors.push("lineHeight 可选，必须是 0.8-2 的数字，步进 0.05（行距缩放倍率，1=不缩放）");
     }
-    if (obj.letterSpacing != null && (typeof obj.letterSpacing !== "number" || obj.letterSpacing < -5 || obj.letterSpacing > 20)) {
-      errors.push("letterSpacing 可选，必须是 -5 到 20 的数字（像素字距）");
+    if (obj.letterSpacing != null && (typeof obj.letterSpacing !== "number" || obj.letterSpacing < -2 || obj.letterSpacing > 8 || !checkStep(obj.letterSpacing, -2, 0.5))) {
+      errors.push("letterSpacing 可选，必须是 -2 到 8 的数字，步进 0.5（像素字距）");
     }
 
-    // 选填：字号缩放
-    if (obj.typeScale != null && (typeof obj.typeScale !== "number" || obj.typeScale < 0.5 || obj.typeScale > 2)) {
-      errors.push("typeScale 可选，必须是 0.5-2 的数字（全局字号缩放）");
+    // 选填：字号缩放（与排版微调面板一致）
+    if (obj.typeScale != null && (typeof obj.typeScale !== "number" || obj.typeScale < 0.7 || obj.typeScale > 1.5 || !checkStep(obj.typeScale, 0.7, 0.05))) {
+      errors.push("typeScale 可选，必须是 0.7-1.5 的数字，步进 0.05（全局字号缩放）");
     }
     ["h1Scale", "h2Scale", "h3Scale", "bodyScale", "captionScale"].forEach(function (k) {
-      if (obj[k] != null && (typeof obj[k] !== "number" || obj[k] < 0.5 || obj[k] > 2)) {
-        errors.push(k + " 可选，必须是 0.5-2 的数字（该层级字号缩放）");
+      if (obj[k] != null && (typeof obj[k] !== "number" || obj[k] < 0.7 || obj[k] > 1.3 || !checkStep(obj[k], 0.7, 0.05))) {
+        errors.push(k + " 可选，必须是 0.7-1.3 的数字，步进 0.05（该层级字号缩放）");
       }
     });
 
-    // 选填：字体键
+    // 选填：字体键（动态清单，含用户后导入的字体）
+    var fontKeys = validFontKeys();
     ["headingFont", "bodyFont"].forEach(function (key) {
-      if (obj[key] != null && obj[key] !== "" && VALID_FONT_KEYS.indexOf(obj[key]) < 0) {
-        errors.push(key + " 可选值为: " + VALID_FONT_KEYS.join(", ") + "，或留空");
+      if (obj[key] != null && obj[key] !== "" && fontKeys.indexOf(obj[key]) < 0) {
+        errors.push(key + " 可选值为: " + fontKeys.join(", ") + "，或留空");
       }
     });
 
@@ -144,7 +159,7 @@
 
   function loadAll() {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
+      var raw = global.localStorage && global.localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch (e) {
       return [];
@@ -153,23 +168,25 @@
 
   function saveAll(list) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      global.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      return true;
     } catch (e) {
-      if (global.alert) global.alert("主题保存失败（可能浏览器存储空间不足）");
+      return false;
     }
   }
 
   function addTheme(obj) {
-    var themes = loadAll();
-    // 同 id 覆盖
-    var idx = -1;
-    for (var i = 0; i < themes.length; i++) {
-      if (themes[i].id === obj.id) { idx = i; break; }
+    if (typeof obj.id === "string") {
+      var builtinExists = !!C.THEMES[obj.id];
+      var customExists = loadAll().some(function (t) { return t.id === obj.id; });
+      if (builtinExists || customExists) {
+        throw new Error("已存在同 ID 主题「" + obj.id + "」" + (builtinExists ? "（与内置主题冲突）" : "") + "，为避免覆盖已有配置，请更换一个新 ID 再导入");
+      }
     }
+    var themes = loadAll();
     var record = withDefaults(obj);
-    if (idx >= 0) themes[idx] = record;
-    else themes.push(record);
-    saveAll(themes);
+    themes.push(record);
+    if (!saveAll(themes)) throw new Error("浏览器本地存储失败，主题未保存（可能存储空间不足或被禁用）");
     return record;
   }
 
@@ -177,8 +194,7 @@
     var themes = loadAll();
     var filtered = themes.filter(function (t) { return t.id !== id; });
     if (filtered.length === themes.length) return false;
-    saveAll(filtered);
-    return true;
+    return saveAll(filtered);
   }
 
   /* 合并：自定义主题（localStorage）覆盖内置主题，按 label 排序显示 */
@@ -192,7 +208,7 @@
       merged[key] = builtin[key];
     });
 
-    // 自定义覆盖（同 key 优先）
+    // 自定义覆盖（同 key 优先；addTheme 已拒绝与内置同 ID，此处仅兼容历史数据）
     custom.forEach(function (t) {
       merged[t.id] = t;
     });
@@ -206,56 +222,75 @@
   }
 
   /* ================================================================
-     AI 提示词
+     AI 提示词（示例为合法 JSON，字段说明在示例之外，无注释）
      ================================================================ */
 
   function buildPrompt() {
-    var fontList = VALID_FONT_KEYS.map(function (k) {
-      var f = C.FONTS[k]; return k + "（" + (f ? f.label : k) + "）";
+    var fontList = validFontKeys().map(function (k) {
+      var f = C.FONTS[k]; return "- " + k + "（" + (f ? f.label : k) + "）";
     }).join("\n");
 
     return [
-      "你是一位 UI 配色专家。请为「Only-box 活动宣传长条排版工具」设计一套主题配色方案，",
-      "输出一段纯 JSON（不要 markdown 代码块标记，不要解释文字），格式如下：",
+      "你是一位 UI 配色专家。请为「Only-box 活动宣传长条排版工具」设计一套主题配色方案。",
+      "只输出一段纯 JSON：不要 markdown 代码块标记，不要解释文字，不要注释，不要尾逗号。",
       "",
+      "JSON 格式如下：",
       "{",
-      '  "id": "my-theme",           // 唯一标识，小写字母开头，可含数字下划线短横线',
-      '  "label": "我的主题",         // 显示名称，中英文均可',
-      '  "primary": "#1e7a4f",       // 主色，用于按钮/选中态/边框',
-      '  "primaryDark": "#124f30",   // 深主色，用于标题/强调/深底',
-      '  "primarySoft": "#e4f2ea",   // 浅主色，用于卡片底色/浅区',
-      '  "accent": "#f2704b",        // 强调色，用于价格/高亮/小点缀',
-      '  "accentSoft": "#fdeae2",    // 浅强调色，用于标签底',
-      '  "line": "#cfe3d6",          // 线色，用于分隔线/边框/输入框',
-      '  "soft": "#edf4ee",          // 软底，用于工具栏底/空状态',
-      "",
-      "  以下字段为可选，不写则使用默认值：",
-      '  "cardStyle": "card",        // 可选: card / panel / glass / ticket / sticker / ink',
-      '  "radius": 23,               // 默认卡片圆角，0-100',
-      '  "shadow": "soft",           // 可选: soft / hard / glow / none',
-      '  "divider": "wave",          // 可选: wave / dots / line / glitch / thread / dashed',
-      '  "chips": "pill",            // 可选: pill / squared / tag',
-      '  "titleDecor": "none",       // 可选: none / bar / bracket / stitch / kicker',
-      '  "pattern": "none",          // 可选: none / grid / dots / stripes / paper / noise',
-      '  "avatarStyle": "none",      // 可选头像装饰: none / ring / glow / badge / frame / polaroid（作用于演出阵容头像）',
-      '  "headingFont": "",          // 可选字体键，留空跟随全局。可用字体：',
-      fontList,
-      '  "bodyFont": "",             // 同上',
-      "",
-      "  以下为排版与文字样式（可选，不写则用默认值）：",
-      '  "ink": "#2b2f2a",           // 正文墨色（正文字号的大段文字颜色）',
-      '  "muted": "#6a706c",         // 弱化说明色（图注/辅助信息颜色）',
-      '  "headingWeight": 800,       // 标题字重，400-900（主标题/板块标题/醒目数字）',
-      '  "bodyWeight": 400,          // 正文字重，300-900（正文/说明/图注）',
-      '  "lineHeight": 1,            // 全局行距缩放倍率，0.8-2（1=不缩放保持各层级原行距，1.2=整体放 20%）',
-      '  "letterSpacing": 0,         // 全局字距（像素），-5 到 20',
-      '  "typeScale": 1,             // 全局字号缩放，0.5-2（所有文字统一放大/缩小）',
-      '  "h1Scale": 1,               // 大标题字号缩放（60px 以上），0.5-2',
-      '  "h2Scale": 1,               // 板块标题字号缩放（44-59px），0.5-2',
-      '  "h3Scale": 1,               // 卡片标题字号缩放（32-43px），0.5-2',
-      '  "bodyScale": 1,             // 正文字号缩放（26-31px），0.5-2',
-      '  "captionScale": 1,          // 小字/图注缩放（26px 以下），0.5-2',
+      '  "id": "my-theme",',
+      '  "label": "我的主题",',
+      '  "primary": "#1e7a4f",',
+      '  "primaryDark": "#124f30",',
+      '  "primarySoft": "#e4f2ea",',
+      '  "accent": "#f2704b",',
+      '  "accentSoft": "#fdeae2",',
+      '  "line": "#cfe3d6",',
+      '  "soft": "#edf4ee",',
+      '  "cardStyle": "card",',
+      '  "radius": 23,',
+      '  "shadow": "soft",',
+      '  "divider": "wave",',
+      '  "chips": "pill",',
+      '  "titleDecor": "none",',
+      '  "pattern": "none",',
+      '  "avatarStyle": "none",',
+      '  "ink": "#2b2f2a",',
+      '  "muted": "#6a706c",',
+      '  "headingWeight": 800,',
+      '  "bodyWeight": 400,',
+      '  "lineHeight": 1,',
+      '  "letterSpacing": 0,',
+      '  "typeScale": 1,',
+      '  "h1Scale": 1,',
+      '  "h2Scale": 1,',
+      '  "h3Scale": 1,',
+      '  "bodyScale": 1,',
+      '  "captionScale": 1,',
+      '  "headingFont": "",',
+      '  "bodyFont": ""',
       "}",
+      "",
+      "字段说明（除 id、label 与 7 个颜色外均为可选，不写则使用默认值）：",
+      "- id：唯一标识，小写字母开头，可含数字、下划线、短横线（如 sunset-glow）；不要与现有主题重名",
+      "- label：显示名称，中英文均可（如「日落辉光」）",
+      "- primary：主色，用于按钮/选中态/边框；primaryDark：深主色，用于标题/强调/深底；primarySoft：浅主色，用于卡片底色/浅区",
+      "- accent：强调色，用于价格/高亮/小点缀；accentSoft：浅强调色，用于标签底",
+      "- line：线色，用于分隔线/边框/输入框；soft：软底，用于工具栏底/空状态",
+      "- cardStyle：卡片骨架，可选 card / panel / glass / ticket / sticker / ink",
+      "- radius：默认卡片圆角，0-100 的数字",
+      "- shadow：阴影，可选 soft / hard / glow / none",
+      "- divider：默认分割线，可选 wave / dots / line / glitch / thread / dashed",
+      "- chips：标签块形状，可选 pill / squared / tag",
+      "- titleDecor：大标题装饰，可选 none / bar / bracket / stitch / kicker",
+      "- pattern：页面底纹，可选 none / grid / dots / stripes / paper / noise",
+      "- avatarStyle：头像装饰（作用于演出阵容头像），可选 none / ring / glow / badge / frame / polaroid",
+      "- ink：正文墨色（大段文字颜色）；muted：弱化说明色（图注/辅助信息），均为 #RRGGBB",
+      "- headingWeight：标题字重，只能为 400 / 500 / 600 / 700 / 800 / 900；bodyWeight：正文字重，同档位",
+      "- lineHeight：全局行距缩放倍率，0.8-2、步进 0.05（1=不缩放）",
+      "- letterSpacing：全局字距（像素），-2 到 8、步进 0.5",
+      "- typeScale：全局字号缩放，0.7-1.5、步进 0.05",
+      "- h1Scale / h2Scale / h3Scale / bodyScale / captionScale：各级字号缩放，0.7-1.3、步进 0.05",
+      "- headingFont / bodyFont：可选字体键，留空跟随全局。可用字体：",
+      fontList,
       "",
       "规则：",
       "- 所有颜色必须为 #RRGGBB 格式，不要用 rgba/hsl/color-mix/transparent",
@@ -272,6 +307,8 @@
   /* 从文本中提取 JSON（容错：去除 markdown 代码块标记和前后空白） */
   function extractJson(text) {
     var raw = String(text || "").trim();
+    /* 大小上限：与整份长条协议一致，阻断超大粘贴导致解析冻结 */
+    if (raw.length > 1048576) return null;
     // 去掉 markdown 代码块
     raw = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/, "");
     // 找到第一个 { 到最后一个 }
@@ -298,7 +335,8 @@
     loadAll: loadAll,
     buildPrompt: buildPrompt,
     extractJson: extractJson,
-    promptText: buildPrompt(),
+    /* getter：字体导入后提示词实时包含新字体清单 */
+    get promptText() { return buildPrompt(); },
     STYLE_DEFAULTS: STYLE_DEFAULTS,
   });
 

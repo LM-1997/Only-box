@@ -18,7 +18,10 @@
     catch (error) { return false; }
   }
   function extractJson(text) {
-    var raw = String(text || "").trim().replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/, "");
+    var raw = String(text || "").trim();
+    /* 大小上限：与整份长条协议一致，阻断超大粘贴导致解析冻结 */
+    if (raw.length > 1048576) return null;
+    raw = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?\s*```\s*$/, "");
     var start = raw.indexOf("{"); var end = raw.lastIndexOf("}");
     if (start < 0 || end <= start) return null;
     try { return JSON.parse(raw.slice(start, end + 1)); } catch (error) { return null; }
@@ -33,9 +36,11 @@
     return errors;
   }
   function add(obj) {
+    var exists = loadAll().some(function (item) { return item.id === obj.id; });
+    if (exists) throw new Error("已存在同 ID 板块模块「" + obj.id + "」，为避免覆盖已有预设，请更换一个新 ID 再导入");
     var record = { id: obj.id, label: obj.label.trim(), type: obj.type, description: String(obj.description || ""), data: JSON.parse(JSON.stringify(obj.data || {})), createdAt: Date.now() };
-    var rows = loadAll(); var index = rows.findIndex(function (item) { return item.id === record.id; });
-    if (index >= 0) rows[index] = record; else rows.push(record);
+    var rows = loadAll();
+    rows.push(record);
     if (!saveAll(rows)) throw new Error("浏览器本地存储失败");
     return record;
   }
@@ -53,6 +58,7 @@
     var COMMON_KEYS = ["template", "sectionTitle", "width", "contentAlign", "bodyAlign",
       "blockBgColor", "blockBgImage", "blockOpacity", "imageRatio", "imageFit"];
 
+    /* 字段说明全部放在 JSON 示例之外（无 // 注释）：AI 照抄带注释的伪 JSON 会解析失败 */
     function fieldTypeHint(field) {
       if (field.type === "select") {
         var vals = (field.options || []).map(function (o) { return o.value === "" ? "留空" : o.value; });
@@ -61,6 +67,7 @@
       if (field.type === "image") return "（图片，JSON 里写 null，导入后再上传）";
       if (field.type === "number") return "（数字" + (field.min != null ? " " + field.min + "-" + field.max : "") + "）";
       if (field.type === "textarea") return "（多行文本）";
+      if (field.type === "stringList") return "（字符串数组，每条一个" + (field.itemLabel || "条目") + "）";
       return "（文本）";
     }
 
@@ -69,31 +76,18 @@
       return String(ph || "").replace(/^(例如|样例|如)[：:]\s*/, "");
     }
 
-    function sampleValue(field) {
-      if (field.type === "objectList") return null;
-      if (field.type === "stringList") return "[]";
-      if (field.type === "image") return "null";
-      if (field.type === "number") return "0";
-      return '""';
-    }
-
-    /* 递归描述一个字段；objectList 展开为数组 + 逐子字段，子字段可能再套 objectList */
+    /* 递归描述一个字段；objectList 展开为逐子字段说明，子字段可能再套 objectList */
     function describeField(field, depth) {
       var ind = blank(depth);
-      var name = '"' + field.key + '"';
       if (field.type === "objectList") {
-        var lines = [ind + name + ": [{"];
+        var lines = [ind + "- \"" + field.key + "\"：" + field.label + "（对象数组，每项只允许以下子字段）"];
         (field.fields || []).forEach(function (sub) {
           lines.push(describeField(sub, depth + 1));
         });
-        lines.push(ind + "}]   // " + field.label + "（" + (field.itemLabel || "条目") + "数组，可多条）");
         return lines.join("\n");
       }
-      if (field.type === "stringList") {
-        return ind + name + ": [],  // " + field.label + "（字符串数组，每条一个" + (field.itemLabel || "条目") + "）" + (field.placeholder ? "，如：" + cleanPlaceholder(field.placeholder) : "");
-      }
       var ph = field.placeholder ? "，如：" + cleanPlaceholder(field.placeholder) : "";
-      return ind + name + ": " + sampleValue(field) + ",  // " + field.label + fieldTypeHint(field) + ph;
+      return ind + "- \"" + field.key + "\"：" + field.label + fieldTypeHint(field) + ph;
     }
 
     var sections = [];
@@ -101,16 +95,16 @@
     /* 通用布局字段 */
     var common = [
       "所有板块的 data 都可带以下通用字段（可选，未写用默认值）：",
-      '  "template": "",         // 板块模板，取值见下各板块「可用模板」',
-      '  "sectionTitle": "",    // 板块大标题，可留空',
-      '  "width": "full",       // 占宽: full（通栏） / half（半宽，与下一个半宽并排）',
-      '  "contentAlign": "left",// 内容对齐: left / center / right',
-      '  "bodyAlign": "",       // 正文对齐: ""（跟随板块） / left / center / right',
-      '  "blockBgColor": "",    // 板块底色，如 #163a8a，可留空',
-      '  "blockBgImage": null,  // 板块底图，JSON 里写 null，导入后上传',
-      '  "blockOpacity": 94,    // 板块透明度 0-100',
-      '  "imageRatio": "auto",  // 图片比例: auto / 1:1 / 4:3 / 3:4 / 16:9',
-      '  "imageFit": "cover",   // 图片填充: cover（裁切填满） / contain（完整显示）',
+      "  - \"template\"：板块模板，取值见下各板块「可用模板」",
+      "  - \"sectionTitle\"：板块大标题，可留空",
+      "  - \"width\"：占宽，可选 full（通栏） / half（半宽，与下一个半宽并排）",
+      "  - \"contentAlign\"：内容对齐，可选 left / center / right",
+      "  - \"bodyAlign\"：正文对齐，可选留空（跟随板块） / left / center / right",
+      "  - \"blockBgColor\"：板块底色，如 #163a8a，可留空",
+      "  - \"blockBgImage\"：板块底图，图片，JSON 里写 null，导入后上传",
+      "  - \"blockOpacity\"：板块透明度 0-100",
+      "  - \"imageRatio\"：图片比例，可选 auto / 1:1 / 4:3 / 3:4 / 16:9",
+      "  - \"imageFit\"：图片填充，可选 cover（裁切填满） / contain（完整显示）",
     ].join("\n");
     sections.push(common);
 
@@ -135,7 +129,7 @@
     });
 
     var head = [
-      "你是 Only-box 活动宣传长条排版工具的板块设计专家。请输出一个纯 JSON（不要 markdown 代码块，不要解释文字）。",
+      "你是 Only-box 活动宣传长条排版工具的板块设计专家。请输出一个纯 JSON（不要 markdown 代码块，不要解释文字，不要注释，不要尾逗号）。",
       "一个可导入板块模块 = 已有板块 type + 一份 data 默认数据。data 只写下方定义过的字段，未写的字段用默认值。",
       "",
       "{",
@@ -143,7 +137,7 @@
       '  "label": "我的板块",',
       '  "description": "一句话说明（可选）",',
       '  "type": "ticketInfo",',
-      '  "data": { ... 按下方字段填写 ... }',
+      '  "data": {}',
       "}",
       "",
       "===== 通用字段 ===== ",
@@ -163,5 +157,6 @@
     /* 板块字段明细插在通用字段之后、规则之前 */
     return head + "\n\n" + sections.slice(1).join("\n\n") + "\n\n" + tail;
   }
-  global.BannerBuilderModuleImporter = Object.freeze({ loadAll: loadAll, add: add, remove: remove, validate: validate, extractJson: extractJson, buildPrompt: buildPrompt, promptText: buildPrompt() });
+  /* getter：保证运行时状态（如字体/类型变化）实时反映到提示词 */
+  global.BannerBuilderModuleImporter = Object.freeze({ loadAll: loadAll, add: add, remove: remove, validate: validate, extractJson: extractJson, buildPrompt: buildPrompt, get promptText() { return buildPrompt(); } });
 })(window);

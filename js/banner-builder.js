@@ -13,6 +13,8 @@
     zoom: 0.46,
     step: "setup",
     sideView: "library",
+    /* AI 整份生成的应用前内存快照：只存内存，不写 localStorage，不进入草稿文件；撤销一次后清空 */
+    aiUndoSnapshot: null,
   };
   const els = {};
   let inputId = 0;
@@ -174,6 +176,54 @@
     return data && data.imageFit === "contain" ? "contain" : "cover";
   }
 
+  /* 主题字段拼进 class 名前的清理：枚举外/含空格的值回退默认，防 DOMException 与 class 语义破坏 */
+  function safeClassSuffix(value, fallback) {
+    const token = C.safeCssToken(value);
+    return /^[a-z0-9_-]+$/i.test(token) ? token : fallback;
+  }
+
+  /* ===== Blob URL 生命周期管理 =====
+     图片记录使用 blob: URL；被替换/删除的旧图需要释放，否则长会话内存持续增长。
+     但撤销快照（aiUndoSnapshot）与草稿恢复流程仍可能引用旧 URL，直接 revoke 会让
+     撤销后的图片失效。保护集合 = 当前文档 + 撤销快照中的全部 blob URL；
+     释放前先刷新保护集合，凡被引用的一律不释放。 */
+  const protectedBlobUrls = new Set();
+  function collectBlobUrls(value, set) {
+    if (Array.isArray(value)) { for (let i = 0; i < value.length; i += 1) collectBlobUrls(value[i], set); return; }
+    if (!value || typeof value !== "object") return;
+    if (typeof value.url === "string" && value.url.indexOf("blob:") === 0) set.add(value.url);
+    Object.keys(value).forEach(function (key) { collectBlobUrls(value[key], set); });
+  }
+  function refreshProtectedBlobUrls() {
+    protectedBlobUrls.clear();
+    collectBlobUrls(state.doc, protectedBlobUrls);
+    if (state.aiUndoSnapshot) collectBlobUrls(state.aiUndoSnapshot, protectedBlobUrls);
+  }
+  function revokeBlobUrl(url) {
+    try { URL.revokeObjectURL(url); } catch (error) { /* ignore */ }
+  }
+  function releaseImageRecord(value) {
+    if (!value || typeof value !== "object" || typeof value.url !== "string") return;
+    if (value.url.indexOf("blob:") !== 0) return;
+    if (protectedBlobUrls.has(value.url)) return;
+    revokeBlobUrl(value.url);
+  }
+  /* 替换/清除图片记录：先更新文档，再刷新保护集合，最后释放不再被引用的旧记录 */
+  function replaceImageRecord(holder, key, next) {
+    const old = holder ? holder[key] : null;
+    if (holder) holder[key] = next;
+    refreshProtectedBlobUrls();
+    releaseImageRecord(old);
+  }
+  /* 整份文档被替换时（AI 生成/草稿恢复/撤销）：释放旧文档独占的 blob URL */
+  function releaseDocBlobs(oldDoc) {
+    if (!oldDoc) return;
+    const urls = new Set();
+    collectBlobUrls(oldDoc, urls);
+    refreshProtectedBlobUrls();
+    urls.forEach(function (url) { if (!protectedBlobUrls.has(url)) revokeBlobUrl(url); });
+  }
+
   function hexToRgba(value, alpha) {
     const raw = String(value || "").trim().replace("#", "");
     if (!/^[0-9a-f]{6}$/i.test(raw)) return "";
@@ -293,7 +343,7 @@
       const file = input.files && input.files[0];
       if (!file) return;
       openImageWithCrop(file, function (value) {
-        if (value) { obj[field.key] = value; renderAll(); }
+        if (value) { replaceImageRecord(obj, field.key, value); renderAll(); }
       }, cropAspectForField(field, obj, moduleData));
       input.value = "";
     });
@@ -302,7 +352,7 @@
     if (current && current.url) {
       const clear = el("button", "bb-mini-btn", "移除");
       clear.type = "button";
-      clear.addEventListener("click", function () { obj[field.key] = null; renderAll(); });
+      clear.addEventListener("click", function () { replaceImageRecord(obj, field.key, null); renderAll(); });
       actions.appendChild(clear);
     }
     actions.appendChild(el("span", "bb-image-name", current && current.name ? current.name : "仅在浏览器本地处理"));
@@ -462,7 +512,7 @@
       const cell = el("div", "bb-image-cell");
       const img = el("img", "bb-image-thumb"); img.src = item.url; img.alt = item.name || "已选图片";
       const del = el("button", "bb-icon-btn danger", "×"); del.type = "button"; del.title = "移除这张图片";
-      del.addEventListener("click", function () { list.splice(index, 1); renderAll(); });
+      del.addEventListener("click", function () { const removed = list.splice(index, 1)[0]; refreshProtectedBlobUrls(); releaseImageRecord(removed); renderAll(); });
       cell.appendChild(img); cell.appendChild(del); grid.appendChild(cell);
     });
     if (list.length) wrap.appendChild(grid); else wrap.appendChild(el("p", "bb-hint", "还没有图片，点击添加。"));
@@ -490,7 +540,9 @@
       case "venueInfo": renderVenue(box, data, tpl); break;
       case "routeText": renderRoute(box, data, tpl); break;
       case "programList": renderProgram(box, data, tpl); break;
-      case "performerCard": renderPerformer(box, data, tpl); break;
+      case "castList":
+      case "castCards":
+        renderPerformer(box, data, tpl); break;
       case "boothList": renderBooth(box, data, tpl); break;
       case "divider": renderDivider(box, data, tpl); break;
       case "footer": renderFooter(box, data, tpl); break;
@@ -767,7 +819,7 @@
       }
     }
     function buildAvatar(member) {
-      const style = artTheme().avatarStyle || "none";
+      const style = safeClassSuffix(artTheme().avatarStyle, "none");
       const media = el("div", "bb-cast-media " + style);
       const size = avatarSize(member.avatarRatio || "1:1");
       const img = visualImage(imageSrc(member.avatar), "bb-cast-avatar", "头像");
@@ -935,7 +987,7 @@
     if (st.cardStyle === "ink") domShadow += ", inset 0 0 0 1px " + alphaColor(st.primary, 0.35);
     box.style.boxShadow = domShadow;
     box.classList.remove("bb-card-card", "bb-card-panel", "bb-card-glass", "bb-card-ink", "bb-card-ticket", "bb-card-sticker");
-    box.classList.add("bb-card-" + (st.cardStyle || "card"));
+    box.classList.add("bb-card-" + safeClassSuffix(st.cardStyle, "card"));
     if (data.blockBgImage && data.blockBgImage.url) { box.style.backgroundImage = "url(\"" + data.blockBgImage.url + "\")"; box.style.backgroundSize = "cover"; box.style.backgroundPosition = "center"; }
     box.dataset.imageRatio = data.imageRatio || "auto";
     box.dataset.imageFit = data.imageFit || "cover";
@@ -994,7 +1046,7 @@
     canvas.style.setProperty("--bb-font-heading", C.headingFontStack(state.doc));
     canvas.style.setProperty("--bb-font-body", C.bodyFontStack(state.doc));
     canvas.style.setProperty("--bb-page-bg", page.backgroundColor || state.doc.backgroundColor || "#ffffff");
-    canvas.classList.add("bb-pattern-" + (artTheme().pattern || "none"));
+    canvas.classList.add("bb-pattern-" + safeClassSuffix(artTheme().pattern, "none"));
     if (continuous) {
       if (page.backgroundColor) canvas.style.backgroundColor = page.backgroundColor;
       if (page.backgroundImage && page.backgroundImage.url) { canvas.style.backgroundImage = docBackgroundStyle(page.backgroundImage); canvas.style.backgroundSize = "cover"; }
@@ -1045,7 +1097,7 @@
       state.doc.pages.forEach(function (page, index) { strip.appendChild(buildPage(page, index, true)); });
       strip.style.fontFamily = C.headingFontStack(state.doc);
       applyThemeVars(strip);
-      strip.classList.add("bb-pattern-" + (artTheme().pattern || "none"));
+      strip.classList.add("bb-pattern-" + safeClassSuffix(artTheme().pattern, "none"));
       frag.appendChild(strip);
     } else {
       state.doc.pages.forEach(function (page, index) { frag.appendChild(buildPage(page, index, false)); });
@@ -1074,6 +1126,9 @@
 
   /* ===== 三步向导：同步步骤条、对应工具栏显隐、工作区库栏显隐、属性面板 ===== */
   function syncStep() {
+    /* AI 撤销条属于编辑/设置流程提示，导出步骤隐藏以减少干扰 */
+    const undoBar = document.getElementById("bb-ai-undo-bar");
+    if (undoBar) undoBar.style.display = state.step === "export" ? "none" : "";
     if (!els.stepBar) return;
     Array.prototype.forEach.call(els.stepBar.querySelectorAll(".bb-step"), function (button) {
       const active = button.dataset.step === state.step;
@@ -1158,7 +1213,7 @@
     if (!rows || !rows.length) return;
     els.myTplArea.hidden = false; els.myTplCount.textContent = rows.length + " 个";
     rows.forEach(function (row) {
-      const def = R.getDef(row.type);
+      const def = R.getDef(row.type) || R.getDef(migrateLegacyModuleType(row.type, row.data));
       const item = el("div", "bb-lib-item bb-mytpl-item"); item.dataset.action = "tpl-add"; item.dataset.tplId = row.id; item.title = "点击把整个板块（含文字与图片）加入当前屏";
       item.appendChild(el("span", "bb-lib-text", "★ " + row.name));
       item.appendChild(el("span", "bb-mytpl-type", def ? def.label : row.type));
@@ -1185,7 +1240,7 @@
     if (!MI) return;
     const record = MI.loadAll().filter(function (item) { return item.id === customId; })[0];
     if (!record) return;
-    const module = M.addModule(state.doc, activePage().id, record.type);
+    const module = M.addModule(state.doc, activePage().id, migrateLegacyModuleType(record.type, record.data));
     if (!module) return;
     module.data = Object.assign({}, module.data, JSON.parse(JSON.stringify(record.data || {})));
     migrateModuleData(module);
@@ -1213,11 +1268,364 @@
     const msg = document.createElement("div"); modal.appendChild(msg);
     const actions = document.createElement("div"); actions.className = "bb-modal-actions";
     const copyBtn = document.createElement("button"); copyBtn.className = "bb-btn ghost"; copyBtn.type = "button"; copyBtn.textContent = "复制提示词";
-    copyBtn.addEventListener("click", function () { promptArea.select(); try { document.execCommand("copy"); msg.className = "bb-modal-success"; msg.textContent = "提示词已复制"; } catch (error) { msg.textContent = "请手动复制上方提示词"; } });
+    copyBtn.addEventListener("click", function () { copyTextToClipboard(promptArea.value).then(function (ok) { msg.className = ok ? "bb-modal-success" : "bb-modal-error"; msg.textContent = ok ? "提示词已复制" : "自动复制失败，请手动复制上方提示词"; }); });
     const importBtn = document.createElement("button"); importBtn.className = "bb-btn primary"; importBtn.type = "button"; importBtn.textContent = "导入模块";
     importBtn.addEventListener("click", function () { const obj = MI.extractJson(inputArea.value); if (!obj) { msg.className = "bb-modal-error"; msg.textContent = "JSON 格式解析失败"; return; } const errors = MI.validate(obj); if (errors.length) { msg.className = "bb-modal-error"; msg.textContent = "校验不通过：" + errors.join("；"); return; } try { MI.add(obj); renderLibrary(); msg.className = "bb-modal-success"; msg.textContent = "板块模块「" + obj.label + "」已导入"; } catch (error) { msg.className = "bb-modal-error"; msg.textContent = "保存失败：" + error.message; } });
     const closeBtn = document.createElement("button"); closeBtn.className = "bb-btn ghost"; closeBtn.type = "button"; closeBtn.textContent = "关闭"; closeBtn.addEventListener("click", function () { mask.remove(); });
     actions.appendChild(copyBtn); actions.appendChild(importBtn); actions.appendChild(closeBtn); modal.appendChild(actions); mask.appendChild(modal); document.body.appendChild(mask);
+  }
+
+  /* ===== AI 生成整份长条 =====
+     流程：复制提示词 → 用户在外部 AI 中附上活动资料（可选参考图）→ 粘贴 JSON →
+     BannerBuilderAiDocument 解析/校验/规范化/构造候选文档 → 原子替换 state.doc → 一次撤销。
+     全程无网络请求；粘贴内容只存在弹窗内存中，关闭即丢弃。 */
+
+  /* 通用复制 helper：优先 navigator.clipboard，失败回退隐藏 textarea + execCommand；
+     返回 Promise<boolean>，绝不吞掉失败。 */
+  function legacyCopyText(text) {
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(area);
+      return !!ok;
+    } catch (error) { return false; }
+  }
+  function copyTextToClipboard(text) {
+    return new Promise(function (resolve) {
+      const value = String(text == null ? "" : text);
+      if (global.navigator && global.navigator.clipboard && typeof global.navigator.clipboard.writeText === "function") {
+        global.navigator.clipboard.writeText(value).then(function () { resolve(true); }, function () { resolve(legacyCopyText(value)); });
+        return;
+      }
+      resolve(legacyCopyText(value));
+    });
+  }
+
+  function ensureDocFonts(doc) {
+    if (!doc) return;
+    if (doc.headingFont) ensureFont(doc.headingFont);
+    if (doc.bodyFont) ensureFont(doc.bodyFont);
+    if (doc.fontFamily) ensureFont(doc.fontFamily);
+  }
+
+  function removeAiUndoNotice() {
+    const bar = document.getElementById("bb-ai-undo-bar");
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+  }
+  function showAiUndoNotice(pages, modules, emptyPages) {
+    removeAiUndoNotice();
+    const bar = el("div");
+    bar.id = "bb-ai-undo-bar";
+    bar.setAttribute("role", "status");
+    bar.style.cssText = "width:min(var(--ob-content),calc(100% - 40px));margin:10px auto 0;padding:9px 13px;border:1px solid var(--bb-line);border-radius:9px;background:var(--ob-primary-soft);color:var(--ob-primary-dark);font-size:12px;font-weight:700;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap";
+    let text = "已生成 " + pages + " 屏、" + modules + " 个板块，已进入编辑步骤。";
+    if (Array.isArray(emptyPages) && emptyPages.length) {
+      text += " 注意：第 " + emptyPages.join("、") + " 屏还没有板块内容，可回编辑步骤补充或删除空屏。";
+    }
+    bar.appendChild(el("span", null, text));
+    const undoBtn = el("button", "bb-btn ghost", "撤销本次生成");
+    undoBtn.type = "button";
+    undoBtn.title = "恢复到 AI 生成前的内容；生成之后的手动修改也会一并丢弃";
+    undoBtn.addEventListener("click", undoAiGeneration);
+    bar.appendChild(undoBtn);
+    const shell = document.querySelector(".bb-shell");
+    if (shell && shell.parentNode) shell.parentNode.insertBefore(bar, shell);
+  }
+  function isRestorableDoc(doc) {
+    return !!doc && typeof doc === "object" && Array.isArray(doc.pages) && doc.pages.length > 0 && !!doc.pages[0] && !!doc.pages[0].id;
+  }
+  function undoAiGeneration() {
+    const snapshot = state.aiUndoSnapshot;
+    removeAiUndoNotice();
+    state.aiUndoSnapshot = null;
+    if (!isRestorableDoc(snapshot)) { renderAll(); return; }
+    state.doc = snapshot;
+    state.activePageId = snapshot.pages[0].id;
+    state.selectedModuleId = null;
+    ensureDocFonts(state.doc);
+    refreshProtectedBlobUrls();
+    renderAll();
+  }
+
+  function formatAiProblem(outcome) {
+    if (outcome.phase === "parse") return outcome.message || "JSON 解析失败";
+    if (outcome.phase === "build") return "候选文档构造失败：" + (outcome.message || "");
+    if (Array.isArray(outcome.errors) && outcome.errors.length) {
+      const AD = global.BannerBuilderAiDocument;
+      const limit = (AD && AD.LIMITS && AD.LIMITS.maxShownErrors) || 50;
+      const lines = outcome.errors.slice(0, limit).map(function (item) { return (item.path ? item.path + "：" : "") + item.message; });
+      if (outcome.errors.length > limit) lines.push("……其余 " + (outcome.errors.length - limit) + " 处问题未展示，请修正后重新校验。");
+      let text = "发现 " + outcome.errors.length + " 处问题：\n" + lines.join("\n");
+      if (outcome.errors.some(function (item) { return item.code === "theme_not_allowed" || item.code === "theme_required"; })) {
+        text += "\n\n提示：「同时生成主题」勾选状态可能与复制提示词时不一致，请按当前勾选状态重新复制提示词后再粘贴。";
+      }
+      return text;
+    }
+    return "校验未通过，请检查粘贴内容。";
+  }
+
+  /* 会话内记住上次选择的活动类型（仅内存，不写 localStorage，刷新重置） */
+  let aiModalEventType = "mixed";
+
+  function aiPromptContext(includeTheme, eventType) {
+    const themeStyle = C.themeStyle(state.doc.theme) || {};
+    return {
+      ratio: state.doc.ratio,
+      screenMode: state.doc.screenMode || "split",
+      themeId: state.doc.theme,
+      themeLabel: themeStyle.label || state.doc.theme,
+      fontFamily: state.doc.fontFamily || "sans",
+      headingFont: state.doc.headingFont || "",
+      bodyFont: state.doc.bodyFont || "",
+      includeTheme: !!includeTheme,
+      eventType: eventType || "mixed",
+    };
+  }
+
+  /* 应用入口：纯数据层完成解析→校验→规范化→候选构造（失败绝不触碰 state），
+     通过可注入 replace/render 钩子原子替换并渲染，渲染失败回滚快照。 */
+  function applyAiDocumentFromText(rawText, includeTheme, hooks) {
+    const AD = global.BannerBuilderAiDocument;
+    if (!AD) return;
+    const prev = { activePageId: state.activePageId, selectedModuleId: state.selectedModuleId, step: state.step, sideView: state.sideView };
+    const outcome = AD.applyPipeline(rawText, {
+      includeTheme: includeTheme,
+      currentDoc: state.doc,
+      replace: function (doc, undoSnapshot) {
+        const oldDoc = state.doc;
+        state.doc = doc;
+        state.activePageId = doc.pages[0].id;
+        state.selectedModuleId = null;
+        state.step = "edit";
+        state.sideView = "layers";
+        ensureDocFonts(doc);
+        /* 先让撤销快照接管 blob 保护，再释放旧文档独占的图片，撤销恢复不丢图 */
+        if (undoSnapshot) state.aiUndoSnapshot = undoSnapshot;
+        refreshProtectedBlobUrls();
+        releaseDocBlobs(oldDoc);
+      },
+      render: renderAll,
+    });
+    if (!outcome.ok) {
+      if (outcome.phase === "render") {
+        state.activePageId = prev.activePageId;
+        state.selectedModuleId = prev.selectedModuleId;
+        state.step = prev.step;
+        state.sideView = prev.sideView;
+        state.aiUndoSnapshot = null;
+        refreshProtectedBlobUrls();
+        renderAll();
+        hooks.show("error", "应用失败，已恢复原内容：" + (outcome.message || "渲染异常"));
+        return;
+      }
+      hooks.show("error", formatAiProblem(outcome));
+      return;
+    }
+    hooks.close();
+    const emptyPages = outcome.doc.pages
+      .map(function (page, index) { return (page.modules || []).length ? 0 : index + 1; })
+      .filter(function (n) { return n; });
+    showAiUndoNotice(outcome.stats.pages, outcome.stats.modules, emptyPages);
+  }
+
+  function showAiDocumentModal() {
+    const AD = global.BannerBuilderAiDocument;
+    if (!AD) return;
+    const existing = document.getElementById("bb-ai-doc-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+
+    const mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-ai-doc-modal";
+    const modal = document.createElement("div");
+    modal.className = "bb-modal";
+
+    modal.appendChild(el("h3", null, "AI 生成整份长条"));
+    modal.appendChild(el("p", null, "复制提示词，与您的活动资料一起发给常用 AI；如果使用支持看图的 AI，也可以同时附上参考图片。再把 AI 返回的 JSON 粘贴回来。"));
+    modal.appendChild(el("p", null, "隐私说明：Only-box 不连接 AI 服务，不读取外部对话，不上传活动资料或参考图片；粘贴内容不会被保存。"));
+
+    const eventRow = el("div");
+    eventRow.style.cssText = "display:flex;align-items:center;gap:8px;margin:12px 0 0";
+    const eventLabel = el("label", "bb-field-label", "活动类型");
+    eventLabel.htmlFor = "bb-ai-event-type";
+    eventLabel.style.cssText = "flex:0 0 auto;margin:0";
+    const eventTypeSelect = el("select", "bb-input");
+    eventTypeSelect.id = "bb-ai-event-type";
+    eventTypeSelect.style.cssText = "width:auto;min-height:28px;padding:0 6px;font-size:11px;font-weight:700";
+    [["mixed", "综合活动（演出 + 摊位等多种形式）"], ["live", "Live 演出活动"], ["booth", "摊位活动（市集 / Only 展销）"]].forEach(function (pair) {
+      const option = el("option", null, pair[1]);
+      option.value = pair[0];
+      eventTypeSelect.appendChild(option);
+    });
+    eventRow.appendChild(eventLabel);
+    eventRow.appendChild(eventTypeSelect);
+    modal.appendChild(eventRow);
+
+    const themeCheckLabel = el("label");
+    themeCheckLabel.style.cssText = "display:flex;align-items:center;gap:7px;margin:10px 0 0;font-size:12px;font-weight:750;color:var(--ob-ink);cursor:pointer";
+    const themeCheck = document.createElement("input");
+    themeCheck.type = "checkbox";
+    themeCheck.id = "bb-ai-include-theme";
+    themeCheck.style.accentColor = "var(--ob-primary)";
+    themeCheckLabel.appendChild(themeCheck);
+    themeCheckLabel.appendChild(document.createTextNode("同时生成主题"));
+    modal.appendChild(themeCheckLabel);
+    modal.appendChild(el("p", null, "勾选后 AI 会额外输出当前主题的配色与风格微调参数（适合支持看图的 AI 配合参考图使用）；默认不勾选，沿用当前主题与已有微调。"));
+
+    const promptHead = el("div");
+    promptHead.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:14px 0 5px";
+    const promptLabel = el("label", "bb-field-label", "提示词（只读，复制后与活动资料一起发给 AI）");
+    promptLabel.htmlFor = "bb-ai-prompt";
+    promptLabel.style.margin = "0";
+    const promptCount = el("span", "bb-count", "");
+    promptHead.appendChild(promptLabel);
+    promptHead.appendChild(promptCount);
+    modal.appendChild(promptHead);
+    const promptArea = document.createElement("textarea");
+    promptArea.className = "bb-input bb-modal-textarea";
+    promptArea.id = "bb-ai-prompt";
+    promptArea.readOnly = true;
+    promptArea.style.minHeight = "180px";
+    modal.appendChild(promptArea);
+    function rebuildPrompt() {
+      promptArea.value = AD.buildPrompt(aiPromptContext(themeCheck.checked, eventTypeSelect.value));
+      promptCount.textContent = promptArea.value.length + " 字符";
+    }
+    rebuildPrompt();
+    eventTypeSelect.value = ["mixed", "live", "booth"].indexOf(aiModalEventType) >= 0 ? aiModalEventType : "mixed";
+    themeCheck.addEventListener("change", function () { rebuildPrompt(); schedulePreflight(); });
+    eventTypeSelect.addEventListener("change", function () { aiModalEventType = eventTypeSelect.value; rebuildPrompt(); });
+
+    const copyRow = el("div", "bb-modal-actions");
+    copyRow.style.marginTop = "10px";
+    const copyBtn = el("button", "bb-btn primary", "复制提示词");
+    copyBtn.type = "button";
+    const copyMsg = el("span");
+    copyMsg.style.cssText = "align-self:center;font-size:11px;font-weight:700;color:var(--ob-muted)";
+    copyBtn.addEventListener("click", function () {
+      copyBtn.disabled = true;
+      copyTextToClipboard(promptArea.value).then(function (ok) {
+        copyBtn.disabled = false;
+        copyMsg.textContent = ok ? "已复制，请粘贴到外部 AI 对话中并附上活动资料" : "自动复制失败，请点击上方文本框全选手动复制";
+        if (ok) setTimeout(function () { if (copyMsg.textContent.indexOf("已复制") === 0) copyMsg.textContent = ""; }, 6000);
+      });
+    });
+    copyRow.appendChild(copyBtn);
+    copyRow.appendChild(copyMsg);
+    modal.appendChild(copyRow);
+
+    const resultLabel = el("label", "bb-field-label", "AI 返回的 JSON（整份长条）");
+    resultLabel.htmlFor = "bb-ai-result";
+    resultLabel.style.cssText = "display:block;margin:14px 0 5px";
+    modal.appendChild(resultLabel);
+    const resultArea = document.createElement("textarea");
+    resultArea.className = "bb-input bb-modal-textarea";
+    resultArea.id = "bb-ai-result";
+    resultArea.placeholder = "把 AI 返回的 JSON 粘贴到这里（支持带 Markdown 代码块围栏）";
+    resultArea.style.minHeight = "150px";
+    modal.appendChild(resultArea);
+
+    /* 粘贴预检：输入停顿后做只读解析+校验，提前反馈屏数/板块数或问题数量（正式校验仍由「校验并应用」执行） */
+    const preflight = el("div");
+    preflight.id = "bb-ai-preflight";
+    preflight.style.cssText = "display:none;margin:8px 0 0;font-size:11px;font-weight:700;line-height:1.6";
+    modal.appendChild(preflight);
+    let preflightTimer = null;
+    function runPreflight() {
+      const AD = global.BannerBuilderAiDocument;
+      if (!AD) return;
+      const text = resultArea.value;
+      if (!text.trim()) { preflight.style.display = "none"; preflight.textContent = ""; return; }
+      const parsed = AD.extractJson(text);
+      if (!parsed.ok) {
+        preflight.style.display = "block";
+        preflight.style.color = "#b54a35";
+        preflight.textContent = "预检：还不是合法 JSON —— " + parsed.message + "。可在与 AI 的对话中要求它重新输出：只输出纯 JSON，不带注释、解释文字和尾逗号。";
+        return;
+      }
+      const check = AD.validate(parsed.value, { includeTheme: themeCheck.checked });
+      if (!check.valid) {
+        preflight.style.display = "block";
+        preflight.style.color = "#b54a35";
+        preflight.textContent = "预检发现 " + check.errors.length + " 处问题，点击「校验并应用」查看具体路径与原因。";
+        return;
+      }
+      let moduleCount = 0;
+      const typeCounts = {};
+      parsed.value.pages.forEach(function (page) {
+        (page.modules || []).forEach(function (module) {
+          moduleCount += 1;
+          const label = R.typeLabel(module.type);
+          typeCounts[label] = (typeCounts[label] || 0) + 1;
+        });
+      });
+      const breakdown = Object.keys(typeCounts).map(function (label) { return label + "×" + typeCounts[label]; }).join("、");
+      preflight.style.display = "block";
+      preflight.style.color = "var(--ob-primary-dark)";
+      preflight.textContent = "预检通过：" + parsed.value.pages.length + " 屏、" + moduleCount + " 个板块（" + breakdown + "），点击「校验并应用」生效。";
+    }
+    function schedulePreflight() {
+      if (preflightTimer) clearTimeout(preflightTimer);
+      preflightTimer = setTimeout(function () { preflightTimer = null; runPreflight(); }, 250);
+    }
+    resultArea.addEventListener("input", schedulePreflight);
+
+    const msg = el("div");
+    msg.setAttribute("aria-live", "polite");
+    msg.style.cssText = "display:none;margin:10px 0 0;padding:9px 12px;border-radius:9px;font-size:11px;font-weight:700;white-space:pre-wrap;max-height:240px;overflow:auto";
+    modal.appendChild(msg);
+    function showMsg(type, text) {
+      msg.style.display = "block";
+      msg.className = type === "error" ? "bb-modal-error" : "bb-modal-success";
+      msg.textContent = text;
+      msg.scrollTop = 0;
+    }
+
+    function closeAiDocumentModal() {
+      document.removeEventListener("keydown", onKeydown, true);
+      if (preflightTimer) { clearTimeout(preflightTimer); preflightTimer = null; }
+      if (mask.parentNode) mask.parentNode.removeChild(mask);
+      const opener = els.generateAiDocumentBtn;
+      if (opener && typeof opener.focus === "function") { try { opener.focus(); } catch (e) { /* ignore */ } }
+    }
+    function onKeydown(event) {
+      if (event.key === "Escape") { event.stopPropagation(); closeAiDocumentModal(); }
+    }
+    mask.addEventListener("click", function (event) {
+      if (event.target !== mask) return;
+      if (resultArea.value.trim() && !global.confirm("有未应用的 AI 结果，确定关闭吗？")) return;
+      closeAiDocumentModal();
+    });
+
+    const actionRow = el("div", "bb-modal-actions");
+    const applyBtn = el("button", "bb-btn primary", "校验并应用");
+    applyBtn.type = "button";
+    applyBtn.addEventListener("click", function () {
+      showMsg("success", "正在解析与校验…");
+      const includeTheme = themeCheck.checked;
+      applyBtn.disabled = true;
+      setTimeout(function () {
+        try {
+          applyAiDocumentFromText(resultArea.value, includeTheme, { show: showMsg, close: closeAiDocumentModal });
+        } finally { applyBtn.disabled = false; }
+      }, 30);
+    });
+    const closeBtn = el("button", "bb-btn ghost", "关闭");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", closeAiDocumentModal);
+    actionRow.appendChild(applyBtn);
+    actionRow.appendChild(closeBtn);
+    modal.appendChild(actionRow);
+
+    mask.appendChild(modal);
+    document.body.appendChild(mask);
+    document.addEventListener("keydown", onKeydown, true);
+    try { copyBtn.focus(); } catch (e) { /* ignore */ }
   }
 
   async function addTemplateToPage(tplId) {
@@ -1226,7 +1634,7 @@
     try { rows = await global.BannerBuilderMyTemplates.listTemplates(); } catch (error) { return; }
     const row = rows.filter(function (record) { return record.id === tplId; })[0];
     if (!row) { renderMyTemplates(); return; }
-    const module = M.addModule(state.doc, activePage().id, row.type);
+    const module = M.addModule(state.doc, activePage().id, migrateLegacyModuleType(row.type, row.data));
     if (!module) return;
     module.data = Object.assign({}, module.data, global.BannerBuilderMyTemplates.cloneTemplateData(row.data));
     migrateModuleData(module);
@@ -2593,7 +3001,9 @@
       case "venueInfo": return paintVenue(ctx, data, x0, y0, w);
       case "routeText": return paintRoute(ctx, data, x0, y0, w);
       case "programList": return paintProgram(ctx, data, x0, y0, w);
-      case "performerCard": return paintPerformer(ctx, data, x0, y0, w);
+      case "castList":
+      case "castCards":
+        return paintPerformer(ctx, data, x0, y0, w);
       case "boothList": return paintBooth(ctx, data, x0, y0, w);
       case "divider": return paintDivider(ctx, data, x0, y0, w);
       case "footer": return paintFooter(ctx, data, x0, y0, w);
@@ -3073,7 +3483,7 @@
         await addImg("联动方图标", data.icon, item.x, px(headY + 20), 120, 120, "contain");
       } else if (module.type === "ticketInfo" && data.qrImage) {
         await addImg("购票二维码", data.qrImage, px(item.x + item.w - 228), px(headY + 20), 208, 208, "contain");
-      } else if (module.type === "performerCard" && data.cast && data.cast[0] && data.cast[0].avatar) {
+      } else if ((module.type === "castList" || module.type === "castCards") && data.cast && data.cast[0] && data.cast[0].avatar) {
         await addImg("成员头像", data.cast[0].avatar, item.x, px(headY + 20), 160, 160, imgFit);
       } else if (module.type === "programList") {
         const pgItems = data.items || [];
@@ -3139,7 +3549,8 @@
           (data.items || []).forEach(function (it, i) { addT("节目 " + (i + 1), [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, py, 25, inkColor, "left", "body"); py += 40; });
           break;
         }
-        case "performerCard": {
+        case "castList":
+        case "castCards": {
           let pcy = headY + 70;
           (data.cast || []).forEach(function (member) {
             if (member.name) { addT("成员", [R.castRoleLabel(member.role), member.name, member.time].filter(Boolean).join("  "), cardLeft, pcy, 30, st.primaryDark, "left"); pcy += 44; }
@@ -3213,9 +3624,19 @@
       downloadText(JSON.stringify(snap, null, 2), "only-box-banner-draft.json");
     } catch (error) { global.alert("草稿保存失败：" + ((error && error.message) || error)); }
   }
+  /* 旧类型 key 迁移：performerCard 拆分为 castList / castCards 后，历史数据按模板落位。
+     存储记录（草稿/自定义板块/我的模板）创建模块前必须先过这个函数。 */
+  function migrateLegacyModuleType(type, data) {
+    if (type === "performerCard") {
+      return data && data.template === "cast-cards" ? "castCards" : "castList";
+    }
+    return type;
+  }
   function migrateModuleData(module) {
+    if (!module || !module.data) return module;
     /* 旧「嘉宾卡」单嘉宾结构（name/bio/setlist/images）→ 新「演出阵容」列表结构（cast） */
-    if (module && module.type === "performerCard" && module.data && !Array.isArray(module.data.cast)) {
+    const isPerformer = module.type === "performerCard" || module.type === "castList" || module.type === "castCards";
+    if (isPerformer && !Array.isArray(module.data.cast)) {
       const legacy = module.data;
       const setlist = (legacy.setlist || []).map(function (song) {
         return { song: String(song).replace(/^♪\s*/, ""), coverBy: "" };
@@ -3230,9 +3651,138 @@
         setlist: setlist,
       }];
     }
+    /* performerCard 拆分落位：卡片模板 → castCards，其余 → castList */
+    if (module.type === "performerCard") {
+      module.type = migrateLegacyModuleType(module.type, module.data);
+    }
     return module;
   }
-  function loadDraft(file) { const reader = new FileReader(); reader.onload = function () { try { const parsed = JSON.parse(reader.result); if (!parsed || !Array.isArray(parsed.pages)) throw new Error("文件结构不正确"); restoreDraftImages(parsed); (parsed.pages || []).forEach(function (page) { (page.modules || []).forEach(migrateModuleData); }); state.doc = parsed; if (!state.doc.themeOverrides) state.doc.themeOverrides = {}; if (!state.doc.exportScale) state.doc.exportScale = 2; state.activePageId = state.doc.pages[0].id; state.selectedModuleId = null; if (state.doc.headingFont) ensureFont(state.doc.headingFont); if (state.doc.bodyFont) ensureFont(state.doc.bodyFont); if (state.doc.fontFamily) ensureFont(state.doc.fontFamily); renderAll(); } catch (error) { global.alert("草稿读取失败：" + error.message); } }; reader.readAsText(file); }
+  /* 草稿恢复：解析 → 结构校验/规范化 → 构造候选文档 → 原子替换。
+     任何一步失败都不修改当前 state.doc（修复旧实现 pages:[] 部分覆盖当前状态的缺陷）。
+     草稿是用户自己的备份，data 字段保持宽容（保留历史内部字段），但页面/模块结构必须完整、
+     板块类型必须可识别；缺失的 ID 本地补齐，旧「嘉宾卡」结构自动迁移。 */
+  /* 草稿资源上限：草稿 JSON 会在社区互传，属于不可信输入。
+     上限远超正常使用（正常长条 ≤ 20 屏 / ≤ 120 板块），只为阻断恶意超大草稿导致浏览器冻结。 */
+  const DRAFT_LIMITS = {
+    maxFileSize: 64 * 1024 * 1024,
+    maxPages: 200,
+    maxModulesPerPage: 300,
+    maxModulesTotal: 3000,
+    maxStringLength: 50000,
+    maxDepth: 64,
+  };
+  function assertDraftLimits(value, depth) {
+    if (depth > DRAFT_LIMITS.maxDepth) throw new Error("草稿数据嵌套过深");
+    if (typeof value === "string") {
+      if (value.length > DRAFT_LIMITS.maxStringLength) throw new Error("草稿包含异常长的文本（超过 " + DRAFT_LIMITS.maxStringLength + " 字），疑似损坏或恶意文件");
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) assertDraftLimits(value[i], depth + 1);
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.keys(value).forEach(function (key) { assertDraftLimits(value[key], depth + 1); });
+    }
+  }
+  function buildDraftCandidate(parsed) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("草稿必须是 JSON 对象");
+    if (!Array.isArray(parsed.pages) || !parsed.pages.length) throw new Error("草稿缺少页面数据（pages 必须是非空数组）");
+    if (parsed.pages.length > DRAFT_LIMITS.maxPages) throw new Error("草稿屏数超过 " + DRAFT_LIMITS.maxPages + " 屏，疑似损坏或恶意文件");
+    if (parsed.name != null && (typeof parsed.name !== "string" || parsed.name.length > 200)) throw new Error("草稿名称异常");
+    try { assertDraftLimits(parsed, 0); } catch (error) { throw new Error((error && error.message) || error); }
+    const candidate = M.createDoc(C.CANVAS_PRESETS[parsed.ratio] ? parsed.ratio : C.DEFAULT_RATIO);
+    if (typeof parsed.name === "string" && parsed.name.trim()) candidate.name = parsed.name;
+    if (parsed.screenMode === "continuous" || parsed.screenMode === "split") candidate.screenMode = parsed.screenMode;
+    if (typeof parsed.theme === "string" && parsed.theme) candidate.theme = parsed.theme;
+    ["fontFamily", "headingFont", "bodyFont"].forEach(function (key) {
+      if (typeof parsed[key] === "string") candidate[key] = parsed[key];
+    });
+    if (parsed.fontManual === true) candidate.fontManual = true;
+    if (typeof parsed.backgroundColor === "string" && parsed.backgroundColor) candidate.backgroundColor = parsed.backgroundColor;
+    if (parsed.backgroundImage && typeof parsed.backgroundImage === "object" && typeof parsed.backgroundImage.url === "string") {
+      candidate.backgroundImage = { url: parsed.backgroundImage.url, name: parsed.backgroundImage.name || "", type: parsed.backgroundImage.type || "" };
+    }
+    candidate.exportScale = parsed.exportScale === 1 || parsed.exportScale === 3 ? parsed.exportScale : 2;
+    candidate.themeOverrides = parsed.themeOverrides && typeof parsed.themeOverrides === "object" && !Array.isArray(parsed.themeOverrides)
+      ? JSON.parse(JSON.stringify(parsed.themeOverrides))
+      : {};
+    candidate.pages = parsed.pages.map(function (rawPage, pi) {
+      if (!rawPage || typeof rawPage !== "object" || Array.isArray(rawPage)) throw new Error("第 " + (pi + 1) + " 屏数据不正确");
+      const page = M.createPage();
+      page.id = typeof rawPage.id === "string" && rawPage.id ? rawPage.id : C.uid();
+      if (typeof rawPage.name === "string" && rawPage.name) page.name = rawPage.name;
+      if (typeof rawPage.backgroundColor === "string") page.backgroundColor = rawPage.backgroundColor;
+      if (rawPage.backgroundImage && typeof rawPage.backgroundImage === "object" && typeof rawPage.backgroundImage.url === "string") {
+        page.backgroundImage = { url: rawPage.backgroundImage.url, name: rawPage.backgroundImage.name || "", type: rawPage.backgroundImage.type || "" };
+      }
+      if (!Array.isArray(rawPage.modules)) throw new Error("第 " + (pi + 1) + " 屏缺少板块数组");
+      if (rawPage.modules.length > DRAFT_LIMITS.maxModulesPerPage) throw new Error("第 " + (pi + 1) + " 屏板块数超过 " + DRAFT_LIMITS.maxModulesPerPage + " 个，疑似损坏或恶意文件");
+      page.modules = rawPage.modules.map(function (rawModule, mi) {
+        if (!rawModule || typeof rawModule !== "object") throw new Error("第 " + (pi + 1) + " 屏第 " + (mi + 1) + " 个板块数据不正确");
+        const typeKey = migrateLegacyModuleType(rawModule.type, rawModule.data);
+        if (!typeKey || !R.getDef(typeKey)) throw new Error("第 " + (pi + 1) + " 屏第 " + (mi + 1) + " 个板块类型无效：" + String(rawModule.type));
+        const module = M.createModule(typeKey);
+        module.id = typeof rawModule.id === "string" && rawModule.id ? rawModule.id : C.uid();
+        module.visible = rawModule.visible === false ? false : true;
+        if (rawModule.data && typeof rawModule.data === "object" && !Array.isArray(rawModule.data)) module.data = rawModule.data;
+        return migrateModuleData(module);
+      });
+      return page;
+    });
+    if (candidate.pages.reduce(function (sum, page) { return sum + page.modules.length; }, 0) > DRAFT_LIMITS.maxModulesTotal) {
+      throw new Error("草稿板块总数超过 " + DRAFT_LIMITS.maxModulesTotal + " 个，疑似损坏或恶意文件");
+    }
+    return candidate;
+  }
+  function loadDraft(file) {
+    if (file && file.size > DRAFT_LIMITS.maxFileSize) {
+      global.alert("草稿文件超过 " + Math.round(DRAFT_LIMITS.maxFileSize / 1024 / 1024) + "MB，疑似不是正常导出的草稿，已拒绝读取。当前内容未改动。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function () {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (error) { global.alert("草稿读取失败：文件不是合法 JSON。当前内容未改动。"); return; }
+      try { restoreDraftImages(parsed); } catch (error) { /* 图片还原失败不阻断结构恢复 */ }
+      let candidate;
+      try { candidate = buildDraftCandidate(parsed); }
+      catch (error) { global.alert("草稿校验失败：" + ((error && error.message) || error) + " 当前内容未改动。"); return; }
+      const oldDoc = state.doc;
+      const snapshot = M.toJSON(oldDoc);
+      const prev = { activePageId: state.activePageId, selectedModuleId: state.selectedModuleId, step: state.step, sideView: state.sideView };
+      /* 快照临时接管 blob 保护：应用失败回滚时，旧图片的 blob URL 仍然有效 */
+      state.aiUndoSnapshot = snapshot;
+      state.doc = candidate;
+      state.activePageId = candidate.pages[0].id;
+      state.selectedModuleId = null;
+      state.step = "edit";
+      state.sideView = "layers";
+      ensureDocFonts(candidate);
+      refreshProtectedBlobUrls();
+      releaseDocBlobs(oldDoc);
+      try { renderAll(); }
+      catch (error) {
+        state.doc = snapshot;
+        state.activePageId = prev.activePageId;
+        state.selectedModuleId = prev.selectedModuleId;
+        state.step = prev.step;
+        state.sideView = prev.sideView;
+        refreshProtectedBlobUrls();
+        state.aiUndoSnapshot = null;
+        try { renderAll(); } catch (_) { /* ignore */ }
+        global.alert("草稿应用失败，已恢复原内容：" + ((error && error.message) || error));
+        return;
+      }
+      state.aiUndoSnapshot = null;
+      removeAiUndoNotice();
+    };
+    reader.onerror = function () { global.alert("草稿读取失败：无法读取所选文件。"); };
+    reader.readAsText(file);
+  }
+  /* 供自动化测试使用的内部纯函数（不属于公开 UI API） */
+  global.BannerBuilderDraftTools = Object.freeze({ buildDraftCandidate: buildDraftCandidate });
 
   function bindEvents() {
     els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
@@ -3245,8 +3795,8 @@
       const file = this.files && this.files[0];
       if (!file) return;
       const value = { url: URL.createObjectURL(file), name: file.name, type: file.type };
-      if (els.backgroundScope.value === "page") activePage().backgroundImage = value;
-      else state.doc.backgroundImage = value;
+      const holder = els.backgroundScope.value === "page" ? activePage() : state.doc;
+      replaceImageRecord(holder, "backgroundImage", value);
       renderAll();
       this.value = "";
     });
@@ -3299,6 +3849,7 @@
     if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
     if (els.importThemeBtn) els.importThemeBtn.addEventListener("click", showThemeImportModal);
     if (els.importModuleBtn) els.importModuleBtn.addEventListener("click", showModuleImportModal);
+    if (els.generateAiDocumentBtn) els.generateAiDocumentBtn.addEventListener("click", showAiDocumentModal);
     /* ===== 三步向导切换 ===== */
     if (els.stepBar) els.stepBar.addEventListener("click", function (event) {
       const button = event.target.closest(".bb-step[data-step]");
@@ -3440,7 +3991,10 @@
     var copyBtn = el("button", "bb-btn ghost", "📋 复制 AI 提示词");
     copyBtn.type = "button";
     copyBtn.addEventListener("click", function () {
-      try { navigator.clipboard.writeText(promptArea.value).then(function () { copyBtn.textContent = "✓ 已复制"; setTimeout(function () { copyBtn.textContent = "📋 复制 AI 提示词"; }, 2000); }); } catch (e) {}
+      copyTextToClipboard(promptArea.value).then(function (ok) {
+        copyBtn.textContent = ok ? "✓ 已复制" : "✗ 复制失败，请手动全选复制";
+        setTimeout(function () { copyBtn.textContent = "📋 复制 AI 提示词"; }, 2400);
+      });
     });
     copyRow.appendChild(copyBtn);
     modal.appendChild(copyRow);
@@ -3962,7 +4516,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;
