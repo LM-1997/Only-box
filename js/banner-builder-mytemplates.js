@@ -51,37 +51,40 @@
 
   function isAvailable() { return typeof global.indexedDB !== "undefined" && typeof global.indexedDB.open === "function"; }
 
-  /* blob: 链接转 dataURL（图片进模板前调用，避免刷新后 blob 失效）。 */
-  function blobUrlToDataUrl(url) {
-    return new Promise(function (resolve) {
+  /* blob: 链接转 dataURL（图片进模板/草稿前调用，避免刷新后 blob 失效）。
+     BB-R03：转换失败显式抛错（带字段路径），绝不静默返回原 blob: URL——
+     静默回退会让草稿/模板/PDF 附件表面保存成功、跨会话后图片失效。 */
+  function blobUrlToDataUrl(url, path) {
+    return new Promise(function (resolve, reject) {
       let res;
       Promise.resolve(global.fetch(url)).then(function (r) { res = r; return r.blob(); }).then(function (blob) {
         const reader = new global.FileReader();
         reader.onload = function () { resolve(reader.result); };
-        reader.onerror = function () { resolve(url); };
+        reader.onerror = function () { reject(new Error("图片读取失败（" + (path || url) + "）")); };
         reader.readAsDataURL(blob);
-      }).catch(function () { resolve(url); });
+      }).catch(function () { reject(new Error("图片读取失败（" + (path || url) + "）")); });
     });
   }
 
   /* 递归深拷贝，并把所有「长得像图片字段」的 {url,name(,type)} 里 blob: 换成 dataURL。
-     只处理同时具备 string url + name 的对象（模块图片字段的统一形态），其余原样复制。 */
-  async function snapshotData(value) {
+     只处理同时具备 string url + name 的对象（模块图片字段的统一形态），其余原样复制。
+     BB-R03：携带字段路径（如 pages[0].modules[2].data.cast[1].avatar），任一图片转换失败整体抛错。 */
+  async function snapshotData(value, path) {
     if (Array.isArray(value)) {
       const out = [];
-      for (let i = 0; i < value.length; i += 1) out.push(await snapshotData(value[i]));
+      for (let i = 0; i < value.length; i += 1) out.push(await snapshotData(value[i], (path || "root") + "[" + i + "]"));
       return out;
     }
     if (!value || typeof value !== "object") return value;
     if (typeof value.url === "string" && typeof value.name === "string" && value.url.indexOf("blob:") === 0) {
-      const converted = await blobUrlToDataUrl(value.url);
+      const converted = await blobUrlToDataUrl(value.url, path || "root");
       const out = { url: converted, name: value.name };
       if (value.type) out.type = value.type;
       return out;
     }
     const out = {};
     const keys = Object.keys(value);
-    for (let i = 0; i < keys.length; i += 1) out[keys[i]] = await snapshotData(value[keys[i]]);
+    for (let i = 0; i < keys.length; i += 1) out[keys[i]] = await snapshotData(value[keys[i]], path ? path + "." + keys[i] : keys[i]);
     return out;
   }
 

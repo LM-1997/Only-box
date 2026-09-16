@@ -20,10 +20,11 @@
 
   function createDoc(ratio) {
     return {
-      version: 2,
+      version: 3,
       name: "Only 活动宣传长条",
       ratio: C.CANVAS_PRESETS[ratio] ? ratio : C.DEFAULT_RATIO,
       theme: "forest",
+      themeDefinition: null,
       fontFamily: "sans",
       headingFont: "",
       bodyFont: "",

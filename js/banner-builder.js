@@ -11,6 +11,8 @@
     selectedModuleId: null,
     pickMode: "screen",
     zoom: 0.46,
+    /* BB-R18：用户手动调过缩放后为 true，自动适配不再抢占 */
+    zoomManual: false,
     step: "setup",
     sideView: "library",
     /* AI 整份生成的应用前内存快照：只存内存，不写 localStorage，不进入草稿文件；撤销一次后清空 */
@@ -52,7 +54,21 @@
     const bar = document.createElement("div");
     bar.id = "bb-font-notice";
     bar.style.cssText = "margin:10px 0 0;padding:9px 13px;border:1px solid #e0c07a;border-radius:9px;background:#faf3df;color:#715b1e;font-size:12px;font-weight:700";
-    bar.textContent = "在线字体（" + family + "）加载失败，已回退系统近似字体，导出效果可能与选择不符；网络恢复后可重新选择字体。";
+    bar.textContent = "在线字体（" + family + "）加载失败，已回退系统近似字体，导出效果可能与选择不符。";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = "重试加载";
+    retry.style.cssText = "margin-left:10px;padding:3px 10px;border:1px solid #715b1e;border-radius:6px;background:#fff8e1;color:#715b1e;font-size:12px;font-weight:700;cursor:pointer";
+    retry.addEventListener("click", function () {
+      Object.keys(fontLinks).forEach(function (k) { if (k.indexOf("faceref:") < 0) delete fontLinks[k]; });
+      document.querySelectorAll("link[rel=stylesheet]").forEach(function (link) {
+        if ((link.href || "").indexOf("fontsource") >= 0 || (link.href || "").indexOf("cn-fontsource") >= 0) link.remove();
+      });
+      Object.keys(C.FONTS).forEach(function (k) { ensureFont(k); });
+      readyFontForText(docFontFamily(), "");
+      bar.remove();
+    });
+    bar.appendChild(retry);
     const shell = document.querySelector(".bb-shell");
     if (shell && shell.parentNode) shell.parentNode.insertBefore(bar, shell);
   }
@@ -63,11 +79,30 @@
     if (!document.fonts || typeof document.fonts.load !== "function") return;
     const payload = String(text || "Only-box 活动宣传长条 0123456789");
     try {
-      const faces = await document.fonts.load("400 24px \"" + f.family + "\"", payload);
-      await document.fonts.load("700 24px \"" + f.family + "\"", payload);
-      if (f.css && f.css.length > 3) await document.fonts.load("900 24px \"" + f.family + "\"", payload);
-      if (!faces || !faces.length) showFontFallbackNotice(f.family);
-    } catch (error) { /* 字体加载失败时使用回退字体渲染 */ }
+      /* 方案 §2.2/§6：按字体实际档位吸附后精准加载，不再请求注定不存在的 700/900 档（修 F1） */
+      const w400 = C.snapWeight(f, 400), w700 = C.snapWeight(f, 700), w900 = C.snapWeight(f, 900);
+      const wanted = [w400, w700, w900].filter(function (w, i, arr) { return arr.indexOf(w) === i; });
+      let loaded = null;
+      for (let wi = 0; wi < wanted.length; wi += 1) {
+        const got = await document.fonts.load(wanted[wi] + ' 24px "' + f.family + '"', payload);
+        if (wi === 0) loaded = got;
+      }
+      /* 方案 §6.1：css 缓存命中时 load() 不抛错但字体文件可能未到手——以「该 family 存在 loaded 态 face」为准 */
+      const hasLoadedFace = (function () {
+        let hit = false;
+        if (document.fonts && document.fonts.forEach) {
+          document.fonts.forEach(function (face) {
+            if (hit) return;
+            if (face.family === f.family && face.status === "loaded") hit = true;
+          });
+        }
+        return hit;
+      })();
+      if ((!loaded || !loaded.length) && !hasLoadedFace) showFontFallbackNotice(f.family);
+    } catch (error) {
+      /* 字体加载失败（如断网）：使用回退字体渲染并提示（方案 §6.1） */
+      showFontFallbackNotice(f.family);
+    }
   }
 
   /* 导出字体门禁：标题/正文两种角色的 webfont 全部就绪（含中文分片按需命中）才开始导出。 */
@@ -81,11 +116,26 @@
       const f = C.FONTS[key];
       if (!f) return;
       ensureFont(key);
-      ["400", "700", "900"].forEach(function (weight) {
+      /* 方案 §6：吸附档位去重后加载（修 F1 加载侧） */
+      const wanted = [C.snapWeight(f, 400), C.snapWeight(f, 700), C.snapWeight(f, 900)].filter(function (w, i, arr) { return arr.indexOf(w) === i; });
+      wanted.forEach(function (weight) {
         try { jobs.push(document.fonts.load(weight + ' 24px "' + f.family + '"', payload)); } catch (error) { /* 忽略单档失败 */ }
       });
     });
     try { await Promise.all(jobs); if (document.fonts.ready) await document.fonts.ready; } catch (error) { /* 超时/失败时按已就绪字体导出 */ }
+  }
+
+  /* 方案 §6.1：默认字体预载——消除首次点选字体的秒级等待（只预载默认 sans，不预载 43 款） */
+  function preloadDefaultFont() {
+    setTimeout(function () {
+      try {
+        const f = C.FONTS.sans;
+        if (!f || !document.fonts || typeof document.fonts.load !== "function") return;
+        [C.snapWeight(f, 400), C.snapWeight(f, 700)].forEach(function (w) {
+          document.fonts.load(w + ' 24px "' + f.family + '"', "Only-box 活动宣传长条 0123456789");
+        });
+      } catch (error) { /* 预载失败不影响功能 */ }
+    }, 2000);
   }
 
   function collectPageText(page) {
@@ -265,9 +315,19 @@
         try {
           mime = /jpe?g/i.test(mime) ? "image/jpeg" : "image/png";
           const cropped = cropCropper.getCroppedCanvas({ maxWidth: 4000, maxHeight: 4000 });
+          if (!cropped) throw new Error("裁剪结果为空");
           blob = await new Promise(function (resolve) { cropped.toBlob(resolve, mime, mime === "image/jpeg" ? 0.92 : undefined); });
+          if (!blob) throw new Error("裁剪结果编码失败");
           type = mime;
         } catch (e) { /* 裁剪失败回退原图 */ }
+      }
+      /* BB-R21：裁剪器加载失败时不能静默回退原图（用户会误以为已按框裁剪）——
+         明确提示并中止本次选择，网络恢复后重试仍可用（loadScript 失败已不缓存） */
+      if (!cropCropper) {
+        closeCropModal();
+        if (done) done(null);
+        if (global.alert) global.alert("裁剪组件加载失败，本次未执行裁剪（图片未被修改）。请检查网络后重试，或刷新页面。");
+        return;
       }
       closeCropModal();
       if (done && blob) done({ url: URL.createObjectURL(blob), name: name, type: type });
@@ -1044,6 +1104,8 @@
     canvas.style.fontFamily = C.headingFontStack(state.doc);
     applyThemeVars(canvas);
     canvas.style.setProperty("--bb-font-heading", C.headingFontStack(state.doc));
+  /* 方案 §2.2：DOM 预览字重吸附——标题基准 800 吸附到当前标题字体实际档位 */
+  canvas.style.setProperty("--bb-weight-heading", String(C.snapWeight(C.FONTS[state.doc.headingFont || state.doc.fontFamily || "sans"] || C.FONTS.sans, 800)));
     canvas.style.setProperty("--bb-font-body", C.bodyFontStack(state.doc));
     canvas.style.setProperty("--bb-page-bg", page.backgroundColor || state.doc.backgroundColor || "#ffffff");
     canvas.classList.add("bb-pattern-" + safeClassSuffix(artTheme().pattern, "none"));
@@ -1151,6 +1213,20 @@
         const button = el("button", "bb-lib-item bb-lib-custom"); button.type = "button"; button.dataset.action = "lib-add-custom"; button.dataset.customId = record.id;
         button.appendChild(el("span", "bb-lib-text", "★ " + record.label)); button.appendChild(el("span", "bb-lib-plus", "+"));
         if (record.description) button.title = record.description;
+        /* BB-R23：自定义模块删除能力接入——持久化失败明确报错，不伪成功 */
+        const rm = el("span", "bb-mytpl-del", "×"); rm.title = "删除此自定义模块（不影响已放进画布的板块）";
+        rm.addEventListener("click", function (event) {
+          event.stopPropagation();
+          if (!global.confirm("删除自定义模块「" + record.label + "」？已放进画布的板块不受影响。")) return;
+          try {
+            const removed = MI.remove(record.id);
+            if (removed === false) { if (global.alert) global.alert("未找到该模块（可能已被删除），列表将刷新。"); }
+            renderLibrary();
+          } catch (error) {
+            if (global.alert) global.alert("模块删除失败（浏览器本地存储写入失败，未删除）：" + ((error && error.message) || error));
+          }
+        });
+        button.appendChild(rm);
         frag.appendChild(button);
       });
     }
@@ -1166,6 +1242,10 @@
       const head = el("div", "bb-layer-page-head");
       head.dataset.action = "layer-page-pick"; head.dataset.pageId = page.id;
       head.title = "选中第 " + (pIndex + 1) + " 屏";
+      /* BB-R19：键盘可访问——页面头可 Tab 聚焦，Enter/Space 选中 */
+      head.tabIndex = 0;
+      head.setAttribute("role", "button");
+      head.setAttribute("aria-current", page.id === state.activePageId ? "true" : "false");
       head.appendChild(el("span", "bb-layer-page-name", "第 " + (pIndex + 1) + " 屏"));
       head.appendChild(el("span", "bb-layer-page-count", page.modules.length + " 个板块"));
       const del = el("button", "bb-layer-page-del", "×"); del.type = "button"; del.title = "删除本屏"; del.dataset.action = "layer-page-del"; del.dataset.pageId = page.id;
@@ -1176,9 +1256,15 @@
       else page.modules.forEach(function (module, mIndex) {
         const def = R.getDef(module.type);
         const row = el("div", "bb-layer-module" + (module.id === state.selectedModuleId ? " is-active" : ""));
-        row.dataset.action = "layer-module-pick"; row.dataset.moduleId = module.id; row.dataset.pageId = page.id; row.title = "选中编辑：第 " + (pIndex + 1) + " 屏 · " + moduleTitle(module, def) + "（可拖拽跨屏移动）";
+        row.dataset.action = "layer-module-pick"; row.dataset.moduleId = module.id; row.dataset.pageId = page.id;
+        row.title = "选中编辑：第 " + (pIndex + 1) + " 屏 · " + moduleTitle(module, def) + "（可拖拽跨屏移动；聚焦后可用 ↑↓ 排序、PageUp/PageDown 跨屏移动）";
         row.draggable = true;
         row.dataset.dragModule = module.id;
+        /* BB-R19：键盘可访问——模块行可 Tab 聚焦，Enter/Space 选中，
+           ↑/↓ 上移/下移，PageUp/PageDown 移至上一屏/下一屏（拖拽的键盘替代） */
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-selected", module.id === state.selectedModuleId ? "true" : "false");
         row.appendChild(el("span", "bb-layer-module-no", "0" + (mIndex + 1)));
         row.appendChild(el("span", "bb-layer-module-name", moduleTitle(module, def)));
         const ops = el("div", "bb-layer-module-ops");
@@ -1214,7 +1300,10 @@
     els.myTplArea.hidden = false; els.myTplCount.textContent = rows.length + " 个";
     rows.forEach(function (row) {
       const def = R.getDef(row.type) || R.getDef(migrateLegacyModuleType(row.type, row.data));
+      /* BB-R19：我的模板条目键盘可访问（Tab 聚焦 + Enter/Space 添加） */
       const item = el("div", "bb-lib-item bb-mytpl-item"); item.dataset.action = "tpl-add"; item.dataset.tplId = row.id; item.title = "点击把整个板块（含文字与图片）加入当前屏";
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
       item.appendChild(el("span", "bb-lib-text", "★ " + row.name));
       item.appendChild(el("span", "bb-mytpl-type", def ? def.label : row.type));
       const del = el("button", "bb-mytpl-del", "×"); del.type = "button"; del.title = "删除此模板"; del.dataset.action = "tpl-del"; del.dataset.tplId = row.id;
@@ -1261,7 +1350,9 @@
     const existing = document.getElementById("bb-module-modal"); if (existing) existing.remove();
     const mask = document.createElement("div"); mask.className = "bb-modal-mask"; mask.id = "bb-module-modal";
     const modal = document.createElement("div"); modal.className = "bb-modal";
-    const title = document.createElement("h3"); title.textContent = "导入板块模块"; modal.appendChild(title);
+    const title = document.createElement("h3"); title.textContent = "导入板块模块"; title.id = "bb-module-modal-title"; modal.appendChild(title);
+    /* BB-R20：弹窗焦点管理 */
+    const closeA11y = openModalA11y(mask, modal, { titleId: "bb-module-modal-title" });
     const intro = document.createElement("p"); intro.textContent = "复制提示词给其他 AI，让 AI 输出 JSON；导入后会出现在板块库的自定义模块区域。"; modal.appendChild(intro);
     const promptArea = document.createElement("textarea"); promptArea.className = "bb-input bb-modal-textarea"; promptArea.readOnly = true; promptArea.value = MI.promptText; modal.appendChild(promptArea);
     const inputArea = document.createElement("textarea"); inputArea.className = "bb-input bb-modal-textarea"; inputArea.placeholder = "把 AI 返回的 JSON 粘贴到这里"; modal.appendChild(inputArea);
@@ -1271,8 +1362,9 @@
     copyBtn.addEventListener("click", function () { copyTextToClipboard(promptArea.value).then(function (ok) { msg.className = ok ? "bb-modal-success" : "bb-modal-error"; msg.textContent = ok ? "提示词已复制" : "自动复制失败，请手动复制上方提示词"; }); });
     const importBtn = document.createElement("button"); importBtn.className = "bb-btn primary"; importBtn.type = "button"; importBtn.textContent = "导入模块";
     importBtn.addEventListener("click", function () { const obj = MI.extractJson(inputArea.value); if (!obj) { msg.className = "bb-modal-error"; msg.textContent = "JSON 格式解析失败"; return; } const errors = MI.validate(obj); if (errors.length) { msg.className = "bb-modal-error"; msg.textContent = "校验不通过：" + errors.join("；"); return; } try { MI.add(obj); renderLibrary(); msg.className = "bb-modal-success"; msg.textContent = "板块模块「" + obj.label + "」已导入"; } catch (error) { msg.className = "bb-modal-error"; msg.textContent = "保存失败：" + error.message; } });
-    const closeBtn = document.createElement("button"); closeBtn.className = "bb-btn ghost"; closeBtn.type = "button"; closeBtn.textContent = "关闭"; closeBtn.addEventListener("click", function () { mask.remove(); });
+    const closeBtn = document.createElement("button"); closeBtn.className = "bb-btn ghost"; closeBtn.type = "button"; closeBtn.textContent = "关闭"; closeBtn.addEventListener("click", function () { closeA11y(); mask.remove(); });
     actions.appendChild(copyBtn); actions.appendChild(importBtn); actions.appendChild(closeBtn); modal.appendChild(actions); mask.appendChild(modal); document.body.appendChild(mask);
+    mask.addEventListener("click", function (e) { if (e.target === mask) { closeA11y(); mask.remove(); } });
   }
 
   /* ===== AI 生成整份长条 =====
@@ -1373,7 +1465,7 @@
   let aiModalEventType = "mixed";
 
   function aiPromptContext(includeTheme, eventType) {
-    const themeStyle = C.themeStyle(state.doc.theme) || {};
+    const themeStyle = (C.themeStyleForDoc ? C.themeStyleForDoc(state.doc) : C.themeStyle(state.doc.theme)) || {};
     return {
       ratio: state.doc.ratio,
       screenMode: state.doc.screenMode || "split",
@@ -1409,7 +1501,7 @@
         refreshProtectedBlobUrls();
         releaseDocBlobs(oldDoc);
       },
-      render: renderAll,
+      render: renderAllStrict,
     });
     if (!outcome.ok) {
       if (outcome.phase === "render") {
@@ -1685,16 +1777,28 @@
       main.appendChild(b);
     }
     main.appendChild(el("div", "bb-panel-divider", "图片导出"));
-    btn("bb-export-btn", "导出当前屏", "PNG · " + (size.pageWidth * scale) + "×" + (size.pageHeight * scale), function () { exportPng(false); }, true);
-    btn("bb-export-btn", "导出全部屏", "多屏逐个下载 PNG", function () { exportPng(true); });
-    btn("bb-export-btn", "导出连续长图", "全部屏拼成一张 PNG（需连续模式）", exportStripPng);
+    btn("bb-export-btn", "导出当前屏", "PNG · " + (size.pageWidth * scale) + "×" + (size.pageHeight * scale), function () {
+      runExclusiveExport("导出当前屏 PNG", function () { return exportPng(false); }).catch(function (error) { showExportError("导出当前屏 PNG", error); });
+    }, true);
+    btn("bb-export-btn", "导出全部屏", "多屏逐个下载 PNG", function () {
+      runExclusiveExport("导出全部屏 PNG", function () { return exportPng(true); }).catch(function (error) { showExportError("导出全部屏 PNG", error); });
+    });
+    btn("bb-export-btn", "导出连续长图", "全部屏拼成一张 PNG（需连续模式）", function () {
+      runExclusiveExport("导出连续长图", function () { return exportStripPng(); }).catch(function (error) { showExportError("导出连续长图", error); });
+    });
     main.appendChild(el("div", "bb-panel-divider", "可编辑文件"));
     btn("bb-export-btn", "导出 PSD", "分层可编辑（可选打包字体）", function () {
-      exportPsd().then(function (result) {
-        if (result && els.packFontsToggle && els.packFontsToggle.checked) {
-          packFontsZip().catch(function (e) { if (global.alert) global.alert("字体打包失败：" + ((e && e.message) || e)); });
-        }
-      }).catch(function (e) { if (global.alert) global.alert("导出失败：" + ((e && e.message) || e)); });
+      runExclusiveExport("导出 PSD", function () {
+        return exportPsd().then(function (result) {
+          if (result && els.packFontsToggle && els.packFontsToggle.checked) {
+            return packFontsZip();
+          }
+          return result;
+        });
+      }).catch(function (error) { showExportError("导出 PSD", error); });
+    });
+    btn("bb-export-btn", "导出 PDF（PDF/A-3b）", "Illustrator 可编辑：字体完整嵌入 + 板块图层（首次使用需下载字体，耗时较长）", function () {
+      runExclusiveExport("导出 PDF", function () { return exportPdf(); }).catch(function (error) { showExportError("导出 PDF", error); });
     });
     main.appendChild(el("div", "bb-panel-divider", "草稿"));
     btn("bb-export-btn", "备份草稿", "含图片，跨会话不丢", saveDraft);
@@ -1702,9 +1806,62 @@
     return wrap;
   }
 
+  /* ===== 统一导出入口（BB-R04 / BB-R16）=====
+     互斥锁：同一时刻只允许一个导出任务，防止并发导出互相破坏 zoom 恢复与 DOM 状态。
+     busy 状态：导出期间禁用全部导出按钮并显示任务名，失败/成功都恢复。
+     统一错误显示：操作名称 + 失败原因 + 是否改动文档 + 建议下一步。 */
+  let exportTask = null;
+  function setExportBusy(busy, label) {
+    document.querySelectorAll(".bb-export-btn").forEach(function (button) {
+      if (busy) { button.dataset.prevDisabled = String(button.disabled); button.disabled = true; }
+      else { button.disabled = button.dataset.prevDisabled === "true"; delete button.dataset.prevDisabled; }
+    });
+    const body = document.body;
+    if (!body) return;
+    let banner = document.getElementById("bb-export-busy-banner");
+    if (busy) {
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "bb-export-busy-banner";
+        banner.className = "bb-dom-only";
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#1e2b3a;color:#fff;padding:8px 16px;font-size:13px;text-align:center;";
+        document.body.appendChild(banner);
+      }
+      banner.textContent = "正在" + (label || "导出") + "…请勿关闭或刷新页面";
+    } else if (banner && banner.parentNode) {
+      banner.parentNode.removeChild(banner);
+    }
+  }
+  function showExportError(action, error) {
+    const message = (error && error.message) || String(error);
+    if (global.console && global.console.error) global.console.error("导出失败 [" + action + "]:", error);
+    global.alert("「" + action + "」导出失败：\n\n" + message + "\n\n当前文档内容未被修改。若反复失败，建议先「备份草稿」再重试。");
+  }
+  async function runExclusiveExport(label, task) {
+    if (exportTask) {
+      if (global.alert) global.alert("已有导出任务正在进行（" + exportTask.label + "），请等待完成后再试。");
+      throw new Error("已有导出任务正在进行（" + exportTask.label + "）");
+    }
+    setExportBusy(true, label);
+    const entry = { label: label };
+    exportTask = entry;
+    try {
+      entry.promise = Promise.resolve().then(task);
+      return await entry.promise;
+    } finally {
+      exportTask = null;
+      setExportBusy(false);
+    }
+  }
+
+  /* 严格渲染：任何一步异常都主动抛出，供事务性操作（草稿恢复 / AI 整份应用）回滚判断。
+     普通交互渲染仍走 renderAll() 兜底展示错误占位，不中断用户操作。 */
+  function renderAllStrict() {
+    renderToolbar(); renderLibrary(); renderLayerTree(); renderCanvas(); renderPanel(); syncSideTabs();
+  }
   function renderAll() {
     try {
-      renderToolbar(); renderLibrary(); renderLayerTree(); renderCanvas(); renderPanel(); syncSideTabs();
+      renderAllStrict();
     } catch (error) {
       try {
         els.canvasBody.textContent = "";
@@ -1767,7 +1924,7 @@
   /* 主题色：与 DOM 预览同源（C.THEMES[theme]），保证导出观感随主题变化。
      themeOverrides（设置步骤「微调主题」）在此叠加：用户手动覆盖的字段优先，未覆盖回退预设。 */
   function artTheme() {
-    const base = C.themeStyle(state.doc.theme);
+    const base = C.themeStyleForDoc ? C.themeStyleForDoc(state.doc) : C.themeStyle(state.doc.theme);
     const ov = state.doc.themeOverrides || {};
     const merged = Object.assign({}, base);
     Object.keys(ov).forEach(function (k) {
@@ -1975,7 +2132,9 @@
     const key = scope === "body"
       ? (state.doc.bodyFont || state.doc.headingFont || state.doc.fontFamily || "sans")
       : (state.doc.headingFont || state.doc.fontFamily || "sans");
-    ctx.font = artWeight(artAdjustedWeight(weight, scope)) + " " + finalSize + "px " + C.fontStack(key);
+    /* 方案 §2.2：吸附到字体实际档位（修 F1/F2 渲染侧）——预览与导出同函数 */
+    const snapped = C.snapWeight(C.FONTS[key] || C.FONTS.sans, artAdjustedWeight(weight, scope));
+    ctx.font = snapped + " " + finalSize + "px " + C.fontStack(key);
     try {
       const ls = Number(artTheme().letterSpacing) || 0;
       ctx.letterSpacing = ls + "px";
@@ -3289,7 +3448,7 @@
     downloadBlob(content, "only-box-banner-fonts.zip");
     return { ok: ok, fail: fail };
   }
-  global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); }, buildPsdChildren: function () { return legacyExportPsd({ childrenOnly: true }); } };
+  global.BannerBuilderLegacy = { exportPng: function (a) { return legacyExportPng(a); }, exportStripPng: function () { return legacyExportStripPng(); }, exportPsd: function () { return legacyExportPsd(); }, buildPsdChildren: function () { return legacyExportPsd({ childrenOnly: true }); }, measurePageLayout: function (page, offsetY) { return measurePageLayout(page, offsetY); }, drawPageToCanvas: function (page, opts) { return drawPageToCanvas(page, opts); }, activePage: function () { return activePage(); } };
   /* 导出倍率（1x = 750 设计宽；默认 2x = 1500 高清），文档级可配 doc.exportScale */
   function exportScale() { return Number(state.doc.exportScale) || 2; }
 
@@ -3359,10 +3518,6 @@
     return { width: outCanvas.width, height: outCanvas.height, pages: rendered.length, silence: silence.length };
   }
 
-  function psFontName() {
-    const f = C.FONTS[docFontFamily()] || C.FONTS.sans;
-    return f.family.replace(/ /g, "");
-  }
   /* PSD 文字层字体名：标题层用标题字体，正文层用正文字体（分角色设置同步到 PS）。 */
   function psFontNameFor(scope) {
     const key = scope === "body"
@@ -3372,20 +3527,6 @@
     return f.family.replace(/ /g, "");
   }
 
-  function textLayer(name, value, x, y, size, align) { return textLayerScope(name, value, x, y, size, align, null); }
-  function textLayerScope(name, value, x, y, size, align, scope) { if (!value) return null; return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: { r: 24, g: 34, b: 29 } }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } }; }
-
-  /* ===== PSD 可编辑图层辅助：把 CSS 元素转成 PS 形状/文字/图片图层 ===== */
-  /* hex(#rgb/#rrggbb) 或 rgb()/rgba() 字符串 → {r,g,b}(0-255)；无法解析返回 null */
-  function psdParseRgb(color) {
-    const raw = String(color || "").trim();
-    if (!raw) return null;
-    let m = raw.match(/^#?([0-9a-f]{6})$/i);
-    if (m) { const n = parseInt(m[1], 16); return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
-    m = raw.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
-    if (m) { return { r: Math.max(0, Math.min(255, Math.round(Number(m[1])))), g: Math.max(0, Math.min(255, Math.round(Number(m[2])))), b: Math.max(0, Math.min(255, Math.round(Number(m[3])))) }; }
-    return null;
-  }
   /* 圆角矩形 → PS 矢量蒙版 paths（8 锚点闭合子路径，逆…顺时钟贝塞尔圆角） */
   function psdRoundRect(x, y, w, h, r) {
     const radius = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -3402,28 +3543,42 @@
       knot(x, y + h - radius + k, x, y + h - radius, x, y + h - radius),
     ] }];
   }
-  /* 形状图层：圆角矩形 + 纯色填充（PS 里可直接改颜色/圆角/路径） */
-  function psdShapeLayer(name, x, y, w, h, r, color) {
-    const rgb = psdParseRgb(color);
-    if (!rgb) return null;
-    return { name: name, vectorMask: { paths: psdRoundRect(x, y, w, h, r), invert: false, notLink: false, disable: false }, vectorFill: { type: "color", color: rgb } };
+
+  /* ===== PSD 图层源数据：格式无关场景模型（scene）→ ag-psd children 转换 =====
+     板块→元素的提取逻辑已移入 js/banner-builder-scene-model.js（buildScene），
+     PSD 与 PDF 两个导出器消费同一份场景数据（需求 brief 第 6 节）。
+     此处仅做 scene → ag-psd 的落地：shape→vectorMask、image→canvas、text→text layer。 */
+  function sceneImageToCanvas(imageRef, x, y, w, h, fit) {
+    return loadImage(imageRef).then(function (img) {
+      if (!img || !w || !h) return null;
+      const c = document.createElement("canvas");
+      c.width = pageSize().pageWidth; c.height = pageSize().pageHeight;
+      const cx = c.getContext("2d");
+      if (fit === "contain") containDraw(cx, img, x, y, w, h);
+      else coverDraw(cx, img, x, y, w, h);
+      return c;
+    });
   }
-  /* 可见文字图层：可编辑文字、字号、颜色、对齐 */
-  function psdTextLayer(name, value, x, y, size, color, align, scope) {
-    if (value == null || String(value).trim() === "") return null;
-    const rgb = psdParseRgb(color) || { r: 24, g: 34, b: 29 };
-    return { name: name, text: { text: String(value), transform: [1, 0, 0, 1, x, y], style: { font: { name: psFontNameFor(scope) }, fontSize: size, fillColor: rgb }, paragraphStyle: { justification: align === "center" ? "center" : align === "right" ? "right" : "left" } } };
+  /* scene element → ag-psd layer；返回 null 表示跳过（image 走异步通道）。
+     ctx：当前次导出的字体上下文（scene.fonts / 多字重族标记），由调用方传入——
+     BB-R04：禁止模块级共享可变状态，并发导出时互不干扰。 */
+  function sceneElementToPsdLayer(el, ctx) {
+    if (el.kind === "shape") {
+      return { name: el.name, vectorMask: { paths: psdRoundRect(el.x, el.y, el.w, el.h, el.radius), invert: false, notLink: false, disable: false }, vectorFill: { type: "color", color: { r: el.fill.r, g: el.fill.g, b: el.fill.b } } };
+    }
+    if (el.kind === "text") {
+      return { name: el.name, text: { text: el.text, transform: [1, 0, 0, 1, el.x, el.y], style: { font: { name: sceneFontPsWithWeight(el, ctx) }, fontSize: el.size, fillColor: { r: el.color.r, g: el.color.g, b: el.color.b } }, paragraphStyle: { justification: el.align === "center" ? "center" : el.align === "right" ? "right" : "left" } } };
+    }
+    return null;
   }
-  /* 图片位图图层：整页尺寸画布，图片按 cover/contain 定位到指定区域（PS 里可替换/移动） */
-  async function psdImageLayer(name, imageRef, x, y, w, h, fit) {
-    const img = await loadImage(imageRef);
-    if (!img || !w || !h) return null;
-    const c = document.createElement("canvas");
-    c.width = pageSize().pageWidth; c.height = pageSize().pageHeight;
-    const cx = c.getContext("2d");
-    if (fit === "contain") containDraw(cx, img, x, y, w, h);
-    else coverDraw(cx, img, x, y, w, h);
-    return { name: name, canvas: c };
+  /* 文字层字体名：与预览同 family（去空格）；多字重族带 wght 后缀帮助 PS 选对档位 */
+  function sceneFontPsWithWeight(el, ctx) {
+    const fonts = (ctx && ctx.fonts) || [];
+    const hit = fonts.filter(function (f) { return f.role === (el.scope === "body" ? "body" : "heading"); })[0] || fonts[0];
+    const family = hit ? hit.psName : psFontNameFor(el.scope);
+    const w = Number(el.weight) || 400;
+    const multi = ctx && ctx.multiWeightFamilies && ctx.multiWeightFamilies.indexOf(family) >= 0;
+    return multi && w !== 400 ? family + "-" + w + "wght" : family;
   }
 
   async function legacyExportPsd(opts) {
@@ -3433,7 +3588,9 @@
     const layout = full.layout;
     const silence = full.silence || [];
     const pageHeight = full.canvas.height;
-    const px = function (n) { return Math.round(n); };
+    const SM = global.BannerBuilderSceneModel;
+    const scene = SM.buildScene({ page: page, layout: layout, doc: state.doc, pageHeight: pageHeight, pageSize: size, registry: R, theme: artTheme(), fonts: SM.fontsOf(state.doc) });
+    sceneCtx = { fonts: scene.fonts, multiWeightFamilies: (scene.fonts || []).filter(function (f) { const meta = C.FONTS[f.key]; return meta && Array.isArray(meta.weights) && meta.weights.length > 1; }).map(function (f) { return f.psName; }) };
     const children = [];
     /* 背景层：铺页面底色，便于在 PS 里改背景 */
     children.push({ name: "背景底色", canvas: (function () {
@@ -3444,144 +3601,21 @@
       return c;
     })() });
 
-    /* 每板块一组：可编辑图层 = 形状背景 + 图片位图 + 可见文字（全部可在 PS 里直接编辑） */
-    const st = artTheme();
-    const inkColor = artInk();
-    const mutedColor = artMuted();
-    const ratioOf = function (ratioStr, fallback) { const m = String(ratioStr || "").replace(/\s+/g, "").match(/^(\d+(?:\.\d+)?)[:/](\d+(?:\.\d+)?)$/); return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : fallback; };
-    for (let idx = 0; idx < layout.length; idx += 1) {
-      const item = layout[idx];
-      const module = item.module;
-      const def = R.getDef(module.type);
-      const data = module.data || {};
-      const group = { name: "板块 " + (idx + 1) + " · " + def.label, children: [], opened: true };
-
-      const addT = function (name, value, x, y, sz, color, align, scope) { const l = psdTextLayer(name, value, x, y, sz, color, align, scope); if (l) group.children.push(l); };
-      const addShape = function (name, x, y, w, h, r, color) { const l = psdShapeLayer(name, x, y, w, h, r, color); if (l) group.children.push(l); };
-      const addImg = async function (name, ref, x, y, w, h, fit) { const l = await psdImageLayer(name, ref, x, y, w, h, fit); if (l) group.children.push(l); };
-
-      const cardLeft = px(item.x + 18);
-      const headY = px(item.y + item.head);
-      const cw = item.w;
-
-      /* 1) 卡片背景：CSS 卡片底色 → PS 圆角矩形纯色形状图层（可改颜色/圆角/路径） */
-      addShape(def.label + " 背景", item.x, item.y, item.w, item.h, cardRadius(data, st), cardBaseFill(st, data, 1));
-
-      /* 2) 模块主图 → 独立位图图层（可替换/移动） */
-      const imgFit = data.imageFit === "contain" ? "contain" : "cover";
-      if (module.type === "cover") {
-        const tpl = data.template || "immersive";
-        if (tpl === "immersive") {
-          if (data.mainImage && data.mainImage.url) await addImg("主视觉图", data.mainImage, item.x, item.y, item.w, Math.round(item.w * 0.85), imgFit);
-          else addShape(def.label + " 主视觉底", item.x, item.y, item.w, Math.round(item.w * 0.85), cardRadius(data, st), st.primaryDark);
-        } else await addImg("主视觉图", data.mainImage, item.x, px(headY + 24), item.w, Math.round(item.w * 0.6), imgFit);
-      } else if (module.type === "freeImageBox") {
-        await addImg("图片", data.image, item.x, px(headY + 20), item.w, Math.round(item.w / ratioOf(data.ratio, 0.6)), imgFit);
-      } else if (module.type === "venueInfo" && data.photo) {
-        await addImg("场地照片", data.photo, item.x, px(headY + 24), item.w, Math.round(item.w * 0.55), imgFit);
-      } else if (module.type === "crossPromo" && data.icon) {
-        await addImg("联动方图标", data.icon, item.x, px(headY + 20), 120, 120, "contain");
-      } else if (module.type === "ticketInfo" && data.qrImage) {
-        await addImg("购票二维码", data.qrImage, px(item.x + item.w - 228), px(headY + 20), 208, 208, "contain");
-      } else if ((module.type === "castList" || module.type === "castCards") && data.cast && data.cast[0] && data.cast[0].avatar) {
-        await addImg("成员头像", data.cast[0].avatar, item.x, px(headY + 20), 160, 160, imgFit);
-      } else if (module.type === "programList") {
-        const pgItems = data.items || [];
-        for (let pi = 0; pi < pgItems.length; pi++) { if (pgItems[pi].image) await addImg("节目配图 " + (pi + 1), pgItems[pi].image, item.x, px(headY + 24), cw, Math.round(cw * 0.4), imgFit); }
-      } else if (module.type === "boothList") {
-        const boItems = data.items || [];
-        for (let bi = 0; bi < boItems.length; bi++) { if (boItems[bi].image) await addImg("摊位图 " + (bi + 1), boItems[bi].image, px(item.x + 20), px(headY + 24), 150, 150, imgFit); }
-      }
-
-      /* 3) 序号 + 板块标题 + 内容文字（可见、可编辑文字/字号/颜色） */
-      addT("序号", String(item.serial != null ? item.serial : idx + 1).padStart(2, "0"), px(item.x + 20), px(item.y + 26), 23, st.accent, "left");
-      if (module.type !== "divider" || data.sectionTitle) addT("板块标题", moduleTitle(module, def), px(item.x + item.w / 2), headY, 54, st.primaryDark, "center");
-
-      switch (module.type) {
-        case "cover": {
-          if ((data.template || "immersive") === "immersive") {
-            const heroH = Math.round(item.w * 0.85);
-            addT("主标题", data.title, px(item.x + cw / 2), px(item.y + heroH - 42), 65, "#ffffff", "center");
-            addT("副标题", data.subtitle, px(item.x + cw / 2), px(item.y + heroH - 90), 29, "#ffffff", "center");
-          } else {
-            addT("主标题", data.title, cardLeft, px(headY + 68), 65, st.primaryDark, "left");
-            addT("副标题", data.subtitle, cardLeft, px(headY + 170), 29, mutedColor, "left");
-          }
-          (data.infoLines || []).filter(Boolean).slice(0, 6).forEach(function (line, i) { addT("信息行 " + (i + 1), line, cardLeft, px(headY + 235 + i * 36), 23, mutedColor, "left"); });
-          addT("QQ 群号", data.qqGroupNumber, cardLeft, px(headY + 320), 23, mutedColor, "left");
-          break;
-        }
-        case "announcement":
-          addT("小标题", data.heading, cardLeft, px(headY + 60), 29, st.primaryDark, "left");
-          addT("正文", data.body, cardLeft, px(headY + 105), 29, inkColor, data.bodyAlign || "left", "body");
-          break;
-        case "ticketInfo": {
-          let ty = headY + 70;
-          (data.tiers || []).forEach(function (t, i) { addT("票档 " + (i + 1), [t.label, t.price].filter(Boolean).join("　"), cardLeft, ty, 27, st.primaryDark, "left"); ty += 42; });
-          addT("购票说明", data.note, cardLeft, ty + 10, 23, mutedColor, "left", "body");
-          break;
-        }
-        case "materials": {
-          let my = headY + 70;
-          (data.items || []).forEach(function (it, i) { addT("物料 " + (i + 1), it.label, cardLeft, my, 25, inkColor, "left", "body"); my += 38; });
-          addT("补充说明", data.note, cardLeft, my + 10, 23, mutedColor, "left", "body");
-          break;
-        }
-        case "crossPromo":
-          addT("推广文案", data.text, cardLeft, px(headY + 70), 27, inkColor, data.bodyAlign || "left", "body");
-          break;
-        case "schedule": {
-          let sy = headY + 70;
-          (data.groups || []).forEach(function (g) { if (g.groupName) { addT("分组", g.groupName, cardLeft, sy, 27, st.primaryDark, "left"); sy += 40; } (g.rows || []).forEach(function (r) { addT("环节", [r.time, r.name].filter(Boolean).join("  "), cardLeft, sy, 25, inkColor, "left", "body"); sy += 36; }); sy += 14; });
-          break;
-        }
-        case "venueInfo":
-          addT("场地描述", data.description, cardLeft, px(headY + 70), 27, inkColor, data.bodyAlign || "left", "body");
-          addT("标签", (data.tags || []).filter(Boolean).join(" · "), cardLeft, px(headY + 170), 23, st.primaryDark, "left");
-          break;
-        case "routeText": {
-          let ry = headY + 70;
-          (data.lines || []).filter(Boolean).forEach(function (line, i) { addT("步骤 " + (i + 1), line, cardLeft, ry, 27, inkColor, "left", "body"); ry += 40; });
-          break;
-        }
-        case "programList": {
-          let py = headY + 70;
-          (data.items || []).forEach(function (it, i) { addT("节目 " + (i + 1), [it.tag, it.title, it.subtitle].filter(Boolean).join("  "), cardLeft, py, 25, inkColor, "left", "body"); py += 40; });
-          break;
-        }
-        case "castList":
-        case "castCards": {
-          let pcy = headY + 70;
-          (data.cast || []).forEach(function (member) {
-            if (member.name) { addT("成员", [R.castRoleLabel(member.role), member.name, member.time].filter(Boolean).join("  "), cardLeft, pcy, 30, st.primaryDark, "left"); pcy += 44; }
-            if (member.bio) { addT("简介", member.bio, cardLeft, pcy, 23, inkColor, data.bodyAlign || "left", "body"); pcy += 60; }
-            const setlist = (member.setlist || []).filter(function (s) { return s && (s.song || s.coverBy); });
-            if (setlist.length) {
-              addT("歌单", setlist.map(function (s) { return [s.song, s.coverBy].filter(Boolean).join(" / "); }).join("  ·  "), cardLeft, pcy, 21, mutedColor, "left", "body");
-              pcy += 34;
-            }
-            pcy += 8;
+    /* 每板块一组：scene module → ag-psd group（形状/图片/文字） */
+    for (let idx = 0; idx < scene.modules.length; idx += 1) {
+      const mod = scene.modules[idx];
+      const group = { name: "板块 " + (idx + 1) + " · " + mod.label, children: [], opened: true };
+      for (let ei = 0; ei < mod.elements.length; ei += 1) {
+        const el = mod.elements[ei];
+        if (el.kind === "image") {
+          const layer = await sceneImageToCanvas(el.image, el.x, el.y, el.w, el.h, el.fit).then(function (canvas) {
+            return canvas ? { name: el.name, canvas: canvas } : null;
           });
-          break;
+          if (layer) group.children.push(layer);
+        } else {
+          const layer = sceneElementToPsdLayer(el, psdFontCtx);
+          if (layer) group.children.push(layer);
         }
-        case "boothList": {
-          let by = headY + 70;
-          (data.items || []).forEach(function (it, i) { addT("摊位 " + (i + 1), [it.name, it.desc].filter(Boolean).join("  "), cardLeft, by, 25, inkColor, "left", "body"); by += 42; });
-          break;
-        }
-        case "footer":
-          addT("页脚内容", (data.lines || []).filter(Boolean).join(" · "), cardLeft, px(headY + 70), 23, mutedColor, "left", "body");
-          break;
-        case "freeText":
-          addT("文本", data.text, cardLeft, px(headY + 70), C.fontSizePx(data.level || "body", size.pageWidth), inkColor, data.align || "left", "body");
-          break;
-        case "freeImageBox":
-          addT("图注", data.caption, px(item.x + cw / 2), px(item.y + item.h - 20), 23, mutedColor, data.contentAlign || "center");
-          break;
-        case "divider":
-          break;
-        default:
-          break;
       }
       children.push(group);
     }
@@ -3593,6 +3627,7 @@
       return { layers: children.length, silence: silence.length };
     } catch (error) { global.alert("PSD 导出失败：" + error.message); return null; }
   }
+
 
   /* 草稿图片持久化（审计 P6）：保存前用「我的模板」同款 snapshotData 把所有 blob: 引用
      转成 dataURL 写进 JSON；恢复时再把 dataURL 还原为 blob:，会话内行为与手选图片一致。
@@ -3616,13 +3651,89 @@
     Object.keys(value).forEach(function (key) { value[key] = restoreDraftImages(value[key]); });
     return value;
   }
+  function buildDraftPayload(doc) {
+    const draft = M.toJSON(doc);
+    draft.version = Math.max(3, Number(draft.version) || 0);
+    const importer = global.BannerBuilderThemeImporter;
+    let definition = draft.themeDefinition;
+    if (!definition && importer && typeof importer.loadAll === "function") {
+      definition = importer.loadAll().filter(function (theme) { return theme && theme.id === draft.theme; })[0] || null;
+    }
+    /* 所有主题均写入完整基础定义：自定义主题可跨浏览器恢复，内置主题也不受后续预设改版影响。 */
+    if (!definition && C.themeStyle) {
+      definition = C.themeStyle(draft.theme);
+      if (definition) definition.id = draft.theme;
+    }
+    draft.themeDefinition = definition ? JSON.parse(JSON.stringify(definition)) : null;
+    /* BB-R13：字体依赖声明——草稿只存字体 key，自定义字体文件在本机 IndexedDB。
+       导出时声明文档实际引用的字体（含主题推荐与手动选择），导入端据此检测缺失并让用户映射替代，
+       字体缺失不拒绝主题配色恢复。 */
+    draft.fontDependencies = collectFontDependencies(draft);
+    return draft;
+  }
+  /* 收集草稿实际引用的字体依赖：doc 三级字体 + 主题定义内嵌推荐字体。
+     只声明「当前环境里属于用户导入字体」的 key（内置字体随工具分发，不存在跨浏览器缺失）。 */
+  function collectFontDependencies(draft) {
+    const fontImporter = global.BannerBuilderFontImporter;
+    let userFontIds = [];
+    if (fontImporter && typeof fontImporter.listFonts === "function") {
+      try { userFontIds = fontImporter.listFonts().map(function (row) { return row && row.id; }).filter(Boolean); } catch (error) { userFontIds = []; }
+    }
+    const deps = [];
+    const roles = { fontFamily: "global", headingFont: "heading", bodyFont: "body" };
+    Object.keys(roles).forEach(function (key) {
+      const fontKey = draft[key];
+      if (typeof fontKey !== "string" || !fontKey) return;
+      if (userFontIds.indexOf(fontKey) < 0) return; /* 内置字体不声明 */
+      const meta = C.FONTS[fontKey];
+      if (deps.some(function (d) { return d.key === fontKey; })) return;
+      deps.push({ key: fontKey, label: (meta && meta.label) || fontKey, role: [roles[key]] });
+    });
+    /* 主题定义中的推荐字体（headingFont/bodyFont）同样声明，role 标记为 theme */
+    const def = draft.themeDefinition;
+    if (def && typeof def === "object") {
+      ["headingFont", "bodyFont"].forEach(function (key) {
+        const fontKey = def[key];
+        if (typeof fontKey !== "string" || !fontKey) return;
+        if (userFontIds.indexOf(fontKey) < 0) return;
+        const existing = deps.filter(function (d) { return d.key === fontKey; })[0];
+        if (existing) { if (existing.role.indexOf("theme") < 0) existing.role.push("theme"); return; }
+        const meta = C.FONTS[fontKey];
+        deps.push({ key: fontKey, label: (meta && meta.label) || fontKey, role: ["theme"] });
+      });
+    }
+    return deps;
+  }
   async function saveDraft() {
     const tpl = global.BannerBuilderMyTemplates;
-    if (!tpl || typeof tpl.snapshotData !== "function") { downloadText(JSON.stringify(M.toJSON(state.doc), null, 2), "only-box-banner-draft.json"); return; }
+    const draft = buildDraftPayload(state.doc);
+    if (!tpl || typeof tpl.snapshotData !== "function") { downloadText(JSON.stringify(draft, null, 2), "only-box-banner-draft.json"); return; }
+    let snap;
     try {
-      const snap = await tpl.snapshotData(M.toJSON(state.doc));
-      downloadText(JSON.stringify(snap, null, 2), "only-box-banner-draft.json");
-    } catch (error) { global.alert("草稿保存失败：" + ((error && error.message) || error)); }
+      /* BB-R03：任一图片 blob→dataURL 转换失败都会抛错（带字段路径），不再静默保留 blob: */
+      snap = await tpl.snapshotData(draft);
+    } catch (error) { global.alert("草稿保存失败：" + ((error && error.message) || error)); return; }
+    /* BB-R03：保存前断言快照中无残留 blob:（防御性兜底，正常不应触发） */
+    const blobFindings = [];
+    assertNoBlobUrls(snap, "draft", blobFindings);
+    if (blobFindings.length) {
+      global.alert("草稿保存失败：以下图片未能完成内嵌转换，已中止保存（当前内容未改动）：\n" + blobFindings.slice(0, 5).map(function (f) { return "· " + f.path; }).join("\n"));
+      return;
+    }
+    /* BB-R02：按最终 JSON 的实际 UTF-8 字节数校验，与导入端共用 DRAFT_LIMITS.maxFileSize */
+    const json = JSON.stringify(snap, null, 2);
+    let byteLength;
+    try { byteLength = new TextEncoder().encode(json).length; }
+    catch (error) { byteLength = json.length; /* 极老浏览器降级：按字符数近似 */ }
+    if (byteLength > DRAFT_LIMITS.maxFileSize) {
+      const images = [];
+      collectDraftImageSizes(snap, "draft", images);
+      images.sort(function (a, b) { return b.bytes - a.bytes; });
+      const top = images.slice(0, 5).map(function (img) { return "· " + (img.name || "未命名图片") + "（" + formatBytes(img.bytes) + "，" + img.path + "）"; }).join("\n");
+      global.alert("草稿保存失败：当前草稿 " + formatBytes(byteLength) + "，超过可重新导入上限 " + Math.round(DRAFT_LIMITS.maxFileSize / 1024 / 1024) + "MB。\n\n体积主要来自内嵌图片（前 5 大）：\n" + (top || "（未发现内嵌图片）") + "\n\n建议：压缩或删除部分大图后再保存。当前内容未改动。");
+      return;
+    }
+    downloadText(json, "only-box-banner-draft.json");
   }
   /* 旧类型 key 迁移：performerCard 拆分为 castList / castCards 后，历史数据按模板落位。
      存储记录（草稿/自定义板块/我的模板）创建模块前必须先过这个函数。 */
@@ -3663,54 +3774,236 @@
      板块类型必须可识别；缺失的 ID 本地补齐，旧「嘉宾卡」结构自动迁移。 */
   /* 草稿资源上限：草稿 JSON 会在社区互传，属于不可信输入。
      上限远超正常使用（正常长条 ≤ 20 屏 / ≤ 120 板块），只为阻断恶意超大草稿导致浏览器冻结。 */
-  const DRAFT_LIMITS = {
+  const DRAFT_LIMITS = Object.freeze({
     maxFileSize: 64 * 1024 * 1024,
     maxPages: 200,
     maxModulesPerPage: 300,
     maxModulesTotal: 3000,
     maxStringLength: 50000,
+    maxDataUrlLength: 32 * 1024 * 1024,
     maxDepth: 64,
-  };
-  function assertDraftLimits(value, depth) {
+  });
+  /* BB-R02：保存端与导入端共用同一常量（上方 DRAFT_LIMITS），保存前按最终 JSON 字节数校验，
+     确保工具导出的每一份草稿都能被同版本工具重新导入（导入端 loadDraft 用同一 maxFileSize 拒收）。 */
+  function assertNoBlobUrls(value, path, findings) {
+    if (typeof value === "string") {
+      if (value.indexOf("blob:") === 0) findings.push({ path: path, url: value });
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) assertNoBlobUrls(value[i], path + "[" + i + "]", findings);
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.keys(value).forEach(function (key) { assertNoBlobUrls(value[key], path + "." + key, findings); });
+    }
+  }
+  /* 按体积降序收集草稿内嵌图片资源（超限提示用：显示主要超限资源清单） */
+  function collectDraftImageSizes(value, path, out) {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) collectDraftImageSizes(value[i], path + "[" + i + "]", out);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    if (typeof value.url === "string" && value.url.indexOf("data:") === 0 && typeof value.name === "string") {
+      out.push({ path: path, name: value.name || "未命名图片", bytes: value.url.length });
+      return;
+    }
+    Object.keys(value).forEach(function (key) { collectDraftImageSizes(value[key], path + "." + key, out); });
+  }
+  function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + "MB";
+    if (bytes >= 1024) return (bytes / 1024).toFixed(0) + "KB";
+    return bytes + "B";
+  }
+  function assertDraftLimits(value, depth, parentKey) {
     if (depth > DRAFT_LIMITS.maxDepth) throw new Error("草稿数据嵌套过深");
     if (typeof value === "string") {
+      /* data: URL 是草稿导出时的图片内嵌载荷（「我的模板」snapshotData 同款格式），
+         正常头像/照片单条可达数 MB，不属于异常文本；只对 url 字段豁免，其余仍严格限长 */
+      if (parentKey === "url" && value.indexOf("data:") === 0) {
+        if (value.length > DRAFT_LIMITS.maxDataUrlLength) throw new Error("草稿包含异常大的内嵌图片（超过 " + Math.round(DRAFT_LIMITS.maxDataUrlLength / 1024 / 1024) + "MB），疑似损坏或恶意文件");
+        return;
+      }
       if (value.length > DRAFT_LIMITS.maxStringLength) throw new Error("草稿包含异常长的文本（超过 " + DRAFT_LIMITS.maxStringLength + " 字），疑似损坏或恶意文件");
       return;
     }
     if (Array.isArray(value)) {
-      for (let i = 0; i < value.length; i += 1) assertDraftLimits(value[i], depth + 1);
+      for (let i = 0; i < value.length; i += 1) assertDraftLimits(value[i], depth + 1, parentKey);
       return;
     }
     if (value && typeof value === "object") {
-      Object.keys(value).forEach(function (key) { assertDraftLimits(value[key], depth + 1); });
+      Object.keys(value).forEach(function (key) { assertDraftLimits(value[key], depth + 1, key); });
     }
   }
+  function validateDraftThemeDefinition(definition, themeId) {
+    if (definition == null) return null;
+    if (!definition || typeof definition !== "object" || Array.isArray(definition)) throw new Error("草稿主题定义必须是 JSON 对象");
+    if (!themeId || definition.id !== themeId) throw new Error("草稿主题定义与当前主题 ID 不一致");
+    const importer = global.BannerBuilderThemeImporter;
+    if (importer && typeof importer.validate === "function") {
+      const errors = importer.validate(definition);
+      if (errors.length) throw new Error("草稿主题定义无效：" + errors.join("；"));
+    } else {
+      ["label", "primary", "primaryDark", "primarySoft", "accent", "accentSoft", "line", "soft"].forEach(function (key) {
+        if (typeof definition[key] !== "string" || !definition[key]) throw new Error("草稿主题定义缺少字段：" + key);
+      });
+    }
+    return JSON.parse(JSON.stringify(definition));
+  }
+  /* ===== 草稿版本门禁与显式迁移（BB-R06） =====
+     CURRENT_DRAFT_VERSION：当前导出的草稿结构版本；MIN_SUPPORTED_DRAFT_VERSION：仍可恢复的最老版本。
+     未来版本（> 当前）与非法版本（非整数 / 负数 / 0）一律拒绝，不做猜测式降级。 */
+  const CURRENT_DRAFT_VERSION = 3;
+  const MIN_SUPPORTED_DRAFT_VERSION = 1;
+  function assertDraftVersion(version) {
+    if (typeof version !== "number" || !Number.isInteger(version)) throw new Error("草稿版本号必须是整数（收到：" + String(version) + "）");
+    if (version <= 0) throw new Error("草稿版本号必须是正整数（收到：" + version + "）");
+    if (version > CURRENT_DRAFT_VERSION) throw new Error("草稿来自更新版本的工具（版本 " + version + " > 当前支持 " + CURRENT_DRAFT_VERSION + "），请升级本工具后再导入");
+  }
+  /* v1 → v2：v1 草稿没有 version 字段（按 1 处理），结构上与 v2 相同（pages/modules），
+     差异仅在旧类型 key（performerCard），由 migrateLegacyModuleType 在模块构造时迁移。 */
+  function migrateDraftV1ToV2(draft) {
+    draft.version = 2;
+    return draft;
+  }
+  /* v2 → v3：v3 起草稿内嵌完整主题定义 themeDefinition，v2 只有主题 ID。
+     主题定义缺失时按当前浏览器主题清单补齐（复制后改 id，不突变共享主题对象）；
+     主题不存在或无主题时保持 null（沿用既有降级提示路径）。 */
+  function migrateDraftV2ToV3(draft) {
+    if (draft.themeDefinition == null) {
+      const importer = global.BannerBuilderThemeImporter;
+      let definition = null;
+      if (typeof draft.theme === "string" && draft.theme) {
+        if (importer && typeof importer.loadAll === "function") {
+          definition = importer.loadAll().filter(function (theme) { return theme && theme.id === draft.theme; })[0] || null;
+        }
+        if (!definition && C.themeStyle) {
+          const style = C.themeStyle(draft.theme);
+          if (style) {
+            definition = JSON.parse(JSON.stringify(style));
+            definition.id = draft.theme;
+          }
+        }
+      }
+      draft.themeDefinition = definition;
+    }
+    draft.version = 3;
+    return draft;
+  }
+  function migrateDraft(parsed) {
+    let draft = parsed;
+    const version = draft.version == null ? 1 : draft.version;
+    assertDraftVersion(version);
+    if (version < MIN_SUPPORTED_DRAFT_VERSION) throw new Error("草稿版本过老（" + version + "），低于最低支持版本 " + MIN_SUPPORTED_DRAFT_VERSION);
+    if (version === 1) draft = migrateDraftV1ToV2(draft);
+    if (draft.version === 2) draft = migrateDraftV2ToV3(draft);
+    if (draft.version !== CURRENT_DRAFT_VERSION) throw new Error("草稿迁移后版本异常（" + String(draft.version) + "）");
+    return draft;
+  }
+  /* ===== themeOverrides 白名单校验（BB-R05）：与 AI 整份主题 / 手动微调共用同一 schema =====
+     schema 唯一来源是 BannerBuilderAiDocument 的主题字段表；草稿导入复用同一规则。
+     注意语义差异：AI 协议的 themeOverrides 是完整主题（基础色必填），草稿的
+     themeOverrides 是增量覆盖（只存用户手动改过的字段）。因此这里做「部分覆盖校验」：
+     只校验存在的键（hex 格式 / 枚举值 / 数值范围步进 / 字重档位），不要求必填；
+     白名单复制而不是深拷贝原对象，杜绝 __proto__ / prototype / constructor / 未知字段。 */
+  function sanitizeThemeOverrides(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const AD = global.BannerBuilderAiDocument;
+    const schema = AD && AD.THEME_OVERRIDE_SCHEMA;
+    const out = {};
+    if (!schema) return out; /* schema 未加载时保守返回空覆盖（不应发生：ai-document 先于本文件加载） */
+    Object.keys(raw).forEach(function (key) {
+      if (schema.allowedKeys.indexOf(key) < 0) return; /* 未知/危险键直接丢弃，不报错（宽容恢复） */
+      const value = raw[key];
+      if (schema.baseColors.indexOf(key) >= 0 || schema.extraColors.indexOf(key) >= 0) {
+        if (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)) out[key] = value.trim().toLowerCase();
+        return;
+      }
+      if (schema.enums[key]) {
+        if (typeof value === "string" && schema.enums[key].indexOf(value) >= 0) out[key] = value;
+        return;
+      }
+      const spec = schema.numbers[key];
+      if (spec) {
+        if (typeof value === "number" && isFinite(value) && value >= spec.min && value <= spec.max) out[key] = value;
+        return;
+      }
+      if (key === "headingWeight" || key === "bodyWeight") {
+        if (schema.weights.indexOf(value) >= 0) out[key] = value;
+      }
+    });
+    return out;
+  }
+  /* ===== 模块数据 schema 校验 + 规范化（BB-R01）：草稿宽容策略 =====
+     草稿是用户自己的备份，允许保留历史内部字段（如 padding），因此：
+     - 已知字段：按 Registry schema 严格校验类型/范围/枚举/数组形状，不合格即拒绝；
+     - 未知字段：保留（历史内部字段），但同样受 DRAFT_LIMITS 深度/长度约束；
+     - 图片字段：接受 {url, name, type} 记录（url 限 data:/blob:），拒绝远程 URL。
+     与社区模块导入（严格拒绝未知字段）策略不同，两者不要混用。 */
+  function normalizeDraftModuleData(def, typeKey, rawData, where) {
+    if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) {
+      throw new Error(where + "：data 必须是对象");
+    }
+    const AD = global.BannerBuilderAiDocument;
+    if (AD && typeof AD.validateDataFields === "function") {
+      const errors = [];
+      const err = function (path, code, message) { errors.push({ path: path, code: code, message: message }); };
+      AD.validateDataFields(def, typeKey, rawData, where, err, 0, { allowUnknownFields: true, allowImageRecords: true });
+      if (errors.length) throw new Error(errors[0].path + "：" + errors[0].message);
+    }
+    return rawData;
+  }
   function buildDraftCandidate(parsed) {
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("草稿必须是 JSON 对象");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("草稿必须是 JSON 对对象");
     if (!Array.isArray(parsed.pages) || !parsed.pages.length) throw new Error("草稿缺少页面数据（pages 必须是非空数组）");
     if (parsed.pages.length > DRAFT_LIMITS.maxPages) throw new Error("草稿屏数超过 " + DRAFT_LIMITS.maxPages + " 屏，疑似损坏或恶意文件");
     if (parsed.name != null && (typeof parsed.name !== "string" || parsed.name.length > 200)) throw new Error("草稿名称异常");
-    try { assertDraftLimits(parsed, 0); } catch (error) { throw new Error((error && error.message) || error); }
-    const candidate = M.createDoc(C.CANVAS_PRESETS[parsed.ratio] ? parsed.ratio : C.DEFAULT_RATIO);
-    if (typeof parsed.name === "string" && parsed.name.trim()) candidate.name = parsed.name;
-    if (parsed.screenMode === "continuous" || parsed.screenMode === "split") candidate.screenMode = parsed.screenMode;
-    if (typeof parsed.theme === "string" && parsed.theme) candidate.theme = parsed.theme;
+    try { assertDraftLimits(parsed, 0, ""); } catch (error) { throw new Error((error && error.message) || error); }
+    /* BB-R06：版本门禁 + 显式迁移（v1→v2→v3），迁移在结构校验前完成 */
+    const draft = migrateDraft(parsed);
+    const embeddedTheme = validateDraftThemeDefinition(draft.themeDefinition, draft.theme);
+    /* v1/v2 旧草稿没有主题定义时仍按当前主题清单判定；v3 自带定义时可独立恢复。 */
+    const themeKeys = C.getThemeOptions().map(function (o) { return o.value; });
+    const themeKnown = !!embeddedTheme || !draft.theme || themeKeys.indexOf(draft.theme) >= 0;
+    const candidate = M.createDoc(C.CANVAS_PRESETS[draft.ratio] ? draft.ratio : C.DEFAULT_RATIO);
+    if (typeof draft.name === "string" && draft.name.trim()) candidate.name = draft.name;
+    if (draft.screenMode === "continuous" || draft.screenMode === "split") candidate.screenMode = draft.screenMode;
+    if (typeof draft.theme === "string" && draft.theme) candidate.theme = draft.theme;
+    candidate.themeDefinition = embeddedTheme;
+    candidate.version = CURRENT_DRAFT_VERSION;
     ["fontFamily", "headingFont", "bodyFont"].forEach(function (key) {
-      if (typeof parsed[key] === "string") candidate[key] = parsed[key];
+      if (typeof draft[key] === "string") candidate[key] = draft[key];
     });
-    if (parsed.fontManual === true) candidate.fontManual = true;
-    if (typeof parsed.backgroundColor === "string" && parsed.backgroundColor) candidate.backgroundColor = parsed.backgroundColor;
-    if (parsed.backgroundImage && typeof parsed.backgroundImage === "object" && typeof parsed.backgroundImage.url === "string") {
-      candidate.backgroundImage = { url: parsed.backgroundImage.url, name: parsed.backgroundImage.name || "", type: parsed.backgroundImage.type || "" };
+    if (draft.fontManual === true) candidate.fontManual = true;
+    /* BB-R13：字体缺失不拒绝草稿——字体 key 只要求是字符串；是否缺失在应用成功后
+       由 showMissingFontMapper 检测（等待 IndexedDB bootstrap 完成），用户可映射替代字体。
+       主题定义中的推荐字体同样不参与拒绝（validateDraftThemeDefinition 不校验字体 key）。 */
+    if (typeof draft.backgroundColor === "string" && draft.backgroundColor) candidate.backgroundColor = draft.backgroundColor;
+    if (draft.backgroundImage && typeof draft.backgroundImage === "object" && typeof draft.backgroundImage.url === "string") {
+      candidate.backgroundImage = { url: draft.backgroundImage.url, name: draft.backgroundImage.name || "", type: draft.backgroundImage.type || "" };
     }
-    candidate.exportScale = parsed.exportScale === 1 || parsed.exportScale === 3 ? parsed.exportScale : 2;
-    candidate.themeOverrides = parsed.themeOverrides && typeof parsed.themeOverrides === "object" && !Array.isArray(parsed.themeOverrides)
-      ? JSON.parse(JSON.stringify(parsed.themeOverrides))
-      : {};
-    candidate.pages = parsed.pages.map(function (rawPage, pi) {
+    candidate.exportScale = draft.exportScale === 1 || draft.exportScale === 3 ? draft.exportScale : 2;
+    candidate.__themeKnown = themeKnown;
+    /* BB-R05：themeOverrides 白名单校验 + 规范化复制（拒绝 __proto__/未知字段/超范围数值） */
+    candidate.themeOverrides = sanitizeThemeOverrides(draft.themeOverrides);
+    /* BB-R07：页面/模块 ID 全局唯一。缺失 ID 自动补齐（历史草稿常见），显式重复 ID 拒绝（疑似损坏）。 */
+    const usedIds = new Set();
+    const claimId = function (rawId, fallback, where) {
+      if (typeof rawId === "string" && rawId) {
+        if (usedIds.has(rawId)) throw new Error(where + " 的 ID「" + rawId + "」与其他页面或板块重复，疑似损坏草稿");
+        usedIds.add(rawId);
+        return rawId;
+      }
+      let id = fallback;
+      while (usedIds.has(id)) id = C.uid();
+      usedIds.add(id);
+      return id;
+    };
+    candidate.pages = draft.pages.map(function (rawPage, pi) {
       if (!rawPage || typeof rawPage !== "object" || Array.isArray(rawPage)) throw new Error("第 " + (pi + 1) + " 屏数据不正确");
       const page = M.createPage();
-      page.id = typeof rawPage.id === "string" && rawPage.id ? rawPage.id : C.uid();
+      page.id = claimId(rawPage.id, C.uid(), "第 " + (pi + 1) + " 屏");
       if (typeof rawPage.name === "string" && rawPage.name) page.name = rawPage.name;
       if (typeof rawPage.backgroundColor === "string") page.backgroundColor = rawPage.backgroundColor;
       if (rawPage.backgroundImage && typeof rawPage.backgroundImage === "object" && typeof rawPage.backgroundImage.url === "string") {
@@ -3723,10 +4016,13 @@
         const typeKey = migrateLegacyModuleType(rawModule.type, rawModule.data);
         if (!typeKey || !R.getDef(typeKey)) throw new Error("第 " + (pi + 1) + " 屏第 " + (mi + 1) + " 个板块类型无效：" + String(rawModule.type));
         const module = M.createModule(typeKey);
-        module.id = typeof rawModule.id === "string" && rawModule.id ? rawModule.id : C.uid();
+        module.id = claimId(rawModule.id, C.uid(), "第 " + (pi + 1) + " 屏第 " + (mi + 1) + " 个板块");
         module.visible = rawModule.visible === false ? false : true;
+        /* BB-R01：先迁移旧结构，再按 schema 校验已知字段形状（宽容保留历史内部字段） */
         if (rawModule.data && typeof rawModule.data === "object" && !Array.isArray(rawModule.data)) module.data = rawModule.data;
-        return migrateModuleData(module);
+        migrateModuleData(module);
+        normalizeDraftModuleData(R.getDef(module.type), module.type, module.data, "第 " + (pi + 1) + " 屏第 " + (mi + 1) + " 个板块");
+        return module;
       });
       return page;
     });
@@ -3745,10 +4041,12 @@
       let parsed;
       try { parsed = JSON.parse(reader.result); }
       catch (error) { global.alert("草稿读取失败：文件不是合法 JSON。当前内容未改动。"); return; }
-      try { restoreDraftImages(parsed); } catch (error) { /* 图片还原失败不阻断结构恢复 */ }
+      /* BB-R12：先在纯 data: 形态上完成结构校验，校验通过后再转 blob——
+         避免校验失败的候选文档产生孤儿 Blob URL。 */
       let candidate;
       try { candidate = buildDraftCandidate(parsed); }
       catch (error) { global.alert("草稿校验失败：" + ((error && error.message) || error) + " 当前内容未改动。"); return; }
+      try { restoreDraftImages(candidate); } catch (error) { /* 图片还原失败不阻断结构恢复 */ }
       const oldDoc = state.doc;
       const snapshot = M.toJSON(oldDoc);
       const prev = { activePageId: state.activePageId, selectedModuleId: state.selectedModuleId, step: state.step, sideView: state.sideView };
@@ -3762,7 +4060,7 @@
       ensureDocFonts(candidate);
       refreshProtectedBlobUrls();
       releaseDocBlobs(oldDoc);
-      try { renderAll(); }
+      try { renderAllStrict(); }
       catch (error) {
         state.doc = snapshot;
         state.activePageId = prev.activePageId;
@@ -3777,15 +4075,168 @@
       }
       state.aiUndoSnapshot = null;
       removeAiUndoNotice();
+      /* 仅旧版草稿可能缺少主题定义；新版草稿自带完整主题，不依赖当前浏览器。 */
+      if (candidate.__themeKnown === false) {
+        const near = C.getThemeOptions();
+        const suggest = near.slice(0, 4).map(function (o) { return o.label; }).join("、");
+        global.alert("提示：这份草稿使用的主题「" + candidate.theme + "」在当前浏览器中不存在。\n\n原因：自定义主题保存在浏览器本地（localStorage），草稿 JSON 只记录主题名称不包含配色定义，换浏览器或清除缓存后即丢失。\n\n当前表现：卡片/标题等主题色已回退为默认主题，板块内设置的颜色（如本稿的紫色背景 #3b2b88、各板块底色）不受影响。\n\n恢复方式：① 若你还留有当时的主题定义 JSON，用「导入主题」重新导入一次即可完整还原；② 或在「微调主题」里手工调整后另存为主题。常用内置主题：" + suggest);
+      }
+      delete candidate.__themeKnown;
+      /* BB-R13：草稿应用成功后检测缺失字体（等待 IndexedDB 字体 bootstrap），
+         缺失时展示映射弹窗让用户选择替代字体；主题配色已恢复，不受字体影响。 */
+      showMissingFontMapper(candidate);
     };
     reader.onerror = function () { global.alert("草稿读取失败：无法读取所选文件。"); };
     reader.readAsText(file);
   }
+  /* ===== BB-R13：缺失字体检测与替代映射 =====
+     草稿只携带字体 key，自定义字体文件存在原作者浏览器的 IndexedDB。换浏览器后：
+     1. 等 bootstrapUserFonts 完成（IndexedDB 异步）再检测，避免误报；
+     2. 检测 doc 三级字体 + 主题定义推荐字体是否在当前 C.FONTS 中；
+     3. 缺失时弹映射 UI（每个缺失字体一个下拉，可选现有任意字体或保持缺失）；
+     4. 主题配色照常恢复，绝不因字体缺失拒绝整份草稿。 */
+  function showMissingFontMapper(doc) {
+    const importer = global.BannerBuilderFontImporter;
+    const detect = function () {
+      /* 草稿自带的依赖声明（v3 起导出时写入），用于显示原始字体名 */
+      const declared = {};
+      if (Array.isArray(doc.fontDependencies)) {
+        doc.fontDependencies.forEach(function (dep) {
+          if (dep && typeof dep.key === "string") declared[dep.key] = dep.label || dep.key;
+        });
+      }
+      const missing = [];
+      const seen = {};
+      const roles = { fontFamily: "全局", headingFont: "标题", bodyFont: "正文" };
+      Object.keys(roles).forEach(function (key) {
+        const fontKey = doc[key];
+        if (typeof fontKey !== "string" || !fontKey || seen[fontKey]) return;
+        if (C.FONTS[fontKey]) return;
+        seen[fontKey] = true;
+        missing.push({ key: fontKey, label: declared[fontKey] || fontKey, role: roles[key], targets: [key] });
+      });
+      const def = doc.themeDefinition;
+      if (def && typeof def === "object") {
+        ["headingFont", "bodyFont"].forEach(function (key) {
+          const fontKey = def[key];
+          if (typeof fontKey !== "string" || !fontKey || seen[fontKey]) return;
+          if (C.FONTS[fontKey]) return;
+          seen[fontKey] = true;
+          missing.push({ key: fontKey, label: declared[fontKey] || fontKey, role: "主题推荐", targets: [] });
+        });
+      }
+      return missing;
+    };
+    const run = function () {
+      let missing;
+      try { missing = detect(); } catch (error) { return; }
+      if (!missing.length) return;
+      buildMissingFontModal(missing, doc);
+    };
+    if (importer && typeof importer.refresh === "function" && importer.isAvailable && importer.isAvailable()) {
+      importer.refresh().then(function (rows) {
+        if (rows && rows.length) { importer.applyToConstants(); refreshFontSelects(); }
+        run();
+      }, run);
+    } else run();
+  }
+  function buildMissingFontModal(missing, doc) {
+    const existing = document.getElementById("bb-font-map-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+    const mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-font-map-modal";
+    mask.setAttribute("role", "dialog");
+    mask.setAttribute("aria-modal", "true");
+    mask.setAttribute("aria-labelledby", "bb-font-map-title");
+    const modal = document.createElement("div");
+    modal.className = "bb-modal";
+    const title = el("h3", null, "草稿字体缺失");
+    title.id = "bb-font-map-title";
+    modal.appendChild(title);
+    modal.appendChild(el("p", null, "以下字体是原电脑上导入的自定义字体，字体文件不会随草稿携带，当前浏览器中没有。主题配色与内容已完整恢复；你可以为每个缺失字体选择现有字体替代（含内置字体），或保持现状（预览和导出会回退近似字体）。"));
+    const rows = [];
+    missing.forEach(function (item) {
+      const row = el("div", "bb-tweak-row");
+      row.appendChild(el("span", "bb-tweak-label", (item.label || item.key) + "（" + item.role + "）"));
+      const sel = el("select", "bb-tweak-select");
+      const keep = el("option", null, "保持缺失（回退近似字体）");
+      keep.value = "";
+      sel.appendChild(keep);
+      C.getFontOptions().forEach(function (opt) {
+        const option = el("option", null, opt.label);
+        option.value = opt.value;
+        sel.appendChild(option);
+      });
+      row.appendChild(sel);
+      modal.appendChild(row);
+      rows.push({ item: item, sel: sel });
+    });
+    const actions = el("div", "bb-modal-actions");
+    const applyBtn = el("button", "bb-btn primary", "应用映射");
+    applyBtn.type = "button";
+    applyBtn.addEventListener("click", function () {
+      rows.forEach(function (entry) {
+        const target = entry.sel.value;
+        if (!target) return;
+        /* doc 三级字体：直接替换 */
+        entry.item.targets.forEach(function (docKey) { doc[docKey] = target; });
+        /* 主题定义推荐字体：同步替换，保证主题快照一致 */
+        const def = doc.themeDefinition;
+        if (def && typeof def === "object" && (def.headingFont === entry.item.key || def.bodyFont === entry.item.key)) {
+          if (def.headingFont === entry.item.key) def.headingFont = target;
+          if (def.bodyFont === entry.item.key) def.bodyFont = target;
+        }
+      });
+      ensureDocFonts(doc);
+      mask.parentNode.removeChild(mask);
+      renderAll();
+    });
+    const closeBtn = el("button", "bb-btn ghost", "保持现状");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", function () { mask.parentNode.removeChild(mask); });
+    actions.appendChild(applyBtn);
+    actions.appendChild(closeBtn);
+    modal.appendChild(actions);
+    mask.appendChild(modal);
+    mask.addEventListener("click", function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    document.body.appendChild(mask);
+    try { applyBtn.focus(); } catch (e) { /* ignore */ }
+  }
   /* 供自动化测试使用的内部纯函数（不属于公开 UI API） */
-  global.BannerBuilderDraftTools = Object.freeze({ buildDraftCandidate: buildDraftCandidate });
+  global.BannerBuilderDraftTools = Object.freeze({ buildDraftPayload: buildDraftPayload, buildDraftCandidate: buildDraftCandidate });
 
-  function bindEvents() {
-    els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
+  /* 导出 PDF/A-3b：字体完整嵌入 + OCG 板块图层 + 场景 JSON 附件（引擎在 banner-builder-pdf-export.js） */
+  async function exportPdf() {
+    if (global.BannerBuilderPdfExport && global.BannerBuilderPdfExport.exportPdf) return global.BannerBuilderPdfExport.exportPdf();
+    if (global.alert) global.alert("PDF 导出模块尚未加载，请刷新页面后重试。");
+    return null;
+  }
+
+  /* ===== BB-R18：小屏自动适配 =====
+     computeFitZoom：按画布容器宽度计算适配缩放（与「适配」按钮一致口径）。
+     autoFitZoom：仅用户尚未手动调过缩放时自动应用；用户点过缩放按钮后（state.zoomManual）
+     不再抢占其选择。横竖屏切换由 ResizeObserver 触发重新判断。 */
+  function computeFitZoom() {
+    const avail = ((els.canvasBody && els.canvasBody.clientWidth) || 560) - 48;
+    return Math.min(1.5, Math.max(.15, avail / pageSize().pageWidth));
+  }
+  function autoFitZoom() {
+    if (state.zoomManual) return;
+    state.zoom = computeFitZoom();
+  }
+  function setupZoomAutoFit() {
+    if (typeof ResizeObserver !== "function" || !els.canvasBody) return;
+    let frame = null;
+    const observer = new ResizeObserver(function () {
+      /* 渲染本身会改画布尺寸，用 rAF 合并避免观察-渲染循环 */
+      if (frame) return;
+      frame = global.requestAnimationFrame ? global.requestAnimationFrame(function () { frame = null; autoFitZoom(); renderToolbar(); renderCanvas(); }) : null;
+      if (frame === null) { frame = 0; setTimeout(function () { frame = null; autoFitZoom(); renderToolbar(); renderCanvas(); }, 100); }
+    });
+    observer.observe(els.canvasBody);
+  }
+  function bindEvents() {    els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
     els.screenModeGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-screen]"); if (!button) return; state.doc.screenMode = button.dataset.screen; renderAll(); });
     els.addPageBtn.addEventListener("click", function () {
       const page = M.addPage(state.doc); state.activePageId = page.id; state.selectedModuleId = null; renderAll();
@@ -3793,13 +4244,28 @@
     });
     els.backgroundInput.addEventListener("change", function () {
       const file = this.files && this.files[0];
+      this.value = "";
       if (!file) return;
-      const value = { url: URL.createObjectURL(file), name: file.name, type: file.type };
+      /* BB-R17：背景图与其他图片入口共用同一条校验链（大小/像素/最长边/解码/HEIC），
+         不再直接 URL.createObjectURL 绕过校验。背景图不做裁剪（cover 满铺语义），只做安全校验。 */
+      const MUI = global.MobileImageUpload;
+      if (!MUI || typeof MUI.open !== "function") {
+        replaceBackgroundImageRecord({ url: URL.createObjectURL(file), name: file.name, type: file.type });
+        return;
+      }
+      MUI.open(file).then(function (opened) {
+        const url = URL.createObjectURL(opened.blob);
+        if (opened.release) { try { opened.release(); } catch (e) { /* ignore */ } }
+        replaceBackgroundImageRecord({ url: url, name: opened.originalFile ? opened.originalFile.name : file.name, type: opened.blob.type || file.type });
+      }).catch(function (error) {
+        if (global.alert) global.alert(MUI.errorMessage ? MUI.errorMessage(error) : "背景图读取失败，请换一张图片重试。");
+      });
+    });
+    function replaceBackgroundImageRecord(value) {
       const holder = els.backgroundScope.value === "page" ? activePage() : state.doc;
       replaceImageRecord(holder, "backgroundImage", value);
       renderAll();
-      this.value = "";
-    });
+    }
     if (els.backgroundColorInput) els.backgroundColorInput.addEventListener("input", function () {
       const value = this.value || "#ffffff";
       if (els.backgroundScope.value === "page") activePage().backgroundColor = value;
@@ -3814,6 +4280,8 @@
     els.themeSelect.addEventListener("change", function () {
       const prev = state.doc.theme;
       state.doc.theme = this.value;
+      /* 用户主动换主题后清除草稿内嵌快照，改用新选择的当前定义。 */
+      state.doc.themeDefinition = null;
       const nextSt = C.themeStyle(state.doc.theme);
       const prevSt = C.themeStyle(prev);
       /* 主题推荐字体：用户从未手动改字体时随主题应用；手动改过则只在「仍等于旧主题推荐」时跟随，
@@ -3833,17 +4301,26 @@
     els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
     els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
     if (els.importFontBtn) els.importFontBtn.addEventListener("click", showFontImportModal);
-    els.zoomOutBtn.addEventListener("click", function () { state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
-    els.zoomInBtn.addEventListener("click", function () { state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
-    els.zoomFitBtn.addEventListener("click", function () { const avail = (els.canvasBody.clientWidth || 560) - 48; state.zoom = Math.min(1.5, Math.max(.15, avail / pageSize().pageWidth)); renderToolbar(); renderCanvas(); });
+    els.zoomOutBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
+    els.zoomInBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
+    els.zoomFitBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = computeFitZoom(); renderToolbar(); renderCanvas(); });
     els.exportPngBtn.addEventListener("click", function () { exportPng(false); });
     els.exportAllBtn.addEventListener("click", function () { exportPng(true); });
     els.exportStripBtn.addEventListener("click", exportStripPng);
     els.exportPsdBtn.addEventListener("click", async function () { const result = await exportPsd(); if (result && els.packFontsToggle && els.packFontsToggle.checked) { try { await packFontsZip(); } catch (error) { if (global.alert) global.alert("字体打包失败：" + (error && error.message || error)); } } });
+    if (els.exportPdfBtn) els.exportPdfBtn.addEventListener("click", async function () { try { await exportPdf(); } catch (error) { if (global.alert) global.alert("PDF 导出失败：" + (error && error.message || error)); } });
     els.saveDraftBtn.addEventListener("click", saveDraft);
     els.loadDraftInput.addEventListener("change", function () { if (this.files && this.files[0]) loadDraft(this.files[0]); this.value = ""; });
     els.libraryList.addEventListener("click", function (event) { const custom = event.target.closest("[data-action='lib-add-custom']"); if (custom) { addCustomModuleToPage(custom.dataset.customId); return; } const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); if (!module) return; afterAddModule(module); });
     els.myTplList.addEventListener("click", function (event) { const del = event.target.closest("[data-action='tpl-del']"); if (del) { deleteMyTemplate(del.dataset.tplId); return; } const add = event.target.closest("[data-action='tpl-add']"); if (add) addTemplateToPage(add.dataset.tplId); });
+    /* BB-R19：我的模板键盘操作（Enter/Space 触发添加） */
+    els.myTplList.addEventListener("keydown", function (event) {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const add = event.target.closest("[data-action='tpl-add']");
+      if (!add) return;
+      event.preventDefault();
+      addTemplateToPage(add.dataset.tplId);
+    });
     els.panelBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action='save-tpl']"); if (target) saveSelectedModuleAsTemplate(); });
     els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { if (state.pickMode !== "module") { const hostCard = target.closest(".bb-page-card"); state.activePageId = (hostCard && hostCard.dataset.pageId) || M.findModule(state.doc, moduleId).page.id; state.selectedModuleId = null; renderAll(); return; } state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
     if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
@@ -3882,17 +4359,112 @@
       state.sideView = button.dataset.side;
       renderAll();
     });
+    /* ===== BB-R20：tablist 键盘规范（roving tabindex + 左右方向键 + Home/End） =====
+       适用于步骤条（stepBar）与左侧视图切换（sideTabs）两个 tablist。 */
+    function bindTablistKeyboard(container, selector) {
+      if (!container) return;
+      const buttons = function () { return Array.prototype.slice.call(container.querySelectorAll(selector)); };
+      /* roving tabindex：仅激活 tab 可 Tab 聚焦，其余 tabindex=-1 */
+      const syncRoving = function () {
+        buttons().forEach(function (button) {
+          const selected = button.getAttribute("aria-selected") === "true";
+          button.tabIndex = selected ? 0 : -1;
+        });
+      };
+      syncRoving();
+      /* renderAll 重建 DOM 后重新同步：MutationObserver 免引入，直接在每次键盘/点击后同步 */
+      container.addEventListener("click", function () { setTimeout(syncRoving, 0); });
+      container.addEventListener("keydown", function (event) {
+        const current = event.target.closest(selector);
+        if (!current) return;
+        const all = buttons();
+        const index = all.indexOf(current);
+        let next = -1;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % all.length;
+        else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + all.length) % all.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = all.length - 1;
+        if (next < 0) return;
+        event.preventDefault();
+        all[next].focus();
+        all[next].click();
+      });
+    }
+    bindTablistKeyboard(els.stepBar, ".bb-step[data-step]");
+    bindTablistKeyboard(els.sideTabs, "[data-side]");
     /* ===== 图层树操作：选中屏 / 选中板块 / 删除屏 / 排序 / 删除板块 ===== */
     if (els.layerTree) els.layerTree.addEventListener("click", function (event) {
       const target = event.target.closest("[data-action]");
       if (!target) return;
       const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId;
       if (action === "layer-page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; }
-      if (action === "layer-page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; }
+      if (action === "layer-page-del") {
+        const page = M.findPage(state.doc, pageId);
+        if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return;
+        /* BB-R12：删除前收集该屏全部 blob URL，删除后刷新保护集合，释放不再被引用的图片 */
+        const doomed = new Set();
+        collectBlobUrls(page, doomed);
+        M.removePage(state.doc, pageId);
+        state.activePageId = activePage().id;
+        state.selectedModuleId = null;
+        refreshProtectedBlobUrls();
+        doomed.forEach(function (url) { if (!protectedBlobUrls.has(url)) revokeBlobUrl(url); });
+        renderAll();
+        return;
+      }
       if (action === "layer-module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; if (state.step === "setup") state.step = "edit"; renderAll(); if (continuousMode()) scrollSelectedIntoView(); return; }
       if (action === "layer-module-up" || action === "layer-module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "layer-module-up" ? -1 : 1); renderAll(); return; }
-      if (action === "layer-module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); }
+      if (action === "layer-module-del") {
+        event.stopPropagation();
+        /* BB-R12：删除板块前收集其 blob URL，删除后释放（同一图被其他板块复用时保护集合会拦截） */
+        const hit = M.findModule(state.doc, moduleId);
+        const doomed = new Set();
+        if (hit && hit.module) collectBlobUrls(hit.module, doomed);
+        M.removeModule(state.doc, moduleId);
+        state.selectedModuleId = null;
+        refreshProtectedBlobUrls();
+        doomed.forEach(function (url) { if (!protectedBlobUrls.has(url)) revokeBlobUrl(url); });
+        renderAll();
+      }
     });
+    /* ===== BB-R19：图层树键盘操作（Enter/Space 选中、↑↓ 排序、PageUp/PageDown 跨屏） ===== */
+    if (els.layerTree) els.layerTree.addEventListener("keydown", function (event) {
+      const target = event.target.closest("[data-action]");
+      if (!target) return;
+      const action = target.dataset.action;
+      const moduleId = target.dataset.moduleId;
+      const pageId = target.dataset.pageId;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        if (action === "layer-page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); }
+        else if (action === "layer-module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; if (state.step === "setup") state.step = "edit"; renderAll(); if (continuousMode()) scrollSelectedIntoView(); }
+        return;
+      }
+      if (action !== "layer-module-pick") return;
+      if (event.key === "ArrowUp") { event.preventDefault(); M.moveModule(state.doc, moduleId, -1); renderAll(); refocusLayerRow(moduleId); return; }
+      if (event.key === "ArrowDown") { event.preventDefault(); M.moveModule(state.doc, moduleId, 1); renderAll(); refocusLayerRow(moduleId); return; }
+      /* 拖拽跨屏的键盘替代：PageUp 移至上一屏末尾 / PageDown 移至下一屏开头 */
+      if (event.key === "PageUp" || event.key === "PageDown") {
+        event.preventDefault();
+        const hit = M.findModule(state.doc, moduleId);
+        if (!hit || !hit.page) return;
+        const pages = state.doc.pages;
+        const currentIndex = pages.indexOf(hit.page);
+        const targetIndex = currentIndex + (event.key === "PageUp" ? -1 : 1);
+        if (targetIndex < 0 || targetIndex >= pages.length) return;
+        M.moveModuleAcross(state.doc, moduleId, pages[targetIndex].id, null);
+        state.selectedModuleId = moduleId;
+        state.activePageId = pages[targetIndex].id;
+        if (state.step === "setup") state.step = "edit";
+        renderAll();
+        refocusLayerRow(moduleId);
+      }
+    });
+    /* 键盘操作后把焦点还给同一模块行（renderAll 重建了 DOM） */
+    function refocusLayerRow(moduleId) {
+      const row = els.layerTree && els.layerTree.querySelector(".bb-layer-module[data-module-id='" + moduleId + "']");
+      if (row) { try { row.focus(); } catch (e) { /* ignore */ } }
+    }
     /* ===== 图层树跨屏拖拽：板块行可拖到任意屏的模块列表（目标屏），实现跨屏移动 ===== */
     if (els.layerTree) {
       let dragModuleId = null;
@@ -3964,6 +4536,50 @@
     sel.value = options.some(function (o) { return o.value === value; }) ? value : (options[0] ? options[0].value : "forest");
   }
 
+  /* ===== BB-R20：弹窗统一焦点管理 =====
+     openModalA11y(mask, modal, opts)：
+     - 补 role=dialog / aria-modal / aria-labelledby（标题元素需有 id）；
+     - 打开时记录当前焦点，聚焦首个关键控件（默认 modal 内第一个 button/select/input）；
+     - Escape 关闭（走 opts.close）；
+     - Tab 循环约束在弹窗内；
+     - 关闭时恢复原焦点。
+     返回 cleanup 函数（移除 keydown 监听），关闭弹窗时必须调用。 */
+  function openModalA11y(mask, modal, opts) {
+    mask.setAttribute("role", "dialog");
+    mask.setAttribute("aria-modal", "true");
+    if (opts && opts.titleId) {
+      if (!document.getElementById(opts.titleId)) { /* 标题无 id 时补挂 */ }
+      modal.setAttribute("aria-labelledby", opts.titleId);
+    }
+    const opener = document.activeElement;
+    const close = (opts && opts.close) || function () { if (mask.parentNode) mask.parentNode.removeChild(mask); };
+    const focusables = function () {
+      return Array.prototype.slice.call(modal.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")).filter(function (node) {
+        return !node.disabled && node.offsetParent !== null;
+      });
+    };
+    const onKeydown = function (event) {
+      if (event.key === "Escape") { event.stopPropagation(); cleanup(); close(); return; }
+      if (event.key === "Tab") {
+        const all = focusables();
+        if (!all.length) return;
+        const first = all[0]; const last = all[all.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        else if (modal.indexOf && modal.contains && !modal.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKeydown, true);
+    function cleanup() {
+      document.removeEventListener("keydown", onKeydown, true);
+      if (opener && typeof opener.focus === "function") { try { opener.focus(); } catch (e) { /* ignore */ } }
+    }
+    /* 打开即聚焦首个控件（textarea 类粘贴区不抢焦点，聚焦第一个按钮/输入） */
+    const initial = focusables().filter(function (node) { return node.tagName !== "TEXTAREA"; })[0];
+    if (initial) { try { initial.focus(); } catch (e) { /* ignore */ } }
+    return cleanup;
+  }
+
   function showThemeImportModal() {
     var existing = document.getElementById("bb-theme-modal");
     if (existing) { existing.parentNode.removeChild(existing); }
@@ -3976,7 +4592,10 @@
     modal.className = "bb-modal";
 
     var h3 = el("h3", null, "导入 AI 生成的主题");
+    h3.id = "bb-theme-modal-title";
     modal.appendChild(h3);
+    /* BB-R20：弹窗焦点管理（Escape/Tab 约束/关闭恢复焦点） */
+    var closeA11y = openModalA11y(mask, modal, { titleId: "bb-theme-modal-title" });
     modal.appendChild(el("p", null, "复制下方 AI 提示词发给 ChatGPT / Claude 等 AI → 把生成的 JSON 粘贴回来 → 点击导入"));
 
     var promptArea = document.createElement("textarea");
@@ -4035,13 +4654,13 @@
 
     var cancelBtn = el("button", "bb-btn ghost", "关闭");
     cancelBtn.type = "button";
-    cancelBtn.addEventListener("click", function () { mask.parentNode.removeChild(mask); });
+    cancelBtn.addEventListener("click", function () { closeA11y(); mask.parentNode.removeChild(mask); });
     actionRow.appendChild(cancelBtn);
 
     modal.appendChild(actionRow);
     mask.appendChild(modal);
 
-    mask.addEventListener("click", function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    mask.addEventListener("click", function (e) { if (e.target === mask) { closeA11y(); mask.parentNode.removeChild(mask); } });
     document.body.appendChild(mask);
 
     function showMsg(type, text) {
@@ -4091,14 +4710,18 @@
   function showThemeTweakModal() {
     const existing = document.getElementById("bb-tweak-modal");
     if (existing) existing.parentNode.removeChild(existing);
-    const base = C.themeStyle(state.doc.theme);
+    const base = C.themeStyleForDoc ? C.themeStyleForDoc(state.doc) : C.themeStyle(state.doc.theme);
 
     const mask = document.createElement("div");
     mask.className = "bb-modal-mask";
     mask.id = "bb-tweak-modal";
     const modal = document.createElement("div");
     modal.className = "bb-modal";
-    modal.appendChild(el("h3", null, "微调主题「" + (base.label || state.doc.theme) + "」"));
+    const tweakTitle = el("h3", null, "微调主题「" + (base.label || state.doc.theme) + "」");
+    tweakTitle.id = "bb-tweak-modal-title";
+    modal.appendChild(tweakTitle);
+    /* BB-R20：弹窗焦点管理 */
+    const closeA11y = openModalA11y(mask, modal, { titleId: "bb-tweak-modal-title" });
     modal.appendChild(el("p", null, "在预设主题基础上手动覆盖颜色与风格。未覆盖的项显示为「继承预设」，恢复默认即清除该项覆盖。改动实时反映到画布与导出。"));
 
     const body = el("div");
@@ -4203,6 +4826,7 @@
     document.body.appendChild(mask);
 
     function maskRemove() {
+      closeA11y();
       if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
     }
   }
@@ -4232,14 +4856,18 @@
   function showTypeTweakModal() {
     const existing = document.getElementById("bb-type-tweak-modal");
     if (existing) existing.parentNode.removeChild(existing);
-    const base = C.themeStyle(state.doc.theme);
+    const base = C.themeStyleForDoc ? C.themeStyleForDoc(state.doc) : C.themeStyle(state.doc.theme);
 
     const mask = document.createElement("div");
     mask.className = "bb-modal-mask";
     mask.id = "bb-type-tweak-modal";
     const modal = document.createElement("div");
     modal.className = "bb-modal";
-    modal.appendChild(el("h3", null, "排版微调「" + (base.label || state.doc.theme) + "」"));
+    const typeTweakTitle = el("h3", null, "排版微调「" + (base.label || state.doc.theme) + "」");
+    typeTweakTitle.id = "bb-type-tweak-modal-title";
+    modal.appendChild(typeTweakTitle);
+    /* BB-R20：弹窗焦点管理 */
+    const closeA11y = openModalA11y(mask, modal, { titleId: "bb-type-tweak-modal-title" });
     modal.appendChild(el("p", null, "手动覆盖字号缩放、字重、行距、字距与文字颜色。继承预设项显示原值，改动实时反映到画布与 PNG / PSD 导出；恢复默认即清除该项覆盖。"));
 
     const body = el("div");
@@ -4381,6 +5009,7 @@
     document.body.appendChild(mask);
 
     function maskRemove() {
+      closeA11y();
       if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
     }
   }
@@ -4420,7 +5049,7 @@
     els.bodyFontSelect.value = has(keep.body) ? keep.body : "";
   }
 
-  /* ===== 用户导入字体弹窗 ===== */
+  /* ===== 用户导入字体弹窗（BB-R23：接入已导入字体的删除能力） ===== */
   function showFontImportModal() {
     var importer = global.BannerBuilderFontImporter;
     if (!importer || !importer.isAvailable()) {
@@ -4436,7 +5065,11 @@
     var modal = document.createElement("div");
     modal.className = "bb-modal";
 
-    modal.appendChild(el("h3", null, "导入本地字体"));
+    var fontModalTitle = el("h3", null, "导入本地字体");
+    fontModalTitle.id = "bb-font-modal-title";
+    modal.appendChild(fontModalTitle);
+    /* BB-R20：弹窗焦点管理 */
+    var closeA11y = openModalA11y(mask, modal, { titleId: "bb-font-modal-title" });
     modal.appendChild(el("p", null, "选择一个 .ttf / .otf / .woff / .woff2 字体文件，工具会读取字体家族名、保存到浏览器本地，并立即加入上方的「全局 / 标题 / 正文」字体下拉。"));
 
     var fileInput = document.createElement("input");
@@ -4498,11 +5131,56 @@
     actionRow.className = "bb-modal-actions";
     var closeBtn = el("button", "bb-btn ghost", "关闭");
     closeBtn.type = "button";
-    closeBtn.addEventListener("click", function () { mask.parentNode.removeChild(mask); });
+    closeBtn.addEventListener("click", function () { closeA11y(); mask.parentNode.removeChild(mask); });
     actionRow.appendChild(closeBtn);
     modal.appendChild(actionRow);
+
+    /* BB-R23：已导入字体管理——列出本机 IndexedDB 中的自定义字体，支持删除。
+       删除持久化失败必须明确报错，不返回伪成功。 */
+    var manageArea = el("div");
+    manageArea.style.marginTop = "14px";
+    var manageTitle = el("p", null, "▼ 已导入字体（本机保存，删除后不可恢复）");
+    manageTitle.style.marginTop = "12px";
+    manageArea.appendChild(manageTitle);
+    var fontList = el("div");
+    manageArea.appendChild(fontList);
+    modal.appendChild(manageArea);
+
+    function renderFontManageList() {
+      fontList.textContent = "";
+      /* refresh() 异步刷新内部缓存后返回字体清单 */
+      importer.refresh().then(function (list) {
+        list = list || [];
+        if (!list.length) { fontList.appendChild(el("p", null, "（暂无已导入字体）")); return; }
+        list.forEach(function (row) {
+          var item = el("div", "bb-tweak-row");
+          item.appendChild(el("span", "bb-tweak-label", (row.label || row.family || row.id) + "（" + (row.fileName || row.format || "") + "）"));
+          var delBtn = el("button", "bb-btn ghost", "删除");
+          delBtn.type = "button";
+          delBtn.style.cssText = "color:#b54a35;border-color:#e8c4ba";
+          delBtn.addEventListener("click", function () {
+            if (!global.confirm("删除字体「" + (row.label || row.id) + "」？正在使用该字体的文档会回退默认字体。")) return;
+            importer.removeFont(row.id).then(function () {
+              /* 从 Constants 撤销注入，避免下拉里残留已删除字体 */
+              if (C.FONTS[row.id]) delete C.FONTS[row.id];
+              if (C.FONT_DOWNLOADS && C.FONT_DOWNLOADS[row.id]) delete C.FONT_DOWNLOADS[row.id];
+              refreshFontSelects();
+              renderFontManageList();
+            }).catch(function (e) {
+              if (global.alert) global.alert("字体删除失败（未写入存储）：" + ((e && e.message) || e));
+            });
+          });
+          item.appendChild(delBtn);
+          fontList.appendChild(item);
+        });
+      }).catch(function () {
+        fontList.appendChild(el("p", null, "（字体库读取失败）"));
+      });
+    }
+    renderFontManageList();
+
     mask.appendChild(modal);
-    mask.addEventListener("click", function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    mask.addEventListener("click", function (e) { if (e.target === mask) { closeA11y(); mask.parentNode.removeChild(mask); } });
     document.body.appendChild(mask);
   }
 
@@ -4516,7 +5194,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.exportPdfBtn = document.getElementById("exportPdfBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); preloadDefaultFont(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); setupZoomAutoFit(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoomManual = true; state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;

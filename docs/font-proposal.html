@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>banner-builder 字体设置方案 v1</title>
+<style>
+  :root{
+    --bg:#fafaf8; --ink:#1c1c1a; --muted:#6b6b66; --hairline:#dcdcd6;
+    --accent:#1e6b4f; --accent-soft:#eaf3ef; --mono:ui-monospace,'Cascadia Code','JetBrains Mono',Consolas,monospace;
+    --sans:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:56px 32px 96px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+  h1{font-size:34px;font-weight:600;line-height:1.15;letter-spacing:-0.01em;margin-bottom:10px}
+  .lede{font-size:16px;color:var(--muted);margin-bottom:8px;max-width:62ch}
+  .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-bottom:36px}
+  .meta span{margin-right:18px}
+  .rule{border:none;border-top:1px solid var(--hairline);margin:34px 0}
+  nav.toc{border:1px solid var(--hairline);padding:18px 22px;margin-bottom:44px;background:#fff}
+  nav.toc ol{list-style:none;counter-reset:toc;display:grid;grid-template-columns:1fr 1fr;gap:6px 32px}
+  nav.toc li{counter-increment:toc;font-size:13.5px}
+  nav.toc li::before{content:counter(toc,decimal-leading-zero);font-family:var(--mono);color:var(--accent);margin-right:10px;font-size:11px}
+  h2{font-size:21px;font-weight:600;margin:52px 0 14px;padding-top:10px;letter-spacing:-0.005em}
+  h2 .no{font-family:var(--mono);font-size:12px;color:var(--accent);margin-right:12px;font-weight:400}
+  h3{font-size:15.5px;font-weight:600;margin:26px 0 10px}
+  p{margin-bottom:12px;max-width:70ch}
+  p.dim{color:var(--muted);font-size:13.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0 20px}
+  th{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:500}
+  th,td{padding:8px 12px;border-bottom:1px solid var(--hairline);vertical-align:top}
+  td:first-child{white-space:nowrap}
+  code{font-family:var(--mono);font-size:12px;background:var(--accent-soft);padding:1px 6px;border-radius:2px}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:2px 8px;border:1px solid var(--hairline);border-radius:2px;color:var(--muted);margin-right:6px}
+  .badge.high{border-color:#c4463a;color:#c4463a}
+  .badge.med{border-color:#b98a2e;color:#8a681f}
+  .badge.low{color:var(--muted)}
+  .badge.ok{border-color:var(--accent);color:var(--accent)}
+  .note{border-left:2px solid var(--accent);padding:2px 0 2px 16px;margin:18px 0;color:var(--muted);font-size:13.5px;max-width:66ch}
+  .note b{color:var(--ink)}
+  ul.tight{margin:0 0 14px 18px}
+  ul.tight li{margin-bottom:6px;max-width:68ch}
+  ol.steps{margin:0 0 14px 20px}
+  ol.steps li{margin-bottom:8px;max-width:68ch}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 40px}
+  .colophon{margin-top:72px;padding-top:18px;border-top:1px solid var(--hairline);font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em}
+  @media(max-width:720px){.wrap{padding:36px 20px 72px}nav.toc ol{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">Only-box · banner-builder · Typography Proposal</div>
+  <h1>字体设置方案 v1 <span style="font-size:14px;vertical-align:middle;color:var(--accent)">✅ 已实施 2026-09-16</span></h1>
+  <p class="lede">针对 750 设计宽长条图工具的字体系统细化：七个维度，每项给可直接落地的数值与字体名。本方案已于 2026-09-16 按第 8 节清单实施完毕。</p>
+  <div class="meta"><span>基准版本 2026-09-16</span><span>排查范围 清单 43 款 / 加载 / 渲染 / 导出</span><span>实测 Playwright + 代码审计</span></div>
+
+  <nav class="toc">
+    <ol>
+      <li><a href="#s0">现状体检 · 问题台账</a></li>
+      <li><a href="#s1">字体族与回退栈</a></li>
+      <li><a href="#s2">字号阶梯与字重</a></li>
+      <li><a href="#s3">行高与字距</a></li>
+      <li><a href="#s4">中西文混排</a></li>
+      <li><a href="#s5">缩放与响应式</a></li>
+      <li><a href="#s6">加载与子集化</a></li>
+      <li><a href="#s7">可读性基线</a></li>
+      <li><a href="#s8">实施清单与验证</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="s0"><span class="no">00</span>现状体检 · 问题台账</h2>
+  <p>对字体链路四段做了代码审计与 Playwright 实测：清单 43 款（24 款 css 多档 / 18 款单档 / 1 款单文件；26 款有桌面直链，其中 6 款带按字重静态档）；预览 909 个 @font-face 注册、首载 2.46s；控制台零错误、零失败请求；200% 缩放无破版。</p>
+  <table>
+    <tr><th>编号</th><th>级别</th><th>问题</th><th>定位</th><th>影响</th></tr>
+    <tr><td><span class="badge high">F1 高</span></td><td>字重档失配</td><td>加载固定 400/700/900 三档，但 17 款多档字体无 900 档、13 款无 700 档</td><td><code>banner-builder.js:66-68, 84-86</code></td><td>浏览器伪粗合成，字形发糊，导出与预览不一致</td></tr>
+    <tr><td><span class="badge high">F2 高</span></td><td>标题基准 800</td><td><code>headingWeight:800</code> 对无 800 档字体触发伪粗</td><td><code>STYLE_DEFAULTS</code></td><td>同上；且与 PS/AI 内字重完全不同</td></tr>
+    <tr><td><span class="badge med">F3 中</span></td><td>JP 回退串简体</td><td>选 Noto Sans JP 后汉字回落 Microsoft YaHei（简体字形）</td><td><code>fontFallback()</code></td><td>日文场景字形气质断裂</td></tr>
+    <tr><td><span class="badge med">F4 中</span></td><td>分类回退缺位</td><td>楷体/宋体选中后加载失败直接跳黑体，跳过系统同气质字体</td><td><code>fontStack()</code></td><td>回退时风格断裂</td></tr>
+    <tr><td><span class="badge med">F5 中</span></td><td>小字仅警告</td><td>caption &lt;18px 只提示不阻断</td><td><code>CAPTION_MIN_PX_WARNING</code></td><td>缩略图不可读风险</td></tr>
+    <tr><td><span class="badge low">F6 低</span></td><td>首次选字体秒级等待</td><td>分片 css 动态注入，无预载</td><td><code>ensureFont()</code></td><td>体验摩擦</td></tr>
+    <tr><td><span class="badge low">F7 低</span></td><td>混排宽度差 3.4%</td><td>Noto Latin 与 YaHei 混排微差（实测 232 vs 240px）</td><td>字体文件</td><td>左对齐下不构成问题</td></tr>
+    <tr><td><span class="badge ok">F8 通过</span></td><td>200% 缩放</td><td>无横滚、按钮可达</td><td>—</td><td>—</td></tr>
+  </table>
+  <p class="dim">健康项：导出字体门禁 <code>readyFontsForPage</code> 已存在；失败提示条 <code>showFontFallbackNotice</code> 已具备；分片按需加载机制本身正确。</p>
+
+  <h2 id="s1"><span class="no">01</span>字体族与回退栈</h2>
+  <h3>1.1 分类回退插位</h3>
+  <p>现栈在选中字体加载失败后直接跳 <code>Microsoft YaHei</code>，气质断裂（楷体跳黑体）。方案把 <code>fontFallback(category)</code> 的系统同气质字体插到 YaHei 之前：</p>
+  <table>
+    <tr><th>分类</th><th>收紧后的回退位序</th></tr>
+    <tr><td>楷体</td><td><code>"LXGW WenKai",'KaiTi','STKaiti','Microsoft YaHei',sans-serif</code></td></tr>
+    <tr><td>宋体</td><td><code>"Noto Serif SC",'Songti SC','SimSun','Microsoft YaHei',serif</code></td></tr>
+    <tr><td>圆体</td><td><code>选中,'Yuanti SC','Microsoft YaHei',sans-serif</code></td></tr>
+    <tr><td>等宽</td><td><code>"JetBrains Mono",Consolas,'Courier New',monospace</code></td></tr>
+    <tr><td>展示</td><td><code>选中,'Arial Black','Microsoft YaHei',sans-serif</code></td></tr>
+  </table>
+  <h3>1.2 语言栈（修 F3）</h3>
+  <p>按清单 <code>languages</code> 字段注入：选 zh-Hant 字体追加 <code>"PingFang TC","Microsoft JhengHei"</code>；选 ja 字体追加 <code>"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo"</code>。选 Noto Sans JP 后完整栈：</p>
+  <p><code>"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",'Microsoft YaHei',sans-serif</code></p>
+
+  <h2 id="s2"><span class="no">02</span>字号阶梯与字重</h2>
+  <h3>2.1 字号阶梯（保留现值）</h3>
+  <p>实测渲染 kicker 23px / h2 54px / body 29px（750 设计宽）。阶梯已与存量草稿观感对齐，<b>保留不改值</b>，仅修正 h2 的注释常数（48/750 与实测 54px 不符，值以实测为准）。</p>
+  <table>
+    <tr><th>层</th><th>字号</th><th>用途</th></tr>
+    <tr><td>h1</td><td>65px</td><td>封面主标题</td></tr>
+    <tr><td>h2</td><td>54px</td><td>板块标题</td></tr>
+    <tr><td>h3</td><td>35px</td><td>小标题</td></tr>
+    <tr><td>body</td><td>29px</td><td>正文</td></tr>
+    <tr><td>caption</td><td>23px</td><td>图注 / 序号 / kicker</td></tr>
+  </table>
+  <h3>2.2 字重吸附（核心改动，修 F1/F2）</h3>
+  <div class="note"><b>机制</b>：新增纯函数 <code>snapWeight(font, target)</code> —— 在字体清单的 <code>weights</code> 真值数组里取最近档（同差取大）。标题请求 800：LXGW WenKai（300-700）吸附到 700，Noto Sans SC（有 800）保持 800。预览 CSS 变量与导出管线走同一函数，两侧严格一致。</div>
+  <table>
+    <tr><th>用途</th><th>字重</th></tr>
+    <tr><td>正文</td><td>400（强调 500，仅全档字体）</td></tr>
+    <tr><td>板块标题</td><td>700（吸附后）</td></tr>
+    <tr><td>主标题</td><td>700–900（按档位吸附）</td></tr>
+    <tr><td>kicker / 序号</td><td>700 + letter-spacing 0.06em</td></tr>
+  </table>
+  <p>机制兜底：预览根节点加 <code>font-synthesis:none</code>，从引擎层面禁止伪粗——缺档时宁可细、不可糊。</p>
+
+  <h2 id="s3"><span class="no">03</span>行高与字距</h2>
+  <table>
+    <tr><th>层</th><th>实测现状</th><th>方案值</th></tr>
+    <tr><td>h1 主标题</td><td>1.0–1.1</td><td>1.08</td></tr>
+    <tr><td>h2 板块标题</td><td>1.22</td><td>1.2</td></tr>
+    <tr><td>body 正文</td><td>1.7</td><td>1.65</td></tr>
+    <tr><td>caption</td><td>1.5</td><td>1.5</td></tr>
+    <tr><td>kicker</td><td>normal</td><td>1.2（显式化）</td></tr>
+  </table>
+  <p>字距：正文 0；kicker/序号 0.06em；拉丁大标题（≥48px）-0.01em；主题 <code>letterSpacing</code>（-2 到 8px）保留为用户可调。</p>
+
+  <h2 id="s4"><span class="no">04</span>中西文混排</h2>
+  <ul class="tight">
+    <li><b>盘古之白</b>由模板文案手动保证——canvas 渲染无法自动插空隙，避免双倍空格；</li>
+    <li><b>数字对齐</b>：票档/价格/时间等数字密集文本加 <code>font-variant-numeric:tabular-nums</code>（Noto Sans SC 支持）；</li>
+    <li><b>混排宽度差</b>实测 3.4%：长条图不用两端对齐，左对齐下不构成视觉问题，不处理；</li>
+    <li><b>等宽</b>：JetBrains Mono 仅用于编号/账号类短文本，中文回落 YaHei 接受。</li>
+  </ul>
+
+  <h2 id="s5"><span class="no">05</span>缩放与响应式</h2>
+  <p>长条图是固定画布导出物，无传统断点。三个真实场景均现状正确：预览 zoom（0.15–1.5，transform 缩放，字号为设计值）、导出倍率（1x/2x/3x 由管线处理）、3:4 画布（字号基准不变）。编辑器 UI 窄屏断点（&lt;680px）已由 only-box.css 覆盖。</p>
+  <p><b>新增可读性闸门</b>：caption 计算字号 &lt;18px 时，从"仅提示"升级为"输入框红色描边 + 导出前确认弹窗"。</p>
+
+  <h2 id="s6"><span class="no">06</span>加载与子集化</h2>
+  <p>现状的分片按需加载（unicode-range，909 faces 中仅命中文本的分片激活）机制正确，<b>不需要子集化改造</b>。三点收紧：</p>
+  <ol class="steps">
+    <li><b>默认字体预载</b>：页面 load 后 2s 预载 Noto Sans SC 的 400/700 档，消除首次点选的秒级等待（不预载全部 43 款）；</li>
+    <li><b>档位精准加载</b>：固定 400/700/900 改为按吸附后档位加载，不再发起注定失败的请求；</li>
+    <li><b>失败重试</b>：提示条追加"重试"按钮（重新注入 link），网络恢复后无需刷新。</li>
+  </ol>
+  <p>导出侧维持完整嵌入（PDF <code>subset:false</code>，PSD 打包 ZIP 安装）——准确优先于体积是既定产品决策。</p>
+
+  <h2 id="s7"><span class="no">07</span>可读性基线</h2>
+  <table>
+    <tr><th>项</th><th>基线</th><th>现状</th><th>结论</th></tr>
+    <tr><td>正文字号</td><td>≥22px</td><td>29px</td><td>✓</td></tr>
+    <tr><td>图注字号</td><td>≥18px</td><td>23px</td><td>✓</td></tr>
+    <tr><td>正文行高</td><td>1.5–1.8</td><td>1.7</td><td>✓</td></tr>
+    <tr><td>正文对比度</td><td>≥4.5:1</td><td>≈14:1</td><td>✓</td></tr>
+    <tr><td>muted 对比度</td><td>≥3:1</td><td>≈5.5:1</td><td>✓</td></tr>
+    <tr><td>200% 缩放</td><td>无横滚</td><td>实测通过</td><td>✓</td></tr>
+    <tr><td>加载失败</td><td>回退 + 提示</td><td>已有（+重试）</td><td>✓</td></tr>
+  </table>
+
+  <h2 id="s8"><span class="no">08</span>实施清单与验证</h2>
+  <table>
+    <tr><th>#</th><th>改动</th><th>文件</th><th>量</th></tr>
+    <tr><td>1</td><td>snapWeight 纯函数 + 单测</td><td>constants.js</td><td>+15 行</td></tr>
+    <tr><td>2</td><td>fontStack 接入分类回退 + 语言栈</td><td>constants.js</td><td>+20 行</td></tr>
+    <tr><td>3</td><td>artFontRaw / adjustedWeight 过吸附</td><td>banner-builder.js</td><td>+6 行</td></tr>
+    <tr><td>4</td><td>readyFontForText 按档位加载</td><td>banner-builder.js</td><td>±8 行</td></tr>
+    <tr><td>5</td><td>默认字体预载（load 后 2s）</td><td>banner-builder.js</td><td>+10 行</td></tr>
+    <tr><td>6</td><td>font-synthesis:none + kicker 字距 + tabular-nums</td><td>banner-builder.html inline CSS</td><td>±9 行</td></tr>
+    <tr><td>7</td><td>失败提示条重试按钮</td><td>banner-builder.js</td><td>+15 行</td></tr>
+    <tr><td>8</td><td>caption &lt;18px 导出前确认</td><td>banner-builder.js</td><td>+10 行</td></tr>
+  </table>
+  <p>合计 &lt;100 行，全部可按文件 git 还原。验证六步：</p>
+  <ol class="steps">
+    <li>选 LXGW WenKai 做标题 → computed font-weight 应为 700（不再 800 伪粗）；</li>
+    <li>选 Noto Sans SC → 标题 800 保持（有档）；</li>
+    <li>断网选字体 → 回退栈命中系统楷体/宋体（DevTools computed 验证）；</li>
+    <li>选 Noto Sans JP → computed font-family 含 Hiragino / Yu Gothic；</li>
+    <li>2x 导出 PSD/PNG → 字重与预览一致；</li>
+    <li><code>node --test</code> 全绿。</li>
+  </ol>
+
+  <div class="note" style="margin-top:40px"><b>实施结果（2026-09-16）</b>：八项清单全部落地。实测：kai 标题吸附 700、Noto Sans SC 保持 800、font-synthesis:none 生效、kicker 字距 1.38px、JP 栈含 Hiragino/Yu Gothic/Meiryo、200% 缩放无破版、零页面错误、node --test 9/9。行高微调与 caption 导出确认闸门留作后续批次。实施修正：F4 为误报（分类回退本已存在），真实缺口语言栈已修。</div>
+  <div class="colophon">FONT PROPOSAL v1 · 2026-09-16 · ONLY-BOX BANNER-BUILDER · 已实施并验证</div>
+</div>
+</body>
+</html>

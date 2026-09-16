@@ -190,11 +190,13 @@
     return record;
   }
 
+  /* BB-R23：删除必须如实报告持久化结果——saveAll 失败时抛错，不返回伪成功 */
   function removeTheme(id) {
     var themes = loadAll();
     var filtered = themes.filter(function (t) { return t.id !== id; });
     if (filtered.length === themes.length) return false;
-    return saveAll(filtered);
+    if (!saveAll(filtered)) throw new Error("浏览器本地存储写入失败，主题未删除");
+    return true;
   }
 
   /* 合并：自定义主题（localStorage）覆盖内置主题，按 label 排序显示 */

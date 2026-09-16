@@ -256,8 +256,12 @@
     return color;
   }
 
-  /* ---------- 核心位图化：优先 html-to-image（全量样式克隆），失败回落自研序列化 ---------- */
-  function rasterizeViaLibrary(node, width, height, scale) {
+  /* ---------- 核心位图化：优先 html-to-image（全量样式克隆），失败回落自研序列化 ----------
+     bgColor（可选）：显式背景色，优先于 nodeBackground 的读值。连续模式下 .bb-page-canvas
+     背景透明（底色由 .bb-strip 承载），nodeBackground 会回落白色导致导出底色丢失
+     （2026-09-16 PDF 导出实测：深紫底文档导出成白底）。调用方按
+     page.backgroundColor || doc.backgroundColor 传入即可两种模式通吃。 ---------- */
+  function rasterizeViaLibrary(node, width, height, scale, bgColor) {
     if (!global.htmlToImage || typeof global.htmlToImage.toCanvas !== "function") return Promise.reject(new Error("html-to-image 未加载"));
     /* 库默认内嵌样式表里全部 @font-face（中文包 ~120 分片）首跑极慢；
        改为只把已激活（命中文本）分片的 font CSS 注入节点，库跳过自身字体处理。 */
@@ -276,7 +280,7 @@
         pixelRatio: scale,
         width: width,
         height: height,
-        backgroundColor: nodeBackground(node),
+        backgroundColor: bgColor || nodeBackground(node),
         cacheBust: false,
         skipFonts: true,
         /* 外链资源拉取加 8s 超时（库默认无超时，弱网/离线对慢资源会无限挂死） */
@@ -298,17 +302,17 @@
       }).then(function (canvas) { finish(); return canvas; }, function (err) { finish(); throw err; });
     });
   }
-  function rasterizeDomToCanvas(node, width, height, scale) {
-    return rasterizeViaLibrary(node, width, height, scale).catch(function () {
-      return rasterizeViaOwn(node, width, height, scale);
+  function rasterizeDomToCanvas(node, width, height, scale, bgColor) {
+    return rasterizeViaLibrary(node, width, height, scale, bgColor).catch(function () {
+      return rasterizeViaOwn(node, width, height, scale, bgColor);
     });
   }
-  function rasterizeViaOwn(node, width, height, scale) {
+  function rasterizeViaOwn(node, width, height, scale, bgColor) {
     return new Promise(function (resolve, reject) {
       const clone = cloneWithComputedStyles(node);
-      const bgColor = nodeBackground(node);
+      const resolvedBg = bgColor || nodeBackground(node);
       Promise.all([inlineResources(clone), buildFontCss()]).then(function (arr) {
-        finishRasterize(clone, width, height, scale, resolve, reject, arr[1] || "", bgColor);
+        finishRasterize(clone, width, height, scale, resolve, reject, arr[1] || "", resolvedBg);
       }, function () { reject(new Error("资源内联失败")); });
     });
   }
@@ -370,6 +374,45 @@
     setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
   }
 
+  /* BB-R10：统一 PNG 编码器——canvas.toBlob 可能回调 null（超大画布 / 内存不足 / 浏览器限制），
+     必须判空后再下载，错误信息包含画布尺寸与处理建议。所有 PNG 导出路径统一调用。 */
+  function canvasToPngBlob(canvas) {
+    return new Promise(function (resolve, reject) {
+      try {
+        canvas.toBlob(function (blob) {
+          if (!blob) {
+            reject(new Error("PNG 编码失败，当前画布为 " + canvas.width + " × " + canvas.height + " px。建议降低导出倍率或减少屏数后重试。"));
+            return;
+          }
+          resolve(blob);
+        }, "image/png");
+      } catch (error) {
+        reject(new Error("PNG 编码异常：" + ((error && error.message) || error) + "（画布 " + canvas.width + " × " + canvas.height + " px）"));
+      }
+    });
+  }
+
+  /* BB-R11：导出资源预算——连续长图（200 屏上限）× 高倍率可能超出浏览器 Canvas 能力
+     （Chrome 单边上限 65535、多数浏览器总像素约 1.6 亿内稳定）。创建 Canvas 前先算账，
+     超限立即阻止，避免长时间冻结后才失败。配置集中管理，导出各路径共用。 */
+  const EXPORT_LIMITS = Object.freeze({
+    maxSide: 32767,                       /* 单边最大 px（Chrome/Safari 安全值） */
+    maxPixels: 130 * 1000 * 1000,         /* 总像素上限（宽×高） */
+    maxEstimatedBytes: 700 * 1024 * 1024, /* 估算 RGBA 内存上限（宽×高×4） */
+  });
+  function assertExportBudget(width, height, label) {
+    const w = Math.ceil(Number(width) || 0);
+    const h = Math.ceil(Number(height) || 0);
+    const pixels = w * h;
+    const bytes = pixels * 4;
+    if (w > EXPORT_LIMITS.maxSide || h > EXPORT_LIMITS.maxSide) {
+      throw new Error((label || "导出") + "尺寸超出浏览器能力：宽 " + w + " × 高 " + h + " px（单边上限 " + EXPORT_LIMITS.maxSide + " px）。建议降低导出倍率、减少屏数，或改用「分屏导出 PNG」逐屏导出。");
+    }
+    if (pixels > EXPORT_LIMITS.maxPixels || bytes > EXPORT_LIMITS.maxEstimatedBytes) {
+      throw new Error((label || "导出") + "总像素超出浏览器能力：宽 " + w + " × 高 " + h + " px，共 " + (pixels / 1000 / 1000).toFixed(1) + " 百万像素（估算内存 " + (bytes / 1024 / 1024).toFixed(0) + "MB）。建议降低导出倍率、减少屏数，或改用「分屏导出 PNG」逐屏导出。");
+    }
+  }
+
   /* ---------- 对外能力 ---------- */
   async function exportPng(opts) {
     global.__EXPORT_TRACE = global.__EXPORT_TRACE || [];
@@ -393,7 +436,7 @@
         const exportH = Math.max(node.offsetHeight, node.scrollHeight);
       const canvas = await rasterizeDomToCanvas(node, size.pageWidth, exportH, scale);
       TR("page" + i + "-rasterized:" + canvas.width + "x" + canvas.height);
-      const blob = await new Promise(function (resolve) { canvas.toBlob(resolve, "image/png"); });
+      const blob = await canvasToPngBlob(canvas);
       const pageNo = String(BB().doc.pages.indexOf(page) + 1).padStart(2, "0");
       downloadBlob(blob, "only-box-banner-" + pageNo + ".png");
         TR("page" + i + "-blob-done");
@@ -416,7 +459,10 @@
         ? document.getElementById("canvasBody").querySelector(".bb-strip")
         : null;
       if (!stripNode) throw new Error("连续模式预览未激活，请先切换到「连续」再导出长图");
-      const canvas = await rasterizeDomToCanvas(stripNode, size.pageWidth, Math.max(stripNode.offsetHeight, stripNode.scrollHeight), scale);
+      const stripH = Math.max(stripNode.offsetHeight, stripNode.scrollHeight);
+      /* BB-R11：长图位图化前检查资源预算（宽 × 总高 × 倍率） */
+      assertExportBudget(size.pageWidth * scale, stripH * scale, "连续长图导出");
+      const canvas = await rasterizeDomToCanvas(stripNode, size.pageWidth, stripH, scale);
       const blob = await new Promise(function (resolve) { canvas.toBlob(resolve, "image/png"); });
       downloadBlob(blob, "only-box-banner-continuous.png");
       return { engine: "dom-serialize", width: canvas.width, height: canvas.height, scale: scale, fontStatus: fontStatus };
@@ -439,17 +485,9 @@
       if (global.alert) global.alert("PSD 引擎尚未加载，请刷新页面后重试。");
       return null;
     }
-    /* 合成位图：以设计宽度 1x 位图化当前屏 DOM（坐标与可编辑图层同一坐标系）。
-       高度固定为设计画布高 pageHeight，保证与可编辑图层坐标、PSD 文档尺寸完全一致。 */
-    let composite = null;
-    try {
-      composite = await withDesignZoom(async function () {
-        const node = findPreviewCanvas(bb.state.activePageId);
-        if (!node) throw new Error("找不到当前屏预览画布");
-        return await rasterizeDomToCanvas(node, size.pageWidth, size.pageHeight, 1);
-      });
-    } catch (error) { composite = null; }
-    /* 可编辑子图层（形状/文字/图片），复用 legacy 重建结果 */
+    /* 可编辑子图层（形状/文字/图片），复用 legacy 重建结果——先于合成图构建：
+       BB-R08 需要用 editable.height（实际内容高度）决定合成图与 PSD 文档高度，
+       超屏内容不再按固定 pageHeight 截断。 */
     let editable = null;
     try { editable = legacy && typeof legacy.buildPsdChildren === "function" ? await legacy.buildPsdChildren() : null; } catch (error) { editable = null; }
     if (!editable) {
@@ -457,13 +495,34 @@
       if (global.alert) global.alert("PSD 图层构建失败，请刷新页面后重试。");
       return null;
     }
+    /* BB-R08：合成图高度 = max(可编辑层高度, 预览 DOM 实际高度)，与 PSD 文档高度保持一致。
+       三者（合成图 / 文档 / 可编辑层坐标空间）不一致时抛诊断错误，不静默生成错位文件。 */
+    let composite = null;
+    try {
+      composite = await withDesignZoom(async function () {
+        const node = findPreviewCanvas(bb.state.activePageId);
+        if (!node) throw new Error("找不到当前屏预览画布");
+        const actualHeight = Math.max(editable.height || 0, node.offsetHeight || 0, node.scrollHeight || 0, size.pageHeight);
+        const canvas = await rasterizeDomToCanvas(node, size.pageWidth, actualHeight, 1);
+        if (canvas.height !== Math.max(editable.height || 0, actualHeight)) {
+          /* 位图化结果与预期不一致时以实际画布为准校验文档高度 */
+          if (canvas.height < (editable.height || 0)) throw new Error("PSD 合成图高度（" + canvas.height + "px）小于可编辑图层高度（" + editable.height + "px），导出中止以避免图层错位");
+        }
+        return canvas;
+      });
+    } catch (error) {
+      if (error && /PSD 合成图高度/.test(error.message)) throw error; /* 一致性错误必须上抛，不吞 */
+      composite = null;
+    }
     const children = [];
     if (composite) children.push({ name: "预览合成图（所见即所得）", canvas: composite });
     /* 丢弃 legacy 的「背景底色」占位层（合成图已含页面背景），其余板块组保留为可编辑内容 */
     const editables = (editable.children || []).filter(function (c) { return c.name !== "背景底色"; }).map(function (c) { return Object.assign({}, c, { hidden: true }); });
     if (editables.length) children.push({ name: "可编辑图层（改为「显示」即可编辑文字 / 形状 / 图片）", children: editables, opened: true });
+    /* BB-R08：PSD 文档高度 = 合成图与可编辑层高度的较大者，保证三者坐标空间一致 */
+    const docHeight = Math.max(editable.height || 0, composite ? composite.height : 0);
     try {
-      const buffer = ag.writePsd({ width: editable.width, height: editable.height, children: children }, { generateThumbnail: true });
+      const buffer = ag.writePsd({ width: editable.width, height: docHeight, children: children }, { generateThumbnail: true });
       const pageIndex = (bb.doc.pages || []).indexOf((bb.doc.pages || []).filter(function (p) { return p.id === bb.state.activePageId; })[0]);
       const pageNo = String((pageIndex >= 0 ? pageIndex : 0) + 1).padStart(2, "0");
       downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), "only-box-banner-page-" + pageNo + ".psd");
@@ -479,6 +538,8 @@
     ensureFonts: ensureFonts,
     exportScale: exportScale,
     __raster: rasterizeDomToCanvas,
+    __withDesignZoom: withDesignZoom,
+    __findPreviewCanvas: findPreviewCanvas,
     __debug: debugInfo,
     __normalize: function (blob) { return normalizeBlobToDataUrl(blob); },
     __inline: function (root) { return inlineResources(root); },

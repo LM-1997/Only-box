@@ -116,6 +116,9 @@ R.MODULE_ORDER.forEach(function (type) {
   assert.equal(doc.screenMode, "split", "默认分屏模式");
   assert.equal(doc.pages.length, 1, "默认 1 页");
   assert.equal(doc.pages[0].modules.length, 0, "新页没有模块");
+  assert.equal(doc.version, 3, "新建文档使用自包含主题草稿版本");
+  assert.ok(Object.prototype.hasOwnProperty.call(doc, "themeDefinition"), "文档含主题定义快照字段");
+  assert.equal(doc.themeDefinition, null, "新建文档主题定义快照默认为空");
   assert.ok(Object.prototype.hasOwnProperty.call(doc, "themeOverrides"), "文档含 themeOverrides 字段");
   assert.equal(typeof doc.themeOverrides, "object", "themeOverrides 是对象");
   assert.equal(Object.keys(doc.themeOverrides).length, 0, "themeOverrides 默认为空");
@@ -779,7 +782,7 @@ expectError("text", false, "", "root_type", "顶层字符串被拒绝");
   assert.equal(cand.backgroundImage.url, "blob:doc-bg", "保留整条背景图");
   assert.equal(cand.exportScale, 3, "保留导出倍率");
   assert.equal(JSON.stringify(cand.themeOverrides), JSON.stringify(current.themeOverrides), "未勾选时深拷贝保留原主题覆盖");
-  assert.equal(cand.version, 2, "版本号本地生成");
+  assert.equal(cand.version, 3, "版本号本地生成");
 
   assert.equal(cand.pages.length, 2, "页面数来自 AI");
   assert.notEqual(cand.pages[0].id, current.pages[0].id, "页面 ID 本地生成");
@@ -974,6 +977,21 @@ assert.ok(DraftTools && typeof DraftTools.buildDraftCandidate === "function", "�
   assert.equal(fixed.pages[0].modules[0].visible, true, "visible 默认 true");
   const badRatio = DraftTools.buildDraftCandidate({ ratio: "8:1", pages: [{ name: "p", modules: [] }] });
   assert.equal(badRatio.ratio, "9:16", "非法比例回退默认");
+
+  const customTheme = {
+    id: "portable-theme", label: "可携带主题", primary: "#111111", primaryDark: "#222222", primarySoft: "#eeeeee",
+    accent: "#cc5500", accentSoft: "#fff0e6", line: "#cccccc", soft: "#f7f7f7",
+    cardStyle: "glass", radius: 24, shadow: "soft", divider: "dots", chips: "pill", titleDecor: "bar", pattern: "grid", avatarStyle: "ring",
+    ink: "#202020", muted: "#666666", headingWeight: 800, bodyWeight: 400, lineHeight: 1, letterSpacing: 0,
+    typeScale: 1, h1Scale: 1, h2Scale: 1, h3Scale: 1, bodyScale: 1, captionScale: 1, headingFont: "", bodyFont: ""
+  };
+  const portableDraft = DraftTools.buildDraftCandidate({ version: 3, theme: "portable-theme", themeDefinition: customTheme, pages: [{ name: "p", modules: [] }] });
+  assert.equal(portableDraft.__themeKnown, true, "内嵌主题无需当前浏览器预装即可识别");
+  assert.equal(portableDraft.themeDefinition.primary, "#111111", "完整主题定义进入候选文档");
+  assert.equal(C.themeStyleForDoc(portableDraft).accent, "#cc5500", "渲染优先使用草稿内嵌主题");
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ version: 3, theme: "portable-theme", themeDefinition: Object.assign({}, customTheme, { id: "other-theme" }), pages: [{ name: "p", modules: [] }] });
+  }, /ID 不一致/, "主题定义 ID 不一致时拒绝导入");
 }
 
 console.log("草稿恢复候选构造测试全部通过");
@@ -1012,6 +1030,17 @@ assert.ok(TI.validate(Object.assign(themeBase(), { lineHeight: 1.234 })).some(fu
 assert.ok(TI.validate(Object.assign(themeBase(), { headingFont: "nonexistent-font" })).some(function (m) { return m.includes("headingFont"); }), "未知字体 key 被拒");
 
 /* 同 ID 拒绝覆盖（自定义之间 + 与内置主题冲突），失败不改变原记录 */
+TI.add(Object.assign(themeBase(), { id: "my-new-theme" }));
+const customDraftDoc = M.createDoc();
+customDraftDoc.theme = "my-new-theme";
+const customDraftPayload = DraftTools.buildDraftPayload(customDraftDoc);
+assert.equal(customDraftPayload.version, 3, "导出草稿升级为 v3");
+assert.equal(customDraftPayload.themeDefinition.id, "my-new-theme", "导出草稿包含当前自定义主题定义");
+assert.equal(customDraftPayload.themeDefinition.primary, "#111111", "自定义主题完整色值进入草稿");
+window.localStorage.removeItem("only-box-banner-custom-themes");
+const restoredCustomDraft = DraftTools.buildDraftCandidate(customDraftPayload);
+assert.equal(restoredCustomDraft.__themeKnown, true, "清空本地主题后仍可从草稿恢复");
+assert.equal(C.themeStyleForDoc(restoredCustomDraft).primary, "#111111", "草稿往返后主题渲染保持一致");
 TI.add(Object.assign(themeBase(), { id: "my-new-theme" }));
 assert.throws(function () { TI.add(Object.assign(themeBase(), { id: "my-new-theme", label: "覆盖尝试" })); }, /同 ID/, "同 ID 自定义主题拒绝覆盖");
 assert.throws(function () { TI.add(Object.assign(themeBase(), { id: "forest", label: "内置冲突" })); }, /同 ID/, "与内置主题同 ID 拒绝");
@@ -1069,4 +1098,202 @@ console.log("导入器加固测试全部通过");
 }
 
 console.log("安全加固测试全部通过");
+
+/* ============ 任务A加固：版本门禁 / ID唯一 / 主题覆盖白名单 / 模块数据形状（BB-R01/R05/R06/R07） ============ */
+{
+  /* BB-R06 版本门禁：未来版本、非整数、负数、0 一律拒绝 */
+  const page = [{ name: "p", modules: [{ type: "divider", data: {} }] }];
+  assert.throws(function () { DraftTools.buildDraftCandidate({ version: 999, pages: page }); }, /更新版本|999/, "未来版本草稿被拒绝");
+  assert.throws(function () { DraftTools.buildDraftCandidate({ version: 2.5, pages: page }); }, /整数/, "非整数版本被拒绝");
+  assert.throws(function () { DraftTools.buildDraftCandidate({ version: -1, pages: page }); }, /正整数|过老/, "负数版本被拒绝");
+  assert.throws(function () { DraftTools.buildDraftCandidate({ version: 0, pages: page }); }, /正整数|过老/, "0 版本被拒绝");
+  /* v1（无 version 字段）与 v3 均可正常恢复 */
+  assert.ok(DraftTools.buildDraftCandidate({ pages: page }), "无版本字段草稿按 v1 迁移恢复");
+  assert.ok(DraftTools.buildDraftCandidate({ version: 3, pages: page }), "v3 草稿正常恢复");
+  /* 迁移后候选版本恒为 3 */
+  assert.equal(DraftTools.buildDraftCandidate({ pages: page }).version, 3, "v1 草稿迁移后版本为 3");
+  assert.equal(DraftTools.buildDraftCandidate({ version: 2, pages: page }).version, 3, "v2 草稿迁移后版本为 3");
+
+  /* BB-R07 ID 唯一性：显式重复拒绝，缺失自动补齐且全局唯一 */
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ id: "dup", name: "p1", modules: [] }, { id: "dup", name: "p2", modules: [] }] });
+  }, /重复/, "重复页面 ID 被拒绝");
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ id: "m1", type: "divider", data: {} }, { id: "m1", type: "divider", data: {} }] }] });
+  }, /重复/, "重复模块 ID 被拒绝");
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ id: "same", name: "p", modules: [{ id: "same", type: "divider", data: {} }] }] });
+  }, /重复/, "页面 ID 与模块 ID 相同也被拒绝（全局唯一）");
+  {
+    const noIds = DraftTools.buildDraftCandidate({ pages: [{ name: "a", modules: [{ type: "divider", data: {} }, { type: "divider", data: {} }] }, { name: "b", modules: [] }] });
+    const allIds = noIds.pages.map(function (p) { return p.id; }).concat(noIds.pages[0].modules.map(function (m) { return m.id; }));
+    assert.equal(new Set(allIds).size, allIds.length, "自动补齐的 ID 全局唯一");
+  }
+
+  /* BB-R05 themeOverrides 白名单：未知字段丢弃、危险键丢弃、超范围数值丢弃、合法覆盖保留 */
+  {
+    const draft = {
+      version: 3,
+      themeOverrides: {
+        primary: "#AABBCC", radius: 24, cardStyle: "glass", headingWeight: 800,
+        evil: "#123456", __proto__x: 1, radius2: 999,
+        typeScale: 99, lineHeight: "big", shadow: "unknown-style",
+      },
+      pages: [{ name: "p", modules: [] }],
+    };
+    const ov = DraftTools.buildDraftCandidate(draft).themeOverrides;
+    assert.equal(ov.primary, "#aabbcc", "合法颜色覆盖保留（并规范化小写）");
+    assert.equal(ov.radius, 24, "合法圆角保留");
+    assert.equal(ov.cardStyle, "glass", "合法枚举保留");
+    assert.equal(ov.headingWeight, 800, "合法字重保留");
+    assert.equal("evil" in ov, false, "未知字段被白名单丢弃");
+    assert.equal("typeScale" in ov, false, "超范围数值被丢弃");
+    assert.equal("lineHeight" in ov, false, "非数值被丢弃");
+    assert.equal("shadow" in ov, false, "非法枚举被丢弃");
+  }
+
+  /* BB-R01 模块数据形状校验：stringList 写成对象 / objectList 项为字符串 / 图片字段为远程 URL 均拒绝 */
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ type: "footer", data: { lines: {} } }] }] });
+  }, /lines|数组/, "stringList 写成对象被拒绝");
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ type: "castList", data: { cast: ["不是对象"] } }] }] });
+  }, /cast|对象/, "objectList 项为字符串被拒绝");
+  assert.throws(function () {
+    DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ type: "cover", data: { mainImage: "https://evil.example/x.png" } }] }] });
+  }, /mainImage|null|图片/, "图片字段为远程 URL 字符串被拒绝");
+  /* 草稿图片记录（data:/blob: url + name + type）合法保留 */
+  {
+    const imgDraft = DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ type: "cover", data: { mainImage: { url: "data:image/png;base64,iVBOR", name: "a.png", type: "image/png" } } }] }] });
+    assert.equal(imgDraft.pages[0].modules[0].data.mainImage.url, "data:image/png;base64,iVBOR", "草稿内嵌图片记录合法保留");
+  }
+  /* 历史内部字段（padding 等注册表外字段）宽容保留 */
+  {
+    const legacy = DraftTools.buildDraftCandidate({ pages: [{ name: "p", modules: [{ type: "divider", data: { padding: 20, customLegacy: "x" } }] }] });
+    assert.equal(legacy.pages[0].modules[0].data.padding, 20, "历史内部字段宽容保留");
+  }
+}
+
+console.log("任务A加固测试全部通过");
+
+/* ============ 模块导入器深度校验（BB-R14） ============ */
+{
+  /* 深度校验：未知字段 / 远程图片 / 形状错误在导入时被拒绝 */
+  assert.ok(MI.validate({ id: "ok-mod", label: "正常", type: "ticketInfo", data: { sectionTitle: "票", tiers: [] } }).length === 0, "合法模块数据通过深度校验");
+  assert.ok(MI.validate({ id: "bad-unknown", label: "未知字段", type: "ticketInfo", data: { evilField: 1 } }).some(function (m) { return m.includes("evilField"); }), "未知字段被深度校验拒绝");
+  assert.ok(MI.validate({ id: "bad-image", label: "远程图", type: "cover", data: { mainImage: "https://evil.example/x.png" } }).some(function (m) { return m.includes("mainImage"); }), "远程图片 URL 被深度校验拒绝");
+  assert.ok(MI.validate({ id: "bad-shape", label: "形状错误", type: "footer", data: { lines: {} } }).some(function (m) { return m.includes("lines"); }), "stringList 对象形状被深度校验拒绝");
+  /* localStorage 历史损坏记录隔离：loadAll 跳过无效记录，不影响其余记录 */
+  window.localStorage.setItem("only-box-banner-custom-modules", JSON.stringify([
+    { id: "good-record", label: "好记录", type: "ticketInfo", data: {}, createdAt: 1 },
+    { id: "bad-record", label: "坏记录", type: "no-such-type", data: {}, createdAt: 2 },
+    { id: "bad-image-record", label: "远程图记录", type: "cover", data: { mainImage: "https://evil.example/x.png" }, createdAt: 3 },
+    "not-an-object",
+  ]));
+  const loaded = MI.loadAll();
+  assert.equal(loaded.length, 1, "损坏历史记录被隔离（只保留 1 条有效记录）");
+  assert.equal(loaded[0].id, "good-record", "有效历史记录正常加载");
+  window.localStorage.removeItem("only-box-banner-custom-modules");
+}
+
+console.log("模块导入器深度校验测试全部通过");
+
+/* ============ 任务B加固：blob 转换显式失败 + 快照无残留 blob:（BB-R03） ============ */
+{
+  /* snapshotData 转换失败必须抛错（带字段路径），不得静默返回 blob: 原值 */
+  window.fetch = function (url) { return Promise.reject(new Error("network down")); };
+  const T2 = window.BannerBuilderMyTemplates;
+  const withBlob = { pages: [{ name: "p", modules: [{ type: "cover", data: { mainImage: { url: "blob:mock-1", name: "a.png", type: "image/png" } } }] }] };
+  let rejected = null;
+  T2.snapshotData(withBlob).then(
+    function () { rejected = false; },
+    function (error) { rejected = String(error && error.message || error); }
+  );
+  /* 同步等待微任务队列排空（Node 下 setTimeout(0) 在 promise 之后） */
+  setTimeout(function () {
+    assert.ok(rejected !== false, "blob 转换失败时 snapshotData 拒绝而不是静默成功");
+    assert.ok(/blob:mock-1|pages\[0\]|mainImage/.test(rejected), "失败信息携带字段路径（实际：" + rejected + "）");
+    /* 成功路径：data: URL 原样保留（无需转换） */
+    const withData = { mainImage: { url: "data:image/png;base64,iVBOR", name: "a.png", type: "image/png" }, text: "x" };
+    T2.snapshotData(withData).then(function (snap) {
+      assert.equal(snap.mainImage.url, "data:image/png;base64,iVBOR", "data: URL 快照原样保留");
+      assert.equal(snap.text, "x", "普通字段快照原样保留");
+      console.log("任务B加固测试全部通过");
+    }, function (error) {
+      assert.fail("data: URL 快照不应失败：" + (error && error.message));
+    });
+  }, 50);
+}
+
+/* ============ 任务E加固：字体依赖声明与缺失映射（BB-R13） ============ */
+{
+  /* 在已加载 banner-builder.js 的 vm 上下文中注入字体导入器桩，验证 fontDependencies 声明逻辑。
+     collectFontDependencies 只声明「用户导入字体」：内置字体（如 sans/kai）不声明，
+     doc 三级字体与主题定义推荐字体分别声明，同一 key 去重合并 role。 */
+  const DT = window.BannerBuilderDraftTools;
+  assert.ok(DT && typeof DT.buildDraftPayload === "function", "DraftTools 可用");
+
+  /* 场景 1：无字体导入器（旧浏览器/未导入）——fontDependencies 为空数组，不抛错 */
+  const docPlain = M.createDoc();
+  const payloadPlain = DT.buildDraftPayload(docPlain);
+  assert.ok(Array.isArray(payloadPlain.fontDependencies), "无导入器时 fontDependencies 为数组");
+  assert.equal(payloadPlain.fontDependencies.length, 0, "内置字体不声明依赖（无用户字体场景）");
+
+  /* 场景 2：注入字体导入器桩——用户字体被声明，内置字体仍不声明 */
+  const savedImporter = window.BannerBuilderFontImporter;
+  window.BannerBuilderFontImporter = {
+    listFonts: function () {
+      return [{ id: "user-font-a" }, { id: "user-font-b" }, { id: null }];
+    },
+  };
+  /* C.FONTS 需含用户字体元数据供 label 取值；模拟 applyToConstants 后的状态 */
+  C.FONTS["user-font-a"] = { label: "用户字体A", css: [] };
+  C.FONTS["user-font-b"] = { label: "用户字体B", css: [] };
+  try {
+    const docUser = M.createDoc();
+    docUser.fontFamily = "user-font-a";
+    docUser.headingFont = "user-font-b";
+    docUser.bodyFont = "kai"; /* 内置字体：不声明 */
+    const payloadUser = DT.buildDraftPayload(docUser);
+    const deps = payloadUser.fontDependencies;
+    assert.equal(deps.length, 2, "只声明用户导入字体（kai 不声明）");
+    const depA = deps.filter(function (d) { return d.key === "user-font-a"; })[0];
+    const depB = deps.filter(function (d) { return d.key === "user-font-b"; })[0];
+    assert.ok(depA, "全局字体 user-font-a 已声明");
+    assert.equal(depA.label, "用户字体A", "依赖 label 取自 C.FONTS 元数据");
+    assert.ok(depA.role.length === 1 && depA.role[0] === "global", "全局字体 role 标记");
+    assert.ok(depB, "标题字体 user-font-b 已声明");
+    assert.ok(depB.role.length === 1 && depB.role[0] === "heading", "标题字体 role 标记");
+
+    /* 场景 3：主题定义推荐字体与 doc 字体同 key 时合并 role */
+    const docTheme = M.createDoc();
+    docTheme.fontFamily = "user-font-a";
+    docTheme.themeDefinition = {
+      id: "test-theme", label: "测试", primary: "#111111", primaryDark: "#222222", primarySoft: "#333333",
+      accent: "#444444", accentSoft: "#555555", line: "#666666", soft: "#777777",
+      headingFont: "user-font-a", bodyFont: "user-font-b",
+    };
+    const payloadTheme = DT.buildDraftPayload(docTheme);
+    const depsT = payloadTheme.fontDependencies;
+    assert.equal(depsT.length, 2, "同 key 去重后仍为 2 条依赖");
+    const depTA = depsT.filter(function (d) { return d.key === "user-font-a"; })[0];
+    const depTB = depsT.filter(function (d) { return d.key === "user-font-b"; })[0];
+    assert.ok(depTA.role.indexOf("global") >= 0 && depTA.role.indexOf("theme") >= 0, "同 key 合并 role：global + theme");
+    assert.ok(depTB.role.length === 1 && depTB.role[0] === "theme", "仅主题推荐时 role 为 theme");
+
+    /* 场景 4：listFonts 抛错时安全回退为空声明（不阻断草稿导出） */
+    window.BannerBuilderFontImporter = { listFonts: function () { throw new Error("IndexedDB broken"); } };
+    const docErr = M.createDoc();
+    docErr.fontFamily = "user-font-a";
+    const payloadErr = DT.buildDraftPayload(docErr);
+    assert.equal(payloadErr.fontDependencies.length, 0, "导入器异常时回退空声明，草稿导出不受阻");
+  } finally {
+    delete C.FONTS["user-font-a"];
+    delete C.FONTS["user-font-b"];
+    if (savedImporter === undefined) delete window.BannerBuilderFontImporter;
+    else window.BannerBuilderFontImporter = savedImporter;
+  }
+}
+
+console.log("任务E加固测试全部通过");
 

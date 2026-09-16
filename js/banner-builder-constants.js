@@ -27,17 +27,29 @@
     ink: "#20251f", muted: "#6a706c", headingWeight: 800, bodyWeight: 400, lineHeight: 1, letterSpacing: 0, typeScale: 1,
     h1Scale: 1, h2Scale: 1, h3Scale: 1, bodyScale: 1, captionScale: 1,
   };
+  function normalizeTheme(theme) {
+    const t = theme || THEMES.forest || {};
+    const out = {};
+    Object.keys(STYLE_DEFAULTS).forEach(function (k) { out[k] = t[k] != null ? t[k] : STYLE_DEFAULTS[k]; });
+    Object.keys(t).forEach(function (k) { if (!(k in out)) out[k] = t[k]; });
+    return out;
+  }
   function themeStyle(key) {
     var importer = global.BannerBuilderThemeImporter;
     var merged = THEMES;
     if (importer && typeof importer.mergeAll === "function") {
       merged = importer.mergeAll();
     }
-    const t = merged[key] || merged.forest || THEMES.forest;
-    const out = {};
-    Object.keys(STYLE_DEFAULTS).forEach(function (k) { out[k] = t[k] != null ? t[k] : STYLE_DEFAULTS[k]; });
-    Object.keys(t).forEach(function (k) { if (!(k in out)) out[k] = t[k]; });
-    return out;
+    return normalizeTheme(merged[key] || merged.forest || THEMES.forest);
+  }
+  /* 草稿 v3 可携带文档级主题定义。只在 id 与当前 theme 一致时使用，
+     避免换浏览器后依赖 localStorage，也避免同 ID 的本地主题覆盖草稿原貌。 */
+  function themeStyleForDoc(doc) {
+    const embedded = doc && doc.themeDefinition;
+    if (embedded && typeof embedded === "object" && !Array.isArray(embedded) && embedded.id === doc.theme) {
+      return normalizeTheme(embedded);
+    }
+    return themeStyle(doc && doc.theme);
   }
 
   /* 文档级字体：从统一字体清单 data/fonts.js（window.OnlyBoxFonts）派生，与 badge-generator 共用一份清单。
@@ -53,13 +65,19 @@
     const keys = (font.legacyKeys && font.legacyKeys.length) ? font.legacyKeys : [font.id];
     const load = font.load || {};
     const entry = { label: font.name || font.nameEn || font.family, family: font.family, category: font.category || "" };
+    if (Array.isArray(font.weights)) entry.weights = font.weights.slice();
+    if (Array.isArray(font.languages)) entry.languages = font.languages.slice();
     if (Array.isArray(load.css)) entry.css = load.css.slice();
     else if (load.css) entry.css = Object.keys(load.css).sort(function (a, b) { return Number(a) - Number(b); }).map(function (w) { return load.css[w]; });
     if (load.faces) entry.src = load.faces.map(function (s) { return { url: s.url, format: s.format || "truetype", weight: s.weight || 400 }; });
     keys.forEach(function (key) {
       if (FONTS[key]) return; /* 多 legacyKey 指向同一条目时只登记一次 */
       FONTS[key] = entry;
-      if (font.desktop && font.desktop.url) FONT_DOWNLOADS[key] = { url: font.desktop.url, name: font.desktop.name };
+      if (font.desktop && font.desktop.url) {
+      const dl = { url: font.desktop.url, name: font.desktop.name };
+      if (font.desktop.weights && typeof font.desktop.weights === "object") dl.weights = font.desktop.weights;
+      FONT_DOWNLOADS[key] = dl;
+    }
     });
   });
   /* CSS 字符串安全化：family/url 来自字体清单、字体文件 name 表或用户文件名（均属不可信输入），
@@ -92,9 +110,18 @@
     if (category === "展示" || category === "艺术体") return "'Arial Black','Microsoft YaHei',sans-serif";
     return "'Microsoft YaHei',sans-serif";
   }
+  /* 语言适配回退（方案 §1.2）：繁中/日文字体的汉字与假名先落对应语言系统字体，
+     避免回落到简体 Microsoft YaHei 造成字形气质断裂（假名→简体黑体）。 */
+  function languageFallback(f) {
+    const langs = (f && f.languages) || [];
+    if (langs.indexOf("ja") >= 0) return "'Hiragino Kaku Gothic ProN','Yu Gothic','Meiryo'";
+    if (langs.indexOf("zh-Hant") >= 0) return "'PingFang TC','Microsoft JhengHei'";
+    return "";
+  }
   function fontStack(key) {
     const f = FONTS[key] || FONTS.sans;
-    return '"' + safeCssToken(f.family) + '",' + fontFallback(f.category);
+    const lang = languageFallback(f);
+    return '"' + safeCssToken(f.family) + '",' + (lang ? lang + "," : "") + fontFallback(f.category);
   }
   /* 分角色字体栈（审计 P7 配套）：headingFontStack 用于主/板块标题与醒目数字，
      bodyFontStack 用于正文、说明、图注；两者可独立设置。 */
@@ -134,6 +161,21 @@
       : "";
   }
 
+  /* 字重吸附（方案 §2.2）：在字体实际档位里取离 target 最近的档（同差取大）。
+     请求 800：LXGW WenKai(300-700)→700，Noto Sans SC(含800)→800。
+     预览与导出走同一函数，杜绝伪粗合成导致的两侧不一致。 */
+  function snapWeight(font, target) {
+    const target2 = Math.round(Number(target) || 400);
+    const weights = (font && Array.isArray(font.weights) && font.weights.length) ? font.weights.map(Number)
+      : [400, 500, 600, 700, 800, 900].filter(function (w) { return w <= Math.max(400, Math.min(900, Math.round(target2 / 100) * 100)); }).slice(-1);
+    let best = weights[0];
+    for (let i = 1; i < weights.length; i += 1) {
+      const d = Math.abs(weights[i] - target2), bd = Math.abs(best - target2);
+      if (d < bd || (d === bd && weights[i] > best)) best = weights[i];
+    }
+    return best;
+  }
+
   function uid() {
     if (global.crypto && typeof global.crypto.randomUUID === "function") return global.crypto.randomUUID();
     return "id-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -166,6 +208,7 @@
       { value: "body", label: "正文字体" },
     ],
     pageSize,
+    snapWeight,
     fontSizePx,
     captionWarning,
     uid,
@@ -175,5 +218,6 @@
     bodyFontStack,
     fontFaceFor,
     themeStyle,
+    themeStyleForDoc,
   });
 })(window);

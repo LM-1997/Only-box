@@ -81,6 +81,12 @@ for (const f of catalog.fonts) {
   }
   if (!load.css && !load.faces) report("error", `${tag} 既无 load.css 也无 load.faces`);
   if (f.desktop) collectUrl(f.desktop.url, `${tag} desktop`);
+  if (f.desktop && f.desktop.weights) {
+    Object.keys(f.desktop.weights).forEach((w) => {
+      const entry = f.desktop.weights[w];
+      if (entry && entry.url) collectUrl(entry.url, `${tag} desktop.weights[${w}]`);
+    });
+  }
   if (!process.argv.includes("--fast")) collectUrl(f.licenseUrl, `${tag} licenseUrl`);
 }
 

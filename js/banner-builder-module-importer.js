@@ -10,7 +10,9 @@
     try {
       var raw = global.localStorage && global.localStorage.getItem(STORAGE_KEY);
       var rows = raw ? JSON.parse(raw) : [];
-      return Array.isArray(rows) ? rows : [];
+      if (!Array.isArray(rows)) return [];
+      /* BB-R14：读取时逐条再验证，损坏记录隔离（跳过），不阻断整个模块库 */
+      return rows.map(sanitizeRecord).filter(function (record) { return record != null; });
     } catch (error) { return []; }
   }
   function saveAll(rows) {
@@ -33,7 +35,35 @@
     if (typeof obj.label !== "string" || !obj.label.trim()) errors.push("label 必填，用于板块库显示");
     if (!global.BannerBuilderRegistry || !global.BannerBuilderRegistry.getDef(obj.type)) errors.push("type 必须是现有板块类型");
     if (!obj.data || typeof obj.data !== "object" || Array.isArray(obj.data)) errors.push("data 必须是对象");
+    /* BB-R14：data 深度校验——schema 唯一来源 = Registry，与 AI 整份长条共用同一套规则。
+       社区 JSON 属不可信输入：拒绝未知字段、图片字段必须 null（禁止 http/https/blob 远程 URL）、
+       数值范围/枚举/数组长度/字符串长度全部按注册表约束。 */
+    var AD = global.BannerBuilderAiDocument;
+    var R = global.BannerBuilderRegistry;
+    if (errors.length === 0 && AD && typeof AD.validateDataFields === "function" && R && R.getDef(obj.type)) {
+      var fieldErrors = [];
+      var err = function (path, code, message) { fieldErrors.push(path + "：" + message); };
+      AD.validateDataFields(R.getDef(obj.type), obj.type, obj.data, "data", err, 0);
+      if (fieldErrors.length) errors = errors.concat(fieldErrors);
+    }
     return errors;
+  }
+  /* 历史记录读取时再验证（BB-R14）：localStorage 里的旧数据可能来自旧版本注册表或被手工改动，
+     无效记录跳过（隔离）而不是导致整个模块库不可用，也不静默合并进文档。 */
+  function sanitizeRecord(record) {
+    if (!record || typeof record !== "object") return null;
+    if (typeof record.id !== "string" || !ID_RE.test(record.id)) return null;
+    if (typeof record.label !== "string" || !record.label.trim()) return null;
+    if (!global.BannerBuilderRegistry || !global.BannerBuilderRegistry.getDef(record.type)) return null;
+    if (!record.data || typeof record.data !== "object" || Array.isArray(record.data)) return null;
+    var AD = global.BannerBuilderAiDocument;
+    if (AD && typeof AD.validateDataFields === "function") {
+      var errors = [];
+      var err = function (path, code, message) { errors.push({ path: path, code: code, message: message }); };
+      AD.validateDataFields(global.BannerBuilderRegistry.getDef(record.type), record.type, record.data, "data", err, 0);
+      if (errors.length) return null;
+    }
+    return record;
   }
   function add(obj) {
     var exists = loadAll().some(function (item) { return item.id === obj.id; });
@@ -44,7 +74,14 @@
     if (!saveAll(rows)) throw new Error("浏览器本地存储失败");
     return record;
   }
-  function remove(id) { var rows = loadAll(); var next = rows.filter(function (item) { return item.id !== id; }); if (next.length === rows.length) return false; saveAll(next); return true; }
+  /* BB-R23：删除必须如实报告持久化结果——saveAll 失败时抛错，不返回伪成功 */
+  function remove(id) {
+    var rows = loadAll();
+    var next = rows.filter(function (item) { return item.id !== id; });
+    if (next.length === rows.length) return false;
+    if (!saveAll(next)) throw new Error("浏览器本地存储写入失败，模块未删除");
+    return true;
+  }
   /* 生成字段级 AI 提示词：遍历注册表全部板块的 fields（含 objectList 嵌套子字段与
      select 枚举取值范围），把「当前 definitions 里所有字段」自动展开为说明，避免
      AI 靠猜字段名、或仅在 registry 改字段后提示词脱节。通用字段统一单列一段，各板块只列特有字段。 */
@@ -158,5 +195,5 @@
     return head + "\n\n" + sections.slice(1).join("\n\n") + "\n\n" + tail;
   }
   /* getter：保证运行时状态（如字体/类型变化）实时反映到提示词 */
-  global.BannerBuilderModuleImporter = Object.freeze({ loadAll: loadAll, add: add, remove: remove, validate: validate, extractJson: extractJson, buildPrompt: buildPrompt, get promptText() { return buildPrompt(); } });
+  global.BannerBuilderModuleImporter = Object.freeze({ loadAll: loadAll, add: add, remove: remove, validate: validate, extractJson: extractJson, buildPrompt: buildPrompt, sanitizeRecord: sanitizeRecord, get promptText() { return buildPrompt(); } });
 })(window);

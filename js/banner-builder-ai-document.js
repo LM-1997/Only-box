@@ -144,24 +144,44 @@
     });
   }
 
-  /* ===== 板块 data 字段递归校验（schema 唯一来源 = Registry） ===== */
+  /* ===== 板块 data 字段递归校验（schema 唯一来源 = Registry） =====
+     options（可选，默认严格模式）：
+     - allowUnknownFields：草稿恢复用。历史草稿的 data 携带注册表 fields 之外的
+       内部字段（padding / marginBottom / radius / blockBorderColor 等），这些字段
+       由 withLayout 写入、渲染层直接消费，属于合法历史数据，不能当未知字段拒绝。
+     - allowImageRecords：草稿恢复用。草稿图片字段是 {url, name, type} 记录
+       （url 为 data: 或 blob:），与 AI 协议的「图片必须 null」不同。
+       仍拒绝 http/https 远程 URL（防网络信息泄露）与畸形记录。 */
   function optionsFor(field, moduleType) {
     return field.dynamicOptions === "templates" ? R.templateOptions(moduleType) : (field.options || []);
   }
-  function validateDataFields(def, moduleType, data, path, err, depth) {
+  function validateDataFields(def, moduleType, data, path, err, depth, options) {
     if (depth > LIMITS.maxDepth) { err(path, "depth_limit", "嵌套层级超过保护上限 " + LIMITS.maxDepth + " 层"); return; }
     var fields = def.fields || [];
+    var allowUnknownFields = !!(options && options.allowUnknownFields);
     Object.keys(data).forEach(function (key) {
       var field = null;
       for (var i = 0; i < fields.length; i += 1) { if (fields[i].key === key) { field = fields[i]; break; } }
       if (!field) {
-        err(path + "." + key, "unknown_field", "板块 \"" + def.label + "\" 的 data 不允许未知字段 \"" + key + "\"");
+        if (!allowUnknownFields) {
+          err(path + "." + key, "unknown_field", "板块 \"" + def.label + "\" 的 data 不允许未知字段 \"" + key + "\"");
+        }
         return;
       }
-      validateFieldValue(field, moduleType, data[key], path + "." + key, err, depth);
+      validateFieldValue(field, moduleType, data[key], path + "." + key, err, depth, options);
     });
   }
-  function validateFieldValue(field, moduleType, value, path, err, depth) {
+  function isDraftImageRecord(value) {
+    /* 草稿图片记录：{url, name, type}，url 只允许本地可恢复形式（data: 内嵌 / blob: 会话内），拒绝远程 URL */
+    if (!isPlainObject(value) || typeof value.url !== "string" || !value.url) return false;
+    if (value.url.indexOf("http:") === 0 || value.url.indexOf("https:") === 0) return false;
+    if (value.url.indexOf("//") === 0) return false;
+    if (value.name != null && typeof value.name !== "string") return false;
+    if (value.type != null && typeof value.type !== "string") return false;
+    return true;
+  }
+  function validateFieldValue(field, moduleType, value, path, err, depth, options) {
+    var allowImageRecords = !!(options && options.allowImageRecords);
     switch (field.type) {
       case "text":
         if (typeof value !== "string") { err(path, "expected_string", field.label + " 必须是字符串"); return; }
@@ -192,8 +212,11 @@
         return;
       }
       case "image":
-        /* 图片字段严格只接受 null：不接收网络图片、Base64、本地路径或 Blob URL */
-        if (value !== null) err(path, "image_not_null", field.label + " 是图片字段，必须为 null（图片由用户在编辑界面手动上传）");
+        /* 严格模式：图片字段只接受 null（不接收网络图片、Base64、本地路径或 Blob URL）。
+           草稿模式（allowImageRecords）：接受 {url, name, type} 记录，url 限 data:/blob:。 */
+        if (value === null) return;
+        if (allowImageRecords && isDraftImageRecord(value)) return;
+        err(path, "image_not_null", field.label + " 是图片字段，必须为 null（图片由用户在编辑界面手动上传）");
         return;
       case "stringList":
         if (!Array.isArray(value)) { err(path, "expected_array", field.label + " 必须是字符串数组"); return; }
@@ -207,14 +230,17 @@
         if (!Array.isArray(value)) { err(path, "expected_array", field.label + " 必须是对象数组"); return; }
         if (value.length > LIMITS.listMax) { err(path, "list_too_long", field.label + " 数量不能超过 " + LIMITS.listMax + " 项"); return; }
         var subFields = field.fields || [];
+        var allowUnknownFields = !!(options && options.allowUnknownFields);
         value.forEach(function (item, ii) {
           var itemPath = path + "[" + ii + "]";
           if (!isPlainObject(item)) { err(itemPath, "expected_object", field.label + " 第 " + (ii + 1) + " 项必须是对象"); return; }
           Object.keys(item).forEach(function (key) {
             var sub = null;
             for (var i = 0; i < subFields.length; i += 1) { if (subFields[i].key === key) { sub = subFields[i]; break; } }
-            if (!sub) err(itemPath + "." + key, "unknown_field", field.label + " 第 " + (ii + 1) + " 项不允许未知字段 \"" + key + "\"");
-            else validateFieldValue(sub, moduleType, item[key], itemPath + "." + key, err, depth + 1);
+            if (!sub) {
+              if (!allowUnknownFields) err(itemPath + "." + key, "unknown_field", field.label + " 第 " + (ii + 1) + " 项不允许未知字段 \"" + key + "\"");
+            }
+            else validateFieldValue(sub, moduleType, item[key], itemPath + "." + key, err, depth + 1, options);
           });
         });
         return;
@@ -716,5 +742,18 @@
     buildCandidateDoc: buildCandidateDoc,
     applyPipeline: applyPipeline,
     LIMITS: Object.freeze(LIMITS),
+    /* 以下为共享校验器（BB-R01/R05/R14）：草稿恢复与社区模块导入复用同一套 schema 规则 */
+    validateDataFields: validateDataFields,
+    validateThemeOverrides: validateThemeOverrides,
+    normalizeThemeOverrides: normalizeThemeOverrides,
+    THEME_OVERRIDE_SCHEMA: Object.freeze({
+      baseColors: THEME_BASE_COLORS.slice(),
+      extraColors: THEME_EXTRA_COLORS.slice(),
+      enums: Object.freeze(THEME_ENUMS),
+      numbers: Object.freeze(THEME_NUMBERS),
+      weights: THEME_WEIGHTS.slice(),
+      allowedKeys: THEME_ALLOWED_KEYS.slice(),
+      forbiddenKeys: THEME_FORBIDDEN_KEYS.slice(),
+    }),
   });
 })(window);

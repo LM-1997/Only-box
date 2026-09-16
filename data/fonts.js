@@ -36,7 +36,7 @@
   var GFOFL = function (folder) { return "https://github.com/google/fonts/tree/main/ofl/" + folder; };
 
   global.OnlyBoxFonts = {
-    version: "2026-09-13",
+    version: "2026-09-15",
     fonts: [
       /* ================= 简体中文 ================= */
       {
@@ -45,7 +45,16 @@
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notosanssc"), sourceProject: "FontSource",
         popularityRank: 1, legacyKeys: ["sans"],
         load: FONTSOURCE("noto-sans-sc", [100, 200, 300, 400, 500, 600, 700, 800, 900]),
-        desktop: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf", name: "NotoSansSC.ttf" }
+        desktop: {
+          url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+          name: "NotoSansSC.ttf",
+          weights: {
+        "400": { url: "https://fonts.gstatic.com/s/notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYw.ttf", name: "NotoSansSC-Regular.ttf" },
+        "500": { url: "https://fonts.gstatic.com/s/notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG-3FnYw.ttf", name: "NotoSansSC-Medium.ttf" },
+        "700": { url: "https://fonts.gstatic.com/s/notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaGzjCnYw.ttf", name: "NotoSansSC-Bold.ttf" },
+        "900": { url: "https://fonts.gstatic.com/s/notosanssc/v40/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG3bCnYw.ttf", name: "NotoSansSC-Black.ttf" }
+          }
+        }
       },
       {
         id: "noto-serif-sc", family: "Noto Serif SC", name: "思源宋体", nameEn: "Source Han Serif SC",
@@ -53,7 +62,14 @@
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notoserifsc"), sourceProject: "FontSource",
         popularityRank: 2, legacyKeys: ["serif"],
         load: FONTSOURCE("noto-serif-sc", [200, 300, 400, 500, 600, 700, 900]),
-        desktop: { url: "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf", name: "NotoSerifSC.ttf" }
+        desktop: {
+          url: "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+          name: "NotoSerifSC.ttf",
+          weights: {
+        "400": { url: "https://fonts.gstatic.com/s/notoserifsc/v35/H4cyBXePl9DZ0Xe7gG9cyOj7uK2-n-D2rd4FY7SCqyWv.ttf", name: "NotoSerifSC-Regular.ttf" },
+        "700": { url: "https://fonts.gstatic.com/s/notoserifsc/v35/H4cyBXePl9DZ0Xe7gG9cyOj7uK2-n-D2rd4FY7RlrCWv.ttf", name: "NotoSerifSC-Bold.ttf" }
+          }
+        }
       },
       {
         id: "lxgw-wenkai", family: "LXGW WenKai", name: "霞鹜文楷", nameEn: "LXGW WenKai",
@@ -182,14 +198,29 @@
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notosanstc"), sourceProject: "FontSource",
         popularityRank: 18,
         load: FONTSOURCE("noto-sans-tc", [100, 300, 400, 500, 700, 900]),
-        desktop: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf", name: "NotoSansTC.ttf" }
+        desktop: {
+          url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+          name: "NotoSansTC.ttf",
+          weights: {
+        "400": { url: "https://fonts.gstatic.com/s/notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_Co.ttf", name: "NotoSansTC-Regular.ttf" },
+        "700": { url: "https://fonts.gstatic.com/s/notosanstc/v39/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz70e1_Co.ttf", name: "NotoSansTC-Bold.ttf" }
+          }
+        }
       },
       {
         id: "noto-serif-tc", family: "Noto Serif TC", name: "思源宋体（繁）", nameEn: "Source Han Serif TC",
         category: "宋体", languages: ["zh-Hant", "en"], weights: [300, 400, 500, 600, 700, 900],
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notoseriftc"), sourceProject: "FontSource",
         popularityRank: 19,
-        load: FONTSOURCE("noto-serif-tc", [300, 400, 500, 600, 700, 900])
+        load: FONTSOURCE("noto-serif-tc", [300, 400, 500, 600, 700, 900]),
+        desktop: {
+          url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf",
+          name: "NotoSerifTC.ttf",
+          weights: {
+            "400": { url: "https://fonts.gstatic.com/s/notoseriftc/v36/XLYzIZb5bJNDGYxLBibeHZ0BnHwmuanx8cUaGX9aMOpD.ttf", name: "NotoSerifTC-Regular.ttf" },
+            "700": { url: "https://fonts.gstatic.com/s/notoseriftc/v36/XLYzIZb5bJNDGYxLBibeHZ0BnHwmuanx8cUaGX-9N-pD.ttf", name: "NotoSerifTC-Bold.ttf" }
+          }
+        }
       },
 
       /* ================= 日文 ================= */
@@ -199,14 +230,29 @@
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notosansjp"), sourceProject: "FontSource",
         popularityRank: 20,
         load: FONTSOURCE("noto-sans-jp", [100, 300, 400, 500, 700, 900]),
-        desktop: { url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf", name: "NotoSansJP.ttf" }
+        desktop: {
+          url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+          name: "NotoSansJP.ttf",
+          weights: {
+        "400": { url: "https://fonts.gstatic.com/s/notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.ttf", name: "NotoSansJP-Regular.ttf" },
+        "700": { url: "https://fonts.gstatic.com/s/notosansjp/v56/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFPYk75s.ttf", name: "NotoSansJP-Bold.ttf" }
+          }
+        }
       },
       {
         id: "noto-serif-jp", family: "Noto Serif JP", name: "思源宋体（日）", nameEn: "Source Han Serif JP",
         category: "宋体", languages: ["ja", "en"], weights: [200, 300, 400, 500, 700, 900],
         license: "SIL OFL 1.1", licenseUrl: GFOFL("notoserifjp"), sourceProject: "FontSource",
         popularityRank: 21,
-        load: FONTSOURCE("noto-serif-jp", [200, 300, 400, 500, 700, 900])
+        load: FONTSOURCE("noto-serif-jp", [200, 300, 400, 500, 700, 900]),
+        desktop: {
+          url: "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifjp/NotoSerifJP%5Bwght%5D.ttf",
+          name: "NotoSerifJP.ttf",
+          weights: {
+            "400": { url: "https://fonts.gstatic.com/s/notoserifjp/v33/xn71YHs72GKoTvER4Gn3b5eMRtWGkp6o7MjQ2bwxOubA.ttf", name: "NotoSerifJP-Regular.ttf" },
+            "700": { url: "https://fonts.gstatic.com/s/notoserifjp/v33/xn71YHs72GKoTvER4Gn3b5eMRtWGkp6o7MjQ2bzWPebA.ttf", name: "NotoSerifJP-Bold.ttf" }
+          }
+        }
       },
       {
         id: "zen-kaku-gothic-new", family: "Zen Kaku Gothic New", name: "全角哥特新", nameEn: "Zen Kaku Gothic New",
