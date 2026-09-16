@@ -9,7 +9,6 @@
     doc: M.createDoc(C.DEFAULT_RATIO),
     activePageId: null,
     selectedModuleId: null,
-    pickMode: "screen",
     zoom: 0.46,
     /* BB-R18：用户手动调过缩放后为 true，自动适配不再抢占 */
     zoomManual: false,
@@ -464,6 +463,12 @@
     } else if (field.type === "color") {
       input = el("input", "bb-input bb-color-input");
       input.type = "color";
+    } else if (field.type === "range") {
+      input = el("input", "bb-input bb-range-input");
+      input.type = "range";
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      if (field.step !== undefined) input.step = field.step;
     } else {
       input = el("input", "bb-input");
       input.type = field.type === "number" ? "number" : "text";
@@ -474,12 +479,19 @@
     input.id = id;
     input.value = obj[field.key] == null ? "" : String(obj[field.key]);
     if (field.type === "color" && !input.value) input.value = field.fallback || "#ffffff";
+    if (field.type === "range" && (obj[field.key] == null || obj[field.key] === "")) input.value = String(field.fallback != null ? field.fallback : field.min != null ? field.min : 0);
     if (field.placeholder) input.placeholder = field.placeholder;
     input.addEventListener(field.type === "select" ? "change" : "input", function () {
-      obj[field.key] = field.type === "number" ? Number(input.value) || 0 : input.value;
+      obj[field.key] = (field.type === "number" || field.type === "range") ? Number(input.value) || 0 : input.value;
       if (field.type === "select") renderAll(); else scheduleCanvas();
     });
     wrap.appendChild(input);
+    /* range 类型：值回显 */
+    if (field.type === "range") {
+      const readout = el("span", "bb-range-readout", input.value + "px");
+      input.addEventListener("input", function () { readout.textContent = input.value + "px"; });
+      wrap.appendChild(readout);
+    }
     if (field.type === "color" && field.optional) {
       const clear = el("button", "bb-mini-btn", "跟随默认");
       clear.type = "button";
@@ -732,6 +744,9 @@
       box.appendChild(list);
       if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
     }
+    /* iconSize：整板块统一图标大小（px，画布坐标系），DOM 预览与导出同源 */
+    const size = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
+    box.style.setProperty("--bb-mat-icon-size", size + "px");
     addGrid(box, items, data.columns, "icon", "label", "物料条目");
     if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
   }
@@ -1170,20 +1185,14 @@
   }
 
   function renderToolbar() {
-    const size = pageSize(); els.sizeReadout.textContent = size.pageWidth + " × " + size.pageHeight + " px";
-    Array.prototype.forEach.call(els.ratioGroup.querySelectorAll("[data-ratio]"), function (button) { const active = button.dataset.ratio === state.doc.ratio; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    const size = pageSize(); if (els.sizeReadout) els.sizeReadout.textContent = size.pageWidth + " × " + size.pageHeight + " px";
+    if (els.ratioGroup) Array.prototype.forEach.call(els.ratioGroup.querySelectorAll("[data-ratio]"), function (button) { const active = button.dataset.ratio === state.doc.ratio; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     els.zoomValue.textContent = Math.round(state.zoom * 100) + "%"; els.stats.textContent = state.doc.pages.length + " 屏 · " + M.countModules(state.doc) + " 个板块";
-    els.themeSelect.value = state.doc.theme || "forest"; els.fontSelect.value = state.doc.fontFamily || "sans"; els.headingFontSelect.value = state.doc.headingFont || ""; els.bodyFontSelect.value = state.doc.bodyFont || "";
-    if (els.backgroundColorInput) {
-      const scopeColor = (els.backgroundScope && els.backgroundScope.value === "page") ? activePage().backgroundColor : state.doc.backgroundColor;
-      els.backgroundColorInput.value = (scopeColor || "#ffffff");
-    }
-    Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
+    if (els.screenModeGroup) Array.prototype.forEach.call(els.screenModeGroup.querySelectorAll("[data-screen]"), function (button) { const active = button.dataset.screen === (state.doc.screenMode || "split"); button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     const scale = Number(state.doc.exportScale) || 2;
     if (els.exportScaleGroup) Array.prototype.forEach.call(els.exportScaleGroup.querySelectorAll("[data-scale]"), function (button) { const active = Number(button.dataset.scale) === scale; button.classList.toggle("is-active", active); button.setAttribute("aria-pressed", active ? "true" : "false"); });
     if (els.exportSizeReadout) els.exportSizeReadout.textContent = (size.pageWidth * scale) + " × " + (size.pageHeight * scale) + " px";
     syncStep();
-    syncPickMode();
   }
 
   /* ===== 三步向导：同步步骤条、对应工具栏显隐、工作区库栏显隐、属性面板 ===== */
@@ -1201,8 +1210,8 @@
       const bar = els.stepToolbars[key];
       if (bar) bar.hidden = key !== state.step;
     });
-    /* 左侧栏仅导出步骤隐藏；设置/编辑都显示（步骤 1 也能预览主题实时效果） */
-    if (els.workbench) els.workbench.classList.toggle("hide-library", state.step === "export");
+    /* 左侧栏三步均保留：导出前常需要回查板块内容，不再隐藏 */
+    if (els.workbench) els.workbench.classList.remove("hide-library");
   }
 
   function renderLibrary() {
@@ -1336,11 +1345,10 @@
     afterAddModule(module);
   }
 
-  /* 添加板块后统一刷新：步骤 1（设置）只聚焦预览与背景，不抢编辑面板；
-     步骤 2（编辑）才选中板块并展示编辑字段。 */
+  /* 添加板块后统一刷新：立即选中并展示编辑字段——
+     用户加板块的下一步就是填内容，无论当前处于哪个步骤。 */
   function afterAddModule(module) {
-    if (state.step === "setup") state.selectedModuleId = null;
-    else state.selectedModuleId = module.id;
+    state.selectedModuleId = module.id;
     renderAll();
     if (continuousMode()) scrollSelectedIntoView();
   }
@@ -1739,12 +1747,155 @@
     global.BannerBuilderMyTemplates.removeTemplate(tplId).then(renderMyTemplates, function () {});
   }
 
-  function buildSurfacePanel() {
-    const wrap = el("div"); wrap.appendChild(el("p", "bb-hint", "点击画布空白处编辑整条或当前屏背景。"));
+  /* ===== 右侧属性面板：上下文驱动 =====
+     无选中（setup 步骤）→ 文档设置（主题/字体/背景/比例/屏幕模式）
+     无选中（edit 步骤）→ 当前屏设置 + 文档设置入口
+     选中板块 → 板块编辑
+     export 步骤 → 导出面板（buildExportPanel） */
+  function buildDocSettingsPanel() {
+    const wrap = el("div");
+    wrap.appendChild(el("div", "bb-panel-divider", "文档设置"));
     wrap.appendChild(buildField({ key: "name", label: "草稿名称", type: "text" }, state.doc));
+    /* 画布比例（与顶部工具栏同一数据源，双入口同步） */
+    const ratioRow = el("div", "bb-field");
+    ratioRow.appendChild(el("label", "bb-field-label", "画布比例"));
+    const ratioSeg = el("div", "bb-seg");
+    ratioSeg.style.cssText = "display:flex;width:100%";
+    R.RATIO_OPTIONS.forEach(function (option) {
+      const b = el("button", "bb-ratio-btn");
+      b.type = "button";
+      b.style.flex = "1";
+      const dims = String(option.value).split(":");
+      const box = el("span", "bb-ratio-box");
+      box.style.setProperty("--bb-ratio-w", dims[0]);
+      box.style.setProperty("--bb-ratio-h", dims[1]);
+      b.appendChild(box);
+      b.appendChild(document.createTextNode(option.label));
+      if (option.value === state.doc.ratio) { b.classList.add("is-active"); b.setAttribute("aria-pressed", "true"); } else b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", function () { state.doc.ratio = option.value; renderAll(); });
+      ratioSeg.appendChild(b);
+    });
+    ratioRow.appendChild(ratioSeg);
+    wrap.appendChild(ratioRow);
+    /* 屏幕衔接 */
+    const screenRow = el("div", "bb-field");
+    screenRow.appendChild(el("label", "bb-field-label", "屏幕衔接"));
+    const screenSeg = el("div", "bb-seg");
+    screenSeg.style.cssText = "display:flex;width:100%";
+    [["split", "分屏"], ["continuous", "连续"]].forEach(function (pair) {
+      const b = el("button", null, pair[1]);
+      b.type = "button";
+      b.style.flex = "1";
+      if ((state.doc.screenMode || "split") === pair[0]) { b.classList.add("is-active"); b.setAttribute("aria-pressed", "true"); } else b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", function () { state.doc.screenMode = pair[0]; renderAll(); });
+      screenSeg.appendChild(b);
+    });
+    screenRow.appendChild(screenSeg);
+    wrap.appendChild(screenRow);
+    /* 主题 */
+    wrap.appendChild(el("div", "bb-panel-divider", "主题与排版"));
+    const themeRow = el("div", "bb-field");
+    themeRow.appendChild(el("label", "bb-field-label", "主题配色"));
+    const themeSel = el("select", "bb-input");
+    const themeOpts = C.getThemeOptions();
+    const themeImporter = global.BannerBuilderThemeImporter;
+    themeOpts.forEach(function (o) {
+      const option = el("option", null, (themeImporter && themeImporter.isCustom(o.value) ? "★ " : "") + o.label);
+      option.value = o.value;
+      themeSel.appendChild(option);
+    });
+    themeSel.value = themeOpts.some(function (o) { return o.value === state.doc.theme; }) ? state.doc.theme : (themeOpts[0] ? themeOpts[0].value : "forest");
+    themeSel.addEventListener("change", function () {
+      const prev = state.doc.theme;
+      state.doc.theme = this.value;
+      state.doc.themeDefinition = null;
+      const nextSt = C.themeStyle(state.doc.theme);
+      const prevSt = C.themeStyle(prev);
+      if (state.doc.fontManual === true) {
+        if (prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
+        if (prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+      } else {
+        state.doc.headingFont = nextSt.headingFont || "";
+        state.doc.bodyFont = nextSt.bodyFont || "";
+      }
+      if (state.doc.headingFont) ensureFont(state.doc.headingFont);
+      if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
+      renderAll();
+    });
+    themeRow.appendChild(themeSel);
+    wrap.appendChild(themeRow);
+    const tweakRow = el("div", "bb-field");
+    tweakRow.style.cssText = "display:flex;gap:6px";
+    const tweakBtn = el("button", "bb-btn ghost", "微调主题");
+    tweakBtn.type = "button";
+    tweakBtn.style.flex = "1";
+    tweakBtn.title = "在预设主题基础上手动微调 7 项颜色与 8 项风格";
+    tweakBtn.addEventListener("click", showThemeTweakModal);
+    tweakRow.appendChild(tweakBtn);
+    const typeBtn = el("button", "bb-btn ghost", "排版微调");
+    typeBtn.type = "button";
+    typeBtn.style.flex = "1";
+    typeBtn.title = "手动微调字号缩放、字重、行距、字距与文字颜色";
+    typeBtn.addEventListener("click", showTypeTweakModal);
+    tweakRow.appendChild(typeBtn);
+    wrap.appendChild(tweakRow);
+    /* 字体 */
+    wrap.appendChild(el("div", "bb-panel-divider", "字体"));
+    const fontWrap = el("div");
+    fontWrap.appendChild(buildFontSelectField("全局字体（标题正文未单独设置时生效）", C.getFontOptions(), state.doc.fontFamily || "sans", function (value) { state.doc.fontFamily = value || "sans"; state.doc.fontManual = true; ensureFont(state.doc.fontFamily); renderAll(); }, "跟随主题推荐"));
+    fontWrap.appendChild(buildFontSelectField("标题字体（主标题/板块标题）", C.getFontOptions(), state.doc.headingFont || "", function (value) { state.doc.headingFont = value; state.doc.fontManual = true; if (value) ensureFont(value); renderAll(); }, "跟随全局字体"));
+    fontWrap.appendChild(buildFontSelectField("正文字体（正文/说明/图注）", C.getFontOptions(), state.doc.bodyFont || "", function (value) { state.doc.bodyFont = value; state.doc.fontManual = true; if (value) ensureFont(value); renderAll(); }, "跟随标题字体"));
+    const importFontBtn = el("button", "bb-btn ghost", "导入本地字体");
+    importFontBtn.type = "button";
+    importFontBtn.style.cssText = "width:100%;margin-bottom:12px";
+    importFontBtn.title = "导入本地字体文件（.ttf/.otf/.woff/.woff2），导入后可在字体下拉中选用";
+    importFontBtn.addEventListener("click", showFontImportModal);
+    fontWrap.appendChild(importFontBtn);
+    wrap.appendChild(fontWrap);
+    /* 背景 */
+    wrap.appendChild(el("div", "bb-panel-divider", "整条背景"));
     wrap.appendChild(buildField({ key: "backgroundColor", label: "整条底色", type: "color", fallback: "#ffffff" }, state.doc));
     wrap.appendChild(buildField({ key: "backgroundImage", label: "整条底图", type: "image" }, state.doc));
-    const page = activePage(); if (page) { wrap.appendChild(el("div", "bb-panel-divider", "当前第 " + (activePageIndex() + 1) + " 屏")); wrap.appendChild(buildField({ key: "backgroundColor", label: "本屏底色", type: "color", fallback: state.doc.backgroundColor || "#ffffff", optional: true }, page)); wrap.appendChild(buildField({ key: "backgroundImage", label: "本屏底图", type: "image" }, page)); }
+    return wrap;
+  }
+
+  /* 字体下拉字段（右侧面板用，替代原顶部三个下拉） */
+  function buildFontSelectField(labelText, options, value, onChange, firstOptionLabel) {
+    const row = el("div", "bb-field");
+    row.appendChild(el("label", "bb-field-label", labelText));
+    const sel = el("select", "bb-input");
+    if (firstOptionLabel) {
+      const first = el("option", null, firstOptionLabel);
+      first.value = "";
+      sel.appendChild(first);
+    }
+    options.forEach(function (o) {
+      const option = el("option", null, o.label);
+      option.value = o.value;
+      sel.appendChild(option);
+    });
+    sel.value = value;
+    if (sel.selectedIndex < 0 && value) {
+      const option = el("option", null, value);
+      option.value = value;
+      sel.appendChild(option);
+      sel.value = value;
+    }
+    sel.addEventListener("change", function () { onChange(this.value); });
+    row.appendChild(sel);
+    return row;
+  }
+
+  function buildSurfacePanel() {
+    const wrap = el("div");
+    /* edit 步骤：先显示当前屏设置，文档设置折叠在下方 */
+    const page = activePage();
+    if (page) {
+      wrap.appendChild(el("div", "bb-panel-divider", "当前第 " + (activePageIndex() + 1) + " 屏"));
+      wrap.appendChild(buildField({ key: "backgroundColor", label: "本屏底色", type: "color", fallback: state.doc.backgroundColor || "#ffffff", optional: true }, page));
+      wrap.appendChild(buildField({ key: "backgroundImage", label: "本屏底图", type: "image" }, page));
+    }
+    wrap.appendChild(buildDocSettingsPanel());
     return wrap;
   }
 
@@ -1752,7 +1903,10 @@
     els.panelBody.textContent = "";
     if (state.step === "export") { els.panelTitle.textContent = "导出与备份"; els.panelSub.textContent = "选择输出方式，导出高清图片或可编辑文件"; els.panelBody.appendChild(buildExportPanel()); return; }
     const hit = M.findModule(state.doc, state.selectedModuleId);
-    if (!hit.module) { els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = state.step === "setup" ? "第 1 步 · 设置背景与主题，可从左侧添加板块预览效果" : "画布真实预览 · 点模块编辑板块"; els.panelBody.appendChild(buildSurfacePanel()); return; }
+    if (!hit.module) {
+      if (state.step === "setup") { els.panelTitle.textContent = "文档设置"; els.panelSub.textContent = "主题 · 字体 · 背景 · 画布，从左侧添加板块开始制作"; els.panelBody.appendChild(buildDocSettingsPanel()); return; }
+      els.panelTitle.textContent = "整条 / 当前屏"; els.panelSub.textContent = "点板块编辑内容 · 点空白选中该屏 · 下方可调文档设置"; els.panelBody.appendChild(buildSurfacePanel()); return;
+    }
     const def = R.getDef(hit.module.type); els.panelTitle.textContent = def.label; els.panelSub.textContent = "第 " + (hit.pageIndex + 1) + " 屏 · 可编辑文字、图片与版式";
     const saveRow = el("div", "bb-field"); const saveBtn = el("button", "bb-file-btn", "☆ 存为我的模板"); saveBtn.type = "button"; saveBtn.dataset.action = "save-tpl"; saveBtn.title = "把当前这整个板块（含文字、配色、图片与版式）存成「我的模板」，浏览器本地保存，刷新后仍在"; saveRow.appendChild(saveBtn); els.panelBody.appendChild(saveRow);
     (def.fields || []).forEach(function (field) { els.panelBody.appendChild(buildField(field, hit.module.data, hit.module.type, hit.module.data)); });
@@ -1787,7 +1941,7 @@
       runExclusiveExport("导出连续长图", function () { return exportStripPng(); }).catch(function (error) { showExportError("导出连续长图", error); });
     });
     main.appendChild(el("div", "bb-panel-divider", "可编辑文件"));
-    btn("bb-export-btn", "导出 PSD", "分层可编辑（可选打包字体）", function () {
+    btn("bb-export-btn", "导出 PSD", "分层可编辑（勾选顶部「打包字体」一并导出字体）", function () {
       runExclusiveExport("导出 PSD", function () {
         return exportPsd().then(function (result) {
           if (result && els.packFontsToggle && els.packFontsToggle.checked) {
@@ -2615,13 +2769,14 @@
       if (note) y = drawRich(ctx, note, x0, y + 7, w, 11, 500, artMuted(), "left", 1.5, "body") + 5;
       return y;
     }
-    /* icon-grid：图标圆角块 + 说明文字 */
+    /* icon-grid：图标圆角块 + 说明文字；iconSize 与 DOM 预览/PSD 同源（画布坐标系 px） */
     const icons = await Promise.all(items.map(function (it) { return it && it.icon && it.icon.url ? loadImage(it.icon) : Promise.resolve(null); }));
     const cols = Math.max(1, Math.min(4, Number(data.columns) || 2));
     const gap = 20;
     const cw = (w - gap * (cols - 1)) / cols;
-    const cellH = Math.round(cw * 1.15);
-    const iconBox = Math.min(104, Math.round(cw * 0.7));
+    const iconSize = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
+    const iconBox = Math.min(iconSize, Math.round(cw * 0.92));
+    const cellH = Math.max(iconBox + 74, Math.round(cw * 1.15));
     const count = Math.max(1, items.length);
     for (let i = 0; i < count; i += 1) {
       const item = items[i] || {};
@@ -4236,80 +4391,16 @@
     });
     observer.observe(els.canvasBody);
   }
-  function bindEvents() {    els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
-    els.screenModeGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-screen]"); if (!button) return; state.doc.screenMode = button.dataset.screen; renderAll(); });
+  function bindEvents() {    if (els.ratioGroup) els.ratioGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-ratio]"); if (!button) return; state.doc.ratio = button.dataset.ratio; renderAll(); });
+    if (els.screenModeGroup) els.screenModeGroup.addEventListener("click", function (event) { const button = event.target.closest("[data-screen]"); if (!button) return; state.doc.screenMode = button.dataset.screen; renderAll(); });
     els.addPageBtn.addEventListener("click", function () {
       const page = M.addPage(state.doc); state.activePageId = page.id; state.selectedModuleId = null; renderAll();
       if (continuousMode()) scrollCanvasToBottom();
     });
-    els.backgroundInput.addEventListener("change", function () {
-      const file = this.files && this.files[0];
-      this.value = "";
-      if (!file) return;
-      /* BB-R17：背景图与其他图片入口共用同一条校验链（大小/像素/最长边/解码/HEIC），
-         不再直接 URL.createObjectURL 绕过校验。背景图不做裁剪（cover 满铺语义），只做安全校验。 */
-      const MUI = global.MobileImageUpload;
-      if (!MUI || typeof MUI.open !== "function") {
-        replaceBackgroundImageRecord({ url: URL.createObjectURL(file), name: file.name, type: file.type });
-        return;
-      }
-      MUI.open(file).then(function (opened) {
-        const url = URL.createObjectURL(opened.blob);
-        if (opened.release) { try { opened.release(); } catch (e) { /* ignore */ } }
-        replaceBackgroundImageRecord({ url: url, name: opened.originalFile ? opened.originalFile.name : file.name, type: opened.blob.type || file.type });
-      }).catch(function (error) {
-        if (global.alert) global.alert(MUI.errorMessage ? MUI.errorMessage(error) : "背景图读取失败，请换一张图片重试。");
-      });
-    });
-    function replaceBackgroundImageRecord(value) {
-      const holder = els.backgroundScope.value === "page" ? activePage() : state.doc;
-      replaceImageRecord(holder, "backgroundImage", value);
-      renderAll();
-    }
-    if (els.backgroundColorInput) els.backgroundColorInput.addEventListener("input", function () {
-      const value = this.value || "#ffffff";
-      if (els.backgroundScope.value === "page") activePage().backgroundColor = value;
-      else state.doc.backgroundColor = value;
-      renderCanvas(); renderPanel();
-    });
-    if (els.backgroundScope && els.backgroundColorInput) els.backgroundScope.addEventListener("change", function () {
-      const scopeColor = this.value === "page" ? activePage().backgroundColor : state.doc.backgroundColor;
-      els.backgroundColorInput.value = scopeColor || "#ffffff";
-      if (this.value === "doc") renderCanvas();
-    });
-    els.themeSelect.addEventListener("change", function () {
-      const prev = state.doc.theme;
-      state.doc.theme = this.value;
-      /* 用户主动换主题后清除草稿内嵌快照，改用新选择的当前定义。 */
-      state.doc.themeDefinition = null;
-      const nextSt = C.themeStyle(state.doc.theme);
-      const prevSt = C.themeStyle(prev);
-      /* 主题推荐字体：用户从未手动改字体时随主题应用；手动改过则只在「仍等于旧主题推荐」时跟随，
-         且「跟随全局/标题」(空) 与手动字体一律保持，避免主题切换污染字体跟随关系。 */
-      if (state.doc.fontManual === true) {
-        if (prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
-        if (prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
-      } else {
-        state.doc.headingFont = nextSt.headingFont || "";
-        state.doc.bodyFont = nextSt.bodyFont || "";
-      }
-      if (state.doc.headingFont) ensureFont(state.doc.headingFont);
-      if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
-      renderAll();
-    });
-    els.fontSelect.addEventListener("change", function () { state.doc.fontFamily = this.value || "sans"; state.doc.fontManual = true; ensureFont(state.doc.fontFamily); renderAll(); });
-    els.headingFontSelect.addEventListener("change", function () { state.doc.headingFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
-    els.bodyFontSelect.addEventListener("change", function () { state.doc.bodyFont = this.value; state.doc.fontManual = true; if (this.value) ensureFont(this.value); renderAll(); });
-    if (els.importFontBtn) els.importFontBtn.addEventListener("click", showFontImportModal);
+    els.saveDraftBtn.addEventListener("click", saveDraft);
     els.zoomOutBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = Math.max(.15, state.zoom - .05); renderToolbar(); renderCanvas(); });
     els.zoomInBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = Math.min(1.5, state.zoom + .05); renderToolbar(); renderCanvas(); });
     els.zoomFitBtn.addEventListener("click", function () { state.zoomManual = true; state.zoom = computeFitZoom(); renderToolbar(); renderCanvas(); });
-    els.exportPngBtn.addEventListener("click", function () { exportPng(false); });
-    els.exportAllBtn.addEventListener("click", function () { exportPng(true); });
-    els.exportStripBtn.addEventListener("click", exportStripPng);
-    els.exportPsdBtn.addEventListener("click", async function () { const result = await exportPsd(); if (result && els.packFontsToggle && els.packFontsToggle.checked) { try { await packFontsZip(); } catch (error) { if (global.alert) global.alert("字体打包失败：" + (error && error.message || error)); } } });
-    if (els.exportPdfBtn) els.exportPdfBtn.addEventListener("click", async function () { try { await exportPdf(); } catch (error) { if (global.alert) global.alert("PDF 导出失败：" + (error && error.message || error)); } });
-    els.saveDraftBtn.addEventListener("click", saveDraft);
     els.loadDraftInput.addEventListener("change", function () { if (this.files && this.files[0]) loadDraft(this.files[0]); this.value = ""; });
     els.libraryList.addEventListener("click", function (event) { const custom = event.target.closest("[data-action='lib-add-custom']"); if (custom) { addCustomModuleToPage(custom.dataset.customId); return; } const button = event.target.closest("[data-action='lib-add']"); if (!button) return; const module = M.addModule(state.doc, activePage().id, button.dataset.type); if (!module) return; afterAddModule(module); });
     els.myTplList.addEventListener("click", function (event) { const del = event.target.closest("[data-action='tpl-del']"); if (del) { deleteMyTemplate(del.dataset.tplId); return; } const add = event.target.closest("[data-action='tpl-add']"); if (add) addTemplateToPage(add.dataset.tplId); });
@@ -4322,8 +4413,7 @@
       addTemplateToPage(add.dataset.tplId);
     });
     els.panelBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action='save-tpl']"); if (target) saveSelectedModuleAsTemplate(); });
-    els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { if (state.pickMode !== "module") { const hostCard = target.closest(".bb-page-card"); state.activePageId = (hostCard && hostCard.dataset.pageId) || M.findModule(state.doc, moduleId).page.id; state.selectedModuleId = null; renderAll(); return; } state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
-    if (els.pickModuleToggle) els.pickModuleToggle.addEventListener("change", function () { state.pickMode = this.checked ? "module" : "screen"; if (state.pickMode === "screen" && state.selectedModuleId) { state.selectedModuleId = null; renderAll(); return; } syncPickMode(); });
+    els.canvasBody.addEventListener("click", function (event) { const target = event.target.closest("[data-action]"); if (!target) return; const action = target.dataset.action; const moduleId = target.dataset.moduleId; const pageId = target.dataset.pageId; if (action === "page-pick") { state.activePageId = pageId; state.selectedModuleId = null; renderAll(); return; } if (action === "module-pick") { state.selectedModuleId = moduleId; state.activePageId = M.findModule(state.doc, moduleId).page.id; renderAll(); return; } if (action === "page-del") { const page = M.findPage(state.doc, pageId); if (page.modules.length && !global.confirm("这一屏还有内容，确定删除吗？")) return; M.removePage(state.doc, pageId); state.activePageId = activePage().id; state.selectedModuleId = null; renderAll(); return; } if (action === "module-up" || action === "module-down") { event.stopPropagation(); M.moveModule(state.doc, moduleId, action === "module-up" ? -1 : 1); renderAll(); return; } if (action === "module-del") { event.stopPropagation(); M.removeModule(state.doc, moduleId); state.selectedModuleId = null; renderAll(); } });
     if (els.importThemeBtn) els.importThemeBtn.addEventListener("click", showThemeImportModal);
     if (els.importModuleBtn) els.importModuleBtn.addEventListener("click", showModuleImportModal);
     if (els.generateAiDocumentBtn) els.generateAiDocumentBtn.addEventListener("click", showAiDocumentModal);
@@ -4348,10 +4438,6 @@
       state.doc.exportScale = Number(button.dataset.scale);
       renderToolbar(); renderPanel();
     });
-    /* ===== 微调主题 ===== */
-    if (els.tweakThemeBtn) els.tweakThemeBtn.addEventListener("click", showThemeTweakModal);
-    /* ===== 排版微调 ===== */
-    if (els.typeTweakBtn) els.typeTweakBtn.addEventListener("click", showTypeTweakModal);
     /* ===== 左侧栏：板块库 / 图层 切换 ===== */
     if (els.sideTabs) els.sideTabs.addEventListener("click", function (event) {
       const button = event.target.closest("[data-side]");
@@ -4521,19 +4607,9 @@
   }
 
   /* ===== 主题导入弹窗 ===== */
-  function rebuildThemeSelect(opts) {
-    var sel = els.themeSelect;
-    if (!sel) return;
-    var value = sel.value;
-    sel.textContent = "";
-    var options = opts || C.getThemeOptions();
-    var importer = global.BannerBuilderThemeImporter;
-    options.forEach(function (o) {
-      var option = el("option", null, (importer && importer.isCustom(o.value) ? "★ " : "") + o.label);
-      option.value = o.value;
-      sel.appendChild(option);
-    });
-    sel.value = options.some(function (o) { return o.value === value; }) ? value : (options[0] ? options[0].value : "forest");
+  /* 主题下拉已迁入右侧文档设置面板：导入新主题后重渲染面板即可见 */
+  function rebuildThemeSelect() {
+    renderPanel();
   }
 
   /* ===== BB-R20：弹窗统一焦点管理 =====
@@ -5014,39 +5090,10 @@
     }
   }
 
-  function syncPickMode() {
-    if (!els.pickModuleToggle) return;
-    const on = state.pickMode === "module";
-    els.pickModuleToggle.checked = on;
-    if (els.pickModeText) els.pickModeText.textContent = on ? "选图层" : "选整屏";
-    if (els.canvasBody) els.canvasBody.classList.toggle("bb-pick-module", on);
-  }
-
   /* ===== 字体下拉重建（内置字体 + 用户导入字体） ===== */
-  function fillFontSelect(sel, opts, firstOption) {
-    if (!sel) return;
-    sel.textContent = "";
-    if (firstOption) { const o = el("option", null, firstOption.label); o.value = firstOption.value; sel.appendChild(o); }
-    opts.forEach(function (o) {
-      const option = el("option", null, o.label);
-      option.value = o.value;
-      sel.appendChild(option);
-    });
-  }
   function refreshFontSelects() {
-    const opts = C.getFontOptions();
-    const keep = {
-      font: els.fontSelect.value,
-      heading: els.headingFontSelect.value,
-      body: els.bodyFontSelect.value,
-    };
-    fillFontSelect(els.fontSelect, opts);
-    fillFontSelect(els.headingFontSelect, opts, { value: "", label: "跟随全局字体" });
-    fillFontSelect(els.bodyFontSelect, opts, { value: "", label: "跟随标题字体" });
-    const has = function (v) { return !v || opts.some(function (o) { return o.value === v; }); };
-    els.fontSelect.value = has(keep.font) ? keep.font : "sans";
-    els.headingFontSelect.value = has(keep.heading) ? keep.heading : "";
-    els.bodyFontSelect.value = has(keep.body) ? keep.body : "";
+    /* 字体下拉已迁入右侧文档设置面板（renderPanel 每次重建），此处无需再同步顶部控件。
+       保留函数供 bootstrapUserFonts / 字体导入流程调用，仅刷新 Constants 数据源。 */
   }
 
   /* ===== 用户导入字体弹窗（BB-R23：接入已导入字体的删除能力） ===== */
@@ -5194,7 +5241,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.backgroundInput = document.getElementById("backgroundInput"); els.backgroundScope = document.getElementById("backgroundScope"); els.backgroundColorInput = document.getElementById("backgroundColorInput"); els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.themeSelect = document.getElementById("themeSelect"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.fontSelect = document.getElementById("fontSelect"); els.headingFontSelect = document.getElementById("headingFontSelect"); els.bodyFontSelect = document.getElementById("bodyFontSelect"); els.importFontBtn = document.getElementById("importFontBtn"); C.getThemeOptions().forEach(function (o) { const op = el("option", null, o.label); op.value = o.value; els.themeSelect.appendChild(op); }); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.exportPngBtn = document.getElementById("exportPngBtn"); els.exportAllBtn = document.getElementById("exportAllBtn"); els.exportStripBtn = document.getElementById("exportStripBtn"); els.exportPsdBtn = document.getElementById("exportPsdBtn"); els.exportPdfBtn = document.getElementById("exportPdfBtn"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.pickModuleToggle = document.getElementById("pickModuleToggle"); els.pickModeText = document.getElementById("pickModeText"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.tweakThemeBtn = document.getElementById("tweakThemeBtn"); els.typeTweakBtn = document.getElementById("typeTweakBtn"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); preloadDefaultFont(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); setupZoomAutoFit(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoomManual = true; state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); preloadDefaultFont(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); setupZoomAutoFit(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoomManual = true; state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;

@@ -184,6 +184,10 @@
       const def = R.getDef(module.type);
       const data = module.data || {};
       const els = [];
+      /* 物料图标大小与行距（iconSize 与 DOM 预览/PNG 导出同源，画布坐标系 px，默认 104）：
+         在 else-if 图层分支与 switch 文字分支两处使用，故提升到模块循环体顶部 */
+      const mtIcon = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
+      const mtStep = Math.max(38, Math.round(mtIcon * 0.42) + 14);
       /* BB-R09：文本元素携带主题行高/字距，PDF/PSD 可编辑层与预览排版参数一致 */
       const themeLineHeight = typeof st.lineHeight === "number" && isFinite(st.lineHeight) ? st.lineHeight : 1;
       const themeLetterSpacing = typeof st.letterSpacing === "number" && isFinite(st.letterSpacing) ? st.letterSpacing : 0;
@@ -272,7 +276,7 @@
         const mtItems = data.items || [];
         for (let mi2 = 0; mi2 < mtItems.length; mi2++) {
           if (mtItems[mi2].icon && mtItems[mi2].icon.url) {
-            addImg("物料图标 " + (mi2 + 1), mtItems[mi2].icon, px(item.x + 20), px(headY + 70 + mi2 * 38), 26, 26, "contain");
+            addImg("物料图标 " + (mi2 + 1), mtItems[mi2].icon, px(item.x + 20), px(headY + 70 + mi2 * mtStep), mtIcon, mtIcon, "contain");
           }
         }
       }
@@ -307,8 +311,9 @@
           break;
         }
         case "materials": {
+          /* 文字行距与 BB-R09 图标行距同源（mtStep），避免大图标与文字重叠 */
           let my = headY + 70;
-          (data.items || []).forEach(function (it, i) { addT("物料 " + (i + 1), it.label, cardLeft, my, 25, inkColor, "left", "body"); my += 38; });
+          (data.items || []).forEach(function (it, i) { addT("物料 " + (i + 1), it.label, cardLeft, my, 25, inkColor, "left", "body"); my += mtStep; });
           addT("补充说明", data.note, cardLeft, my + 10, 23, mutedColor, "left", "body");
           break;
         }

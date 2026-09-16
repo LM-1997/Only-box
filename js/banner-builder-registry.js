@@ -320,10 +320,11 @@
     materials: {
       label: "物料监修",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", items: [], note: "", columns: "2" });
+        return withLayout({ bodyAlign: "left", items: [], note: "", columns: "2", iconSize: 104 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         { key: "columns", label: "图标列数", type: "select", options: COLUMN_OPTIONS },
+        { key: "iconSize", label: "图标大小（px，仅图标网格模板）", type: "range", min: 48, max: 200, step: 4, fallback: 104 },
         {
           key: "items",
           label: "物料条目",
