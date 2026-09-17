@@ -30,6 +30,11 @@
       fontLinks[url] = true;
       const link = document.createElement("link");
       link.rel = "stylesheet";
+      /* crossorigin 必须声明：CDN 样式表（jsDelivr 等）虽返回 ACAO:*，但未声明 crossorigin 的
+         跨源 <link> 会被浏览器封锁 cssRules（SecurityError）。导出链路 buildFontCss() 依赖
+         cssRules 提取 @font-face 内联进位图化沙箱；缺失时导出位图回退系统字体，
+         字宽/行高与预览不一致 → 换行点漂移 → 文字重叠（2026-09-14 CDN 化后引入）。 */
+      link.crossOrigin = "anonymous";
       link.href = url;
       document.head.appendChild(link);
     });

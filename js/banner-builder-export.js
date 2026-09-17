@@ -32,6 +32,44 @@
     return document.fonts && typeof document.fonts.status === "string" ? document.fonts.status : "unknown";
   }
 
+  /* 字体 CSS 可提取性体检（导出前调用）：预览字体已就绪但导出内联 CSS 为空时，
+     说明位图化沙箱将回退系统字体，导出必然与所见不一致（换行漂移/重叠）。
+     返回 { ok, cssLength, warn }。 */
+  async function auditExportFontCss() {
+    var cssLength = 0;
+    var fetchFailed = _fontFetchStats ? _fontFetchStats.failed : 0;
+    var fetchTotal = _fontFetchStats ? _fontFetchStats.fetches : 0;
+    try { cssLength = (await buildFontCss()).length; fetchFailed = _fontFetchStats.failed; fetchTotal = _fontFetchStats.fetches; } catch (error) { cssLength = 0; }
+    const doc = BB().doc;
+    const headingKey = doc.headingFont || doc.fontFamily || "sans";
+    const bodyKey = doc.bodyFont || headingKey;
+    var webfontActive = false;
+    try {
+      document.fonts.forEach(function (face) {
+        if (webfontActive) return;
+        [headingKey, bodyKey].forEach(function (key) {
+          const f = C.FONTS[key];
+          if (f && face.family.replace(/["']/g, "") === f.family && face.status === "loaded") webfontActive = true;
+        });
+      });
+    } catch (error) { /* ignore */ }
+    /* 字体可内联的充分条件：① CSS 长度 > 0（含 data: URL 字体二进制） ② 无 fetch 失败。
+       条件①为必要条件（CSS 无法提取 → 位图化沙箱无字体），条件②进一步增强：CSS 文本有值
+       但部分 @font-face 的字体文件 fetch 失败被丢弃 → 沙箱内该族字体可能不完整 → 视觉偏差。 */
+    const ok = (!webfontActive) || (cssLength > 0 && fetchFailed === 0);
+    return {
+      ok: ok,
+      cssLength: cssLength,
+      fetchFailed: fetchFailed,
+      fetchTotal: fetchTotal,
+      warn: ok ? "" : (
+        cssLength === 0
+          ? "检测到预览正在使用在线字体，但导出无法内联该字体（网络受限或样式表跨源不可读）。导出图将回退系统字体，可能与预览的换行和间距不一致。建议检查网络后重试，或改用系统字体导出。"
+          : "检测到 " + fetchFailed + " 个字体文件抓取失败（共 " + fetchTotal + " 个请求）。导出的 " + (fetchTotal - fetchFailed) + " 个字体可正常内联，但失败的字体会回退系统字体。建议在网络稳定时重试导出。"
+      ),
+    };
+  }
+
   /* ---------- zoom 安全区：CSS zoom 子树内的 computed style 是缩放后的值，
      直接克隆会得到缩小版布局。导出前以 zoom=1 重建预览（设计宽度原尺寸），
      位图化完成后恢复用户的缩放与界面。 ---------- */
@@ -61,16 +99,36 @@
   }
 
   /* ---------- webfont 内联：SVG-as-Image 沙箱不继承页面字体，需把命中的
-     @font-face（含 unicode-range 分片woff2）转成 dataURL 注入 <style>。 ---------- */
-  function cssUrlToDataUrl(cssText) {
-    const urlRe = /url\((['"]?)(https?:\/\/[^'")]+|blob:[^'")]+)\1\)/g;
+     @font-face（含 unicode-range 分片woff2）转成 dataURL 注入 <style>。
+     baseUrl（可选）：样式表 CDN 地址，用于将 @font-face 里的相对路径 url(./files/xxx.woff)
+     解析为绝对 CDN 地址后 fetch。FontSource 等 CDN 包的标准分发形态就是相对路径。 ---------- */
+  var _fontFetchStats = { fetches: 0, failed: 0 }; /* 模块级统计，供 auditExportFontCss 读取 */
+  function cssUrlToDataUrl(cssText, baseUrl) {
+    /* 匹配非 data: 的 url(path)（不包括 data: URL，避免索引错位），相对路径由 baseUrl 解析 */
+    const urlRe = /url\((['"]?)((?!data:)[^'")]+)\1\)/g;
     const jobs = [];
     let m;
-    while ((m = urlRe.exec(cssText)) !== null) jobs.push(m[2]);
+    while ((m = urlRe.exec(cssText)) !== null) {
+      const raw = m[2];
+      let absolute = raw;
+      if (baseUrl && raw.indexOf("http") !== 0 && raw.indexOf("//") !== 0 && raw.indexOf("blob:") !== 0) {
+        try { absolute = new URL(raw, baseUrl).href; } catch (e) { /* 解析失败按原值 */ }
+      }
+      jobs.push(absolute);
+    }
     if (!jobs.length) return Promise.resolve(cssText);
-    return Promise.all(jobs.map(function (u) { return fetchAsDataUrl(u); })).then(function (dataUrls) {
-      let i = 0;
-      return cssText.replace(urlRe, function () { return 'url("' + (dataUrls[i++] || "") + '")'; });
+    return Promise.all(jobs.map(function (u) { _fontFetchStats.fetches++; return fetchAsDataUrl(u); })).then(function (dataUrls) {
+      var anyFailed = false;
+      var i = 0;
+      dataUrls.forEach(function (d) { if (!d) anyFailed = true; });
+      if (anyFailed) _fontFetchStats.failed += 1;
+      /* 任一字体文件 fetch 失败 → 整条 @font-face 不可用，返回空字符串不注入沙箱，
+         避免在 SVG-as-image 内留下无法解析的相对路径或 CDN 绝对 URL（沙箱不加载外链资源）。 */
+      if (anyFailed) return "";
+      return cssText.replace(urlRe, function () {
+        var val = dataUrls[i++];
+        return 'url("' + (val || "") + '")';
+      });
     });
   }
   /* src 型字体（本地相对路径 / 裸字体 URL）的 @font-face 内联：把 url(...) 里的
@@ -81,13 +139,51 @@
     let m;
     while ((m = urlRe.exec(cssText)) !== null) jobs.push(m[2]);
     if (!jobs.length) return Promise.resolve(cssText);
-    return Promise.all(jobs.map(function (u) { return fetchAsDataUrl(u); })).then(function (dataUrls) {
+    return Promise.all(jobs.map(function (u) { _fontFetchStats.fetches++; return fetchAsDataUrl(u); })).then(function (dataUrls) {
+      var anyFailed = false;
+      dataUrls.forEach(function (d) { if (!d) anyFailed = true; });
+      if (anyFailed) { _fontFetchStats.failed += 1; return ""; } /* 字体文件内联失败 → 丢弃该条 @font-face */
       let i = 0;
       return cssText.replace(urlRe, function () { return 'url("' + (dataUrls[i++] || "") + '")'; });
     });
   }
 
+  /* cssRules 被跨源封锁（<link> 未声明 crossorigin 的历史会话）时的兜底通道：
+     直接 fetch CSS 文本，用正则提取 @font-face 块。返回该样式表命中的 @font-face 数组；
+     读取失败返回 null（调用方按 0 条处理，不中断导出）。 */
+  async function fontFacesFromFetchedCss(href, family) {
+    try {
+      const res = await fetchWithTimeout(href, { mode: "cors" }, 15000);
+      if (!res.ok) return null;
+      const text = await res.text();
+      const out = [];
+      const re = /@font-face\s*\{[^}]*\}/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m[0].indexOf(family) >= 0) out.push(m[0]);
+      }
+      return out;
+    } catch (error) { return null; }
+  }
+
+  /* 单次导出内字体 CSS 复用缓存：audit + 位图化各调用一次 buildFontCss，
+     每次都会重新 fetch 全部字体文件（64+ 请求）。以「字体键 + fonts 就绪状态」为
+     签名缓存结果，同一次导出中 audit 与 rasterize 共享同一份已内联 CSS，
+     避免 CDN 抖动放大成数倍耗时/超时。文档字体变更（签名变化）自动失效。 */
+  var _fontCssCache = { sig: "", css: "" };
+  function fontCssCacheSig() {
+    const doc = BB().doc;
+    const headingKey = doc.headingFont || doc.fontFamily || "sans";
+    const bodyKey = doc.bodyFont || headingKey;
+    let status = "";
+    try { status = document.fonts && document.fonts.status ? document.fonts.status : ""; } catch (e) { /* ignore */ }
+    return headingKey + "|" + bodyKey + "|" + status;
+  }
+  function invalidateFontCssCache() { _fontCssCache = { sig: "", css: "" }; }
+
   async function buildFontCss() {
+    const sig = fontCssCacheSig();
+    if (_fontCssCache.sig === sig) return _fontCssCache.css;
     const doc = BB().doc;
     const keys = [];
     const headingKey = doc.headingFont || doc.fontFamily || "sans";
@@ -95,6 +191,7 @@
     const bodyKey = doc.bodyFont || headingKey;
     if (keys.indexOf(bodyKey) < 0) keys.push(bodyKey);
     const out = [];
+    _fontFetchStats = { fetches: 0, failed: 0 }; /* 每次构建重置统计 */
     for (let i = 0; i < keys.length; i++) {
       const f = C.FONTS[keys[i]];
       if (!f || !f.family) continue;
@@ -104,23 +201,47 @@
         if (faceCss) { try { out.push(await inlineFontFaceUrls(faceCss)); } catch (e) { /* 单条失败跳过 */ } }
         continue;
       }
-      const sheets = [];
+      /* 候选样式表：页面里已注入的 fontsource 链接 + 字体清单里的 css 直链（去重） */
+      const candidates = [];
+      const seen = {};
       try {
         for (let j = 0; j < document.styleSheets.length; j++) {
           let sheet;
           try { sheet = document.styleSheets[j]; } catch (e) { continue; }
           if (!sheet || !sheet.href) continue;
           if (sheet.href.indexOf("fontsource") < 0 && sheet.href.indexOf(f.family) < 0) continue;
-          let rules;
-          try { rules = sheet.cssRules; } catch (e) { continue; }
-          if (!rules) continue;
-          for (let k = 0; k < rules.length; k++) {
-            const r = rules[k];
-            if (r.type === 5 /* CSSRule.FONT_FACE_RULE */ && r.cssText && r.cssText.indexOf(f.family) >= 0) sheets.push(r.cssText);
-          }
+          if (!seen[sheet.href]) { seen[sheet.href] = true; candidates.push(sheet); }
         }
       } catch (e) { /* 样式表访问失败跳过 */ }
-      if (!sheets.length) continue;
+      (f.css || []).forEach(function (url) {
+        if (!seen[url]) { seen[url] = true; candidates.push({ href: url }); }
+      });
+      if (!candidates.length) continue;
+      const sheetPairs = []; /* [{ cssText, baseUrl }] —— baseUrl 用于解析 FontSource 相对路径 url(./files/xxx.woff) */
+      let fetchedCount = 0; /* fetch 兜底提取的 @font-face 条数（仅 cssRules 不可读时才非 0） */
+      for (let ci = 0; ci < candidates.length; ci++) {
+        const cand = candidates[ci];
+        /* 推导 baseUrl：CSSStyleSheet 取 sheet.href；裸 url 字符串用自身 */
+        const baseUrl = cand.href || (typeof cand === "string" ? cand : "");
+        /* 优先 cssRules（同源或已声明 crossorigin 的链接，最快且无需网络往返） */
+        try {
+          const rules = cand.cssRules;
+          if (rules) {
+            for (let k = 0; k < rules.length; k++) {
+              const r = rules[k];
+              if (r.type === 5 /* CSSRule.FONT_FACE_RULE */ && r.cssText && r.cssText.indexOf(f.family) >= 0) sheetPairs.push({ cssText: r.cssText, baseUrl: baseUrl });
+            }
+            continue;
+          }
+        } catch (e) { /* SecurityError → 走 fetch 兜底 */ }
+        /* 兜底：fetch CSS 文本正则提取（<link> 未声明 crossorigin 的历史会话） */
+        const fetched = await fontFacesFromFetchedCss(cand.href, f.family);
+        if (fetched && fetched.length) {
+          fetched.forEach(function (css) { sheetPairs.push({ cssText: css, baseUrl: baseUrl }); });
+          fetchedCount += fetched.length;
+        }
+      }
+      if (!sheetPairs.length) continue;
       /* 只内联已加载（命中文本）的分片：用 document.fonts 反查已激活的 face */
       const loaded = [];
       try {
@@ -130,19 +251,24 @@
           }
         });
       } catch (e) { /* ignore */ }
-      const keep = loaded.length ? sheets.filter(function (css) {
-        const wm = css.match(/font-weight:\s*(\d+)/);
-        const sm = css.match(/unicode-range:\s*([^;]+);?/);
+      const keep = loaded.length ? sheetPairs.filter(function (p) {
+        const wm = p.cssText.match(/font-weight:\s*(\d+)/);
+        const sm = p.cssText.match(/unicode-range:\s*([^;]+);?/);
         if (!wm) return true;
         return loaded.some(function (face) {
           return String(face.weight) === wm[1] && (!sm || (face.unicodeRange && face.unicodeRange.replace(/\s+/g, "") === sm[1].replace(/\s+/g, "")));
         });
-      }) : sheets;
+      }) : sheetPairs;
       for (let j = 0; j < keep.length; j++) {
-        try { out.push(await cssUrlToDataUrl(keep[j])); } catch (e) { /* 单条失败跳过 */ }
+        try { out.push(await cssUrlToDataUrl(keep[j].cssText, keep[j].baseUrl)); } catch (e) { /* 单条失败跳过 */ }
+      }
+      if (fetchedCount > 0 && global.console && global.console.warn) {
+        global.console.warn("[banner-builder] 字体样式表 cssRules 不可读（跨源未声明 crossorigin），已用 fetch 兜底提取 " + fetchedCount + " 条 @font-face。建议刷新页面使新注入的链接带 crossorigin。");
       }
     }
-    return out.join("\n");
+    const css = out.join("\n");
+    if (css) _fontCssCache = { sig: fontCssCacheSig(), css: css };
+    return css;
   }
 
   /* ---------- 资源内联：SVG-as-Image 沙箱不加载 blob:/http 外链资源，先全部转 dataURL ---------- */
@@ -170,17 +296,34 @@
       reader.readAsDataURL(blob);
     });
   }
-  function fetchAsDataUrl(src) {
+  function fetchWithTimeout(url, options, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) { done = true; reject(new Error("fetch timeout after " + timeoutMs + "ms: " + String(url).substring(0, 120))); }
+      }, timeoutMs);
+      fetch(url, options).then(function (res) {
+        if (!done) { done = true; clearTimeout(timer); resolve(res); }
+      }, function (err) {
+        if (!done) { done = true; clearTimeout(timer); reject(err); }
+      });
+    });
+  }
+  function fetchAsDataUrl(src, timeoutMs) {
     return new Promise(function (resolve) {
       if (!src || src.indexOf("data:") === 0) { resolve(src); return; }
-      fetch(src, { mode: "cors" }).then(function (res) { return res.blob(); }).then(function (blob) {
+      var ms = (typeof timeoutMs === "number" && timeoutMs > 0) ? timeoutMs : 18000;
+      fetchWithTimeout(src, { mode: "cors" }, ms).then(function (res) { return res.blob(); }).then(function (blob) {
         normalizeBlobToDataUrl(blob).then(function (dataUrl) {
           if (dataUrl) { resolve(dataUrl); return; }
-          blobToRawDataUrl(blob).then(function (raw) { resolve(raw || src); });
+          blobToRawDataUrl(blob).then(function (raw) { resolve(raw || null); });
         }, function () {
-          blobToRawDataUrl(blob).then(function (raw) { resolve(raw || src); });
+          blobToRawDataUrl(blob).then(function (raw) { resolve(raw || null); });
         });
-      }).catch(function () { resolve(src); });
+      }).catch(function (err) {
+        if (global.console && global.console.warn) global.console.warn("[banner-builder] 资源 fetch 失败（" + String(src).substring(0, 100) + "）：" + ((err && err.message) || err));
+        resolve(null);
+      });
     });
   }
   async function inlineResources(root) {
@@ -204,6 +347,7 @@
       while ((mm = urlRe.exec(styleAttr)) !== null) matches.push(mm[1]);
       for (let k = 0; k < matches.length; k++) {
         const dataUrl = await fetchAsDataUrl(matches[k]);
+        if (!dataUrl) continue; /* fetch 失败：保留原 URL（与注入 "null" 相比，原样至少可调试） */
         styleAttr = styleAttr.split('url("' + matches[k] + '")').join('url("' + dataUrl + '")');
       }
       styled[j].setAttribute("style", styleAttr);
@@ -366,6 +510,22 @@
     return body.querySelector('.bb-page-canvas[data-page-id="' + pageId + '"]') || null;
   }
 
+  /* 单屏画布导出底色：连续模式下 .bb-page-canvas 的 CSS background-color 固定为
+     transparent（底色由 .bb-strip 承载），nodeBackground 会回落白色，导出图与预览
+     （深色底色透出）不一致。此处回退到 doc.backgroundColor / page.backgroundColor。 */
+  function canvasExportBg(node, page) {
+    let color = "";
+    try { color = getComputedStyle(node).backgroundColor || ""; } catch (error) { color = ""; }
+    if (!color || color === "transparent" || color === "rgba(0, 0, 0, 0)") {
+      const doc = BB().doc;
+      const p = page || {};
+      if (p.backgroundColor) return p.backgroundColor;
+      if (doc.backgroundColor) return doc.backgroundColor;
+      return undefined;
+    }
+    return color;
+  }
+
   function downloadBlob(blob, name) {
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -424,6 +584,10 @@
     TR("ensureFonts-begin");
     const fontStatus = await ensureFonts();
     TR("ensureFonts-done:" + fontStatus);
+    /* 导出前体检：webfont 已激活但内联 CSS 为空 → 位图化必然回退系统字体，提前警告 */
+    const fontAudit = await auditExportFontCss();
+    TR("fontAudit:" + fontAudit.cssLength + " fetchOk:" + (fontAudit.fetchTotal || 0) + "/" + ((fontAudit.fetchTotal || 0) - (fontAudit.fetchFailed || 0)));
+    if (!fontAudit.ok && global.console && global.console.warn) global.console.warn("[banner-builder] " + fontAudit.warn);
     const size = pageSize();
     const results = [];
     TR("withDesignZoom-begin");
@@ -434,7 +598,8 @@
         if (!node) throw new Error("找不到第 " + (i + 1) + " 屏的预览画布");
         TR("page" + i + "-node zoom=" + (getComputedStyle(node).zoom || "?") + " h=" + node.offsetHeight + "/" + node.scrollHeight);
         const exportH = Math.max(node.offsetHeight, node.scrollHeight);
-      const canvas = await rasterizeDomToCanvas(node, size.pageWidth, exportH, scale);
+      const bgColor = canvasExportBg(node, page);
+      const canvas = await rasterizeDomToCanvas(node, size.pageWidth, exportH, scale, bgColor);
       TR("page" + i + "-rasterized:" + canvas.width + "x" + canvas.height);
       const blob = await canvasToPngBlob(canvas);
       const pageNo = String(BB().doc.pages.indexOf(page) + 1).padStart(2, "0");
@@ -450,6 +615,8 @@
   async function exportStripPng() {
     const scale = exportScale();
     const fontStatus = await ensureFonts();
+    const fontAudit = await auditExportFontCss();
+    if (!fontAudit.ok && global.console && global.console.warn) global.console.warn("[banner-builder] " + fontAudit.warn);
     const body = document.getElementById("canvasBody");
     const strip = body ? body.querySelector(".bb-strip") : null;
     if (!strip) throw new Error("连续模式预览未激活，请先切换到「连续」再导出长图");
@@ -503,7 +670,7 @@
         const node = findPreviewCanvas(bb.state.activePageId);
         if (!node) throw new Error("找不到当前屏预览画布");
         const actualHeight = Math.max(editable.height || 0, node.offsetHeight || 0, node.scrollHeight || 0, size.pageHeight);
-        const canvas = await rasterizeDomToCanvas(node, size.pageWidth, actualHeight, 1);
+        const canvas = await rasterizeDomToCanvas(node, size.pageWidth, actualHeight, 1, canvasExportBg(node, (bb.doc.pages || []).filter(function (p) { return p.id === bb.state.activePageId; })[0]));
         if (canvas.height !== Math.max(editable.height || 0, actualHeight)) {
           /* 位图化结果与预期不一致时以实际画布为准校验文档高度 */
           if (canvas.height < (editable.height || 0)) throw new Error("PSD 合成图高度（" + canvas.height + "px）小于可编辑图层高度（" + editable.height + "px），导出中止以避免图层错位");
@@ -536,6 +703,7 @@
     exportStripPng: exportStripPng,
     exportPsd: exportPsd,
     ensureFonts: ensureFonts,
+    auditExportFontCss: auditExportFontCss,
     exportScale: exportScale,
     __raster: rasterizeDomToCanvas,
     __withDesignZoom: withDesignZoom,
