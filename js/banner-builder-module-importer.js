@@ -102,7 +102,7 @@
         return "（可选: " + vals.join("/") + "）";
       }
       if (field.type === "image") return "（图片，JSON 里写 null，导入后再上传）";
-      if (field.type === "number") return "（数字" + (field.min != null ? " " + field.min + "-" + field.max : "") + "）";
+      if (field.type === "number" || field.type === "range") return "（数字" + (field.min != null ? " " + field.min + "-" + field.max : "") + "）";
       if (field.type === "textarea") return "（多行文本）";
       if (field.type === "stringList") return "（字符串数组，每条一个" + (field.itemLabel || "条目") + "）";
       return "（文本）";

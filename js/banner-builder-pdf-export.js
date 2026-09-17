@@ -513,9 +513,14 @@
         if (!node) throw new Error("找不到当前屏预览画布");
         const exportH = Math.max(node.offsetHeight, node.scrollHeight, size.pageHeight);
         /* BB-R25：连续模式下 .bb-page-canvas 背景透明（底色由 .bb-strip 承载），
-           位图化须显式传入底色，否则 nodeBackground 回落白色，深色底文档导出成白底 */
+           位图化须显式传入底色，否则 nodeBackground 回落白色，深色底文档导出成白底。
+           图案背景激活时优先取图案底色（冲突消解规则）。 */
         const isContinuous = (bbState.doc.screenMode || "split") === "continuous";
-        const bgColor = (page.backgroundColor || (isContinuous ? bbState.doc.backgroundColor : null) || (function () {
+        const docParamBgRec = (bbState.doc.background && bbState.doc.background.type === "parametric" && bbState.doc.background.params) ? bbState.doc.background : null;
+        const patternBgColor = docParamBgRec ? (function () {
+          try { const v = global.BannerBuilderBackgrounds.normalize(docParamBgRec.params).bg; return v || null; } catch (e) { return null; }
+        })() : null;
+        const bgColor = (patternBgColor || page.backgroundColor || (isContinuous ? bbState.doc.backgroundColor : null) || (function () {
           try { const v = getComputedStyle(node).backgroundColor; return (v && v !== "transparent" && v !== "rgba(0, 0, 0, 0)") ? v : null; } catch (e) { return null; }
         })()) || "#ffffff";
         const canvas = await Export.__raster(node, size.pageWidth, exportH, scale, bgColor);
@@ -545,7 +550,24 @@
       try { compositePngBytes = await canvasToBytes(full.canvas, "image/png"); } catch (e2) { compositePngBytes = null; }
     }
 
-    const scene = SM.buildScene({ page: page, layout: layout, doc: bbState.doc, pageHeight: pageHeight, pageSize: size, registry: global.BannerBuilderRegistry });
+    /* 图案背景栅格回退（Task #18）：非矢量形状时为 scene 提供图案位图，
+       供 PDF 可编辑层引用；矢量形状（circle/square）走 scene 内建矢量元素。 */
+    let backgroundRasterUrl = null;
+    (function attachParametricRaster() {
+      const bgRec = (page.background && page.background.type === "parametric" && page.background.params)
+        ? page.background
+        : (bbState.doc.background && bbState.doc.background.type === "parametric" && bbState.doc.background.params ? bbState.doc.background : null);
+      const engine = global.BannerBuilderBackgrounds;
+      if (!bgRec || !engine) return;
+      try {
+        const bgParams = Object.assign({}, bgRec.params, { width: size.pageWidth, height: pageHeight, fieldHeight: size.pageHeight });
+        const vec = engine.sceneElements(bgParams);
+        if (vec.kind === "vector" && vec.elements && vec.elements.length) return; /* 矢量已内建 */
+        const rasterCanvas = engine.renderPatternToCanvas(bgParams);
+        backgroundRasterUrl = rasterCanvas.toDataURL("image/png");
+      } catch (e) { /* 栅格生成失败：可编辑层不含背景图案，合成底图仍完整 */ }
+    })();
+    const scene = SM.buildScene({ page: page, layout: layout, doc: bbState.doc, pageHeight: pageHeight, pageSize: size, registry: global.BannerBuilderRegistry, backgroundRasterUrl: backgroundRasterUrl });
     const snapshot = await SM.selfContained(scene, global.BannerBuilderMyTemplates ? global.BannerBuilderMyTemplates.snapshotData : null);
     const sceneJson = JSON.stringify(snapshot, null, 2);
 

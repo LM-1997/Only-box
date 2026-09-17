@@ -143,6 +143,16 @@
     const m = String(ratioStr || "").replace(/\s+/g, "").match(/^(\d+(?:\.\d+)?)[:/](\d+(?:\.\d+)?)$/);
     return m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : fallback;
   }
+  /* 板块图片大小统一读取（与 banner-builder.js imageSizeOf 同源等价的纯函数版）：
+     data[key] 未设置 → 0（渲染端走模板默认），设置 → clamp 到 [min,max] 按 step 收敛 */
+  function imageSizeOf(data, key, min, max, step) {
+    const raw = data ? data[key] : null;
+    if (raw == null || raw === "" || !Number.isFinite(Number(raw))) return 0;
+    const st = Number(step) > 0 ? Number(step) : 1;
+    let v = Math.round(Number(raw) / st) * st;
+    v = Math.max(min, Math.min(max, v));
+    return v;
+  }
 
   /* ---------- 字体角色清单：scene 文本元素按 scope 关联字体 ---------- */
   function psFamilyName(f) {
@@ -185,8 +195,9 @@
       const data = module.data || {};
       const els = [];
       /* 物料图标大小与行距（iconSize 与 DOM 预览/PNG 导出同源，画布坐标系 px，默认 104）：
-         在 else-if 图层分支与 switch 文字分支两处使用，故提升到模块循环体顶部 */
-      const mtIcon = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
+         在 else-if 图层分支与 switch 文字分支两处使用，故提升到模块循环体顶部。
+         上限放宽到 400（接近板块容器宽），行距随图标等比放大防重叠。 */
+      const mtIcon = Math.round(Math.min(600, Math.max(48, Number(data.iconSize) || 104)));
       const mtStep = Math.max(38, Math.round(mtIcon * 0.42) + 14);
       /* BB-R09：文本元素携带主题行高/字距，PDF/PSD 可编辑层与预览排版参数一致 */
       const themeLineHeight = typeof st.lineHeight === "number" && isFinite(st.lineHeight) ? st.lineHeight : 1;
@@ -231,14 +242,18 @@
       } else if (module.type === "venueInfo" && data.photo) {
         addImg("场地照片", data.photo, item.x, px(headY + 24), item.w, Math.round(item.w * 0.55), imgFit);
       } else if (module.type === "crossPromo" && data.icon) {
-        addImg("联动方图标", data.icon, item.x, px(headY + 20), 120, 120, "contain");
+        const cpIcon = imageSizeOf(data, "iconSize", 60, 220, 4) || 120;
+        addImg("联动方图标", data.icon, item.x, px(headY + 20), cpIcon, cpIcon, "contain");
       } else if (module.type === "ticketInfo" && data.qrImage) {
-        addImg("购票二维码", data.qrImage, px(item.x + item.w - 228), px(headY + 20), 208, 208, "contain");
+        const qrSide = imageSizeOf(data, "qrSize", 120, 320, 4) || 208;
+        addImg("购票二维码", data.qrImage, px(item.x + item.w - qrSide - 20), px(headY + 20), qrSide, qrSide, "contain");
       } else if (module.type === "castList") {
         /* BB-R09：列表式阵容——每位成员头像独立图层（左列头像，与预览布局一致） */
+        const castAvatarW = imageSizeOf(data, "avatarWidth", 80, 260, 4) || 120;
+        const castStep = Math.max(castAvatarW + 30, 150);
         (data.cast || []).forEach(function (member, ci) {
           if (member && member.avatar && member.avatar.url) {
-            addImg("成员头像 " + (ci + 1), member.avatar, px(item.x + 20), px(headY + 70 + ci * 150), 120, 120, "cover");
+            addImg("成员头像 " + (ci + 1), member.avatar, px(item.x + 20), px(headY + 70 + ci * castStep), castAvatarW, castAvatarW, "cover");
           }
         });
       } else if (module.type === "castCards") {
@@ -262,13 +277,15 @@
           }
         }
       } else if (module.type === "boothList") {
-        /* BB-R09：每张摊位图独立坐标（纵向排布） */
+        /* BB-R09：每张摊位图独立坐标（纵向排布）；imageWidth 控制图层边长 */
         const boItems = data.items || [];
+        const boSide = imageSizeOf(data, "imageWidth", 80, 260, 4) || 150;
+        const boStep = boSide + 24;
         let boImgY = headY + 70;
         for (let bi = 0; bi < boItems.length; bi++) {
           if (boItems[bi].image && boItems[bi].image.url) {
-            addImg("摊位图 " + (bi + 1), boItems[bi].image, px(item.x + 20), px(boImgY), 150, 150, imgFit);
-            boImgY += 174;
+            addImg("摊位图 " + (bi + 1), boItems[bi].image, px(item.x + 20), px(boImgY), boSide, boSide, imgFit);
+            boImgY += boStep;
           }
         }
       } else if (module.type === "materials") {
@@ -386,7 +403,10 @@
     }
 
     /* BB-R09：页面背景图作为独立可编辑图层（最底层模块），不再只存在于合成位图中 */
-    const pageBg = page.backgroundImage || doc.backgroundImage;
+    /* 底图与图案背景互斥：图案背景激活时不再输出底图模块（冲突消解规则） */
+    const paramBgActiveForImage = (page.background && page.background.type === "parametric")
+      || (doc.background && doc.background.type === "parametric");
+    const pageBg = paramBgActiveForImage ? null : (page.backgroundImage || doc.backgroundImage);
     if (pageBg && pageBg.url) {
       modules.unshift({
         id: "page-background",
@@ -400,6 +420,45 @@
       });
     }
 
+    /* 图案背景（Task #18）：矢量元素组（circle/square）或栅格 image 引用。
+       栅格 dataURL 由调用方经 options.backgroundRasterUrl 传入（DOM 侧生成）；
+       未提供时仅输出矢量元素（circle/square 可完整表达）。 */
+    const paramBg = (page.background && page.background.type === "parametric" && page.background.params)
+      ? page.background
+      : (doc.background && doc.background.type === "parametric" && doc.background.params ? doc.background : null);
+    if (paramBg) {
+      const engine = (typeof global !== "undefined") && global.BannerBuilderBackgrounds ? global.BannerBuilderBackgrounds : null;
+      if (engine) {
+        const H = pageHeight || size.pageHeight;
+        const bgParams = Object.assign({}, paramBg.params, { width: size.pageWidth, height: H, fieldHeight: size.pageHeight });
+        let vec = null;
+        try { vec = engine.sceneElements(bgParams); } catch (e) { vec = null; }
+        if (vec && vec.kind === "vector" && vec.elements && vec.elements.length) {
+          modules.unshift({
+            id: "page-background-pattern",
+            type: "pageBackgroundPattern",
+            label: "背景图案（矢量）",
+            serial: 0,
+            rect: { x: 0, y: 0, w: size.pageWidth, h: H },
+            radius: 0,
+            background: { fill: parseColor(engine.normalize(bgParams).bg) || { r: 255, g: 255, b: 255 } },
+            elements: vec.elements,
+          });
+        } else if (options.backgroundRasterUrl) {
+          modules.unshift({
+            id: "page-background-pattern",
+            type: "pageBackgroundPattern",
+            label: "背景图案（栅格）",
+            serial: 0,
+            rect: { x: 0, y: 0, w: size.pageWidth, h: H },
+            radius: 0,
+            background: { fill: parseColor(engine.normalize(bgParams).bg) || { r: 255, g: 255, b: 255 } },
+            elements: [{ kind: "image", name: "背景图案（栅格）", x: 0, y: 0, w: size.pageWidth, h: H, fit: "cover", image: { url: options.backgroundRasterUrl, name: "背景图案.png", type: "image/png" } }],
+          });
+        }
+      }
+    }
+
     return {
       schema: SCHEMA,
       generatedAt: new Date().toISOString(),
@@ -409,8 +468,21 @@
         height: pageHeight || size.pageHeight,
         designHeight: size.pageHeight,
         background: {
-          color: page.backgroundColor || doc.backgroundColor || "#ffffff",
-          image: page.backgroundImage || doc.backgroundImage || null,
+          /* 图案背景激活时取图案底色（params.bg），否则回退页面/文档底色 */
+          color: (function () {
+            const paramBg = (page.background && page.background.type === "parametric" && page.background.params)
+              ? page.background
+              : (doc.background && doc.background.type === "parametric" && doc.background.params ? doc.background : null);
+            if (paramBg && typeof global !== "undefined" && global.BannerBuilderBackgrounds) {
+              try { const bgc = global.BannerBuilderBackgrounds.normalize(paramBg.params).bg; if (bgc) return bgc; } catch (e) { /* 回退 */ }
+            }
+            return page.backgroundColor || doc.backgroundColor || "#ffffff";
+          })(),
+          image: (function () {
+            const paramBgActive = (page.background && page.background.type === "parametric")
+              || (doc.background && doc.background.type === "parametric");
+            return paramBgActive ? null : (page.backgroundImage || doc.backgroundImage || null);
+          })(),
         },
       },
       fonts: fonts,

@@ -107,6 +107,13 @@
     opt("3:4", "3:4 竖版"),
     opt("1:1.4", "1:1.4 竖版"),
   ];
+
+  /* 板块图片大小（px，画布坐标系）：range 滑块 + 数值输入复合控件。
+     未调整（data 里无该 key）时渲染端走各模板历史尺寸，旧文档视觉不变；
+     面板初值（fallback）取历史固定尺寸的近似偶数，保证步进对齐。 */
+  function imageRangeField(key, label, min, max, step, fallback) {
+    return { key: key, label: label, type: "range", min: min, max: max, step: step, fallback: fallback };
+  }
   /* 头像装饰已收归主题体系（themeStyle().avatarStyle 下放），不再作为成员级字段暴露。
      主题决定整个演出阵容的头像装饰，保证各主题风格统一、不因成员不同而五花八门。 */
   /* 演出阵容角色标签（可留空） */
@@ -240,6 +247,7 @@
           infoLines: [],
           qqGroupNumber: "",
           titlePlacement: "overlay-bottom",
+          imageSize: 0,
         });
       },
       fields: [
@@ -249,6 +257,7 @@
         { key: "titlePlacement", label: "标题位置", type: "select", options: TITLE_PLACEMENT_OPTIONS },
         { key: "infoLines", label: "信息行", type: "stringList", itemLabel: "一行", placeholder: "例如：10:00-16:00 入场" },
         { key: "qqGroupNumber", label: "QQ 群号", type: "text" },
+        imageRangeField("imageSize", "主视觉高度（px，0=默认）", 0, 1000, 4, 0),
       ].concat(LAYOUT_FIELDS),
       summary: function (data) {
         return [
@@ -286,11 +295,12 @@
     ticketInfo: {
       label: "票务信息",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", qrImage: null, tiers: [], note: "", qrPlacement: "right" });
+        return withLayout({ bodyAlign: "left", qrImage: null, tiers: [], note: "", qrPlacement: "right", qrSize: 208 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         { key: "qrImage", label: "购票二维码", type: "image" },
         { key: "qrPlacement", label: "二维码位置", type: "select", options: QR_PLACEMENT_OPTIONS },
+        imageRangeField("qrSize", "二维码大小（px）", 120, 320, 4, 208),
         {
           key: "tiers",
           label: "票档",
@@ -324,7 +334,7 @@
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         { key: "columns", label: "图标列数", type: "select", options: COLUMN_OPTIONS },
-        { key: "iconSize", label: "图标大小（px，仅图标网格模板）", type: "range", min: 48, max: 200, step: 4, fallback: 104 },
+        imageRangeField("iconSize", "图标大小（px）", 48, 600, 4, 104),
         {
           key: "items",
           label: "物料条目",
@@ -353,11 +363,12 @@
     crossPromo: {
       label: "联动推广条",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", icon: null, text: "", imagePlacement: "left" });
+        return withLayout({ bodyAlign: "left", icon: null, text: "", imagePlacement: "left", iconSize: 104 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         { key: "icon", label: "联动方图标", type: "image" },
         { key: "imagePlacement", label: "图标位置", type: "select", options: IMAGE_PLACEMENT_OPTIONS },
+        imageRangeField("iconSize", "图标大小（px）", 60, 220, 4, 104),
         { key: "text", label: "推广文案", type: "textarea", rows: 3 },
       ]),
       summary: function (data) {
@@ -414,13 +425,14 @@
     venueInfo: {
       label: "场地信息",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", description: "", tags: [], photo: null, imagePlacement: "right" });
+        return withLayout({ bodyAlign: "left", description: "", tags: [], photo: null, imagePlacement: "right", photoSize: 162 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
         { key: "description", label: "场地描述", type: "textarea", rows: 4 },
         { key: "tags", label: "标签", type: "stringList", itemLabel: "标签", placeholder: "例如：地铁 2 号口步行 5 分钟" },
         { key: "photo", label: "场地照片", type: "image" },
         { key: "imagePlacement", label: "照片位置", type: "select", options: IMAGE_PLACEMENT_OPTIONS },
+        imageRangeField("photoSize", "照片大小（px）", 100, 400, 4, 162),
       ]),
       summary: function (data) {
         return [
@@ -458,9 +470,10 @@
     programList: {
       label: "节目单列表",
       createDefault: function () {
-        return withLayout({ items: [] });
+        return withLayout({ items: [], thumbWidth: 162 });
       },
       fields: LAYOUT_FIELDS.concat([
+        imageRangeField("thumbWidth", "配图宽度（px）", 80, 300, 4, 162),
         {
           key: "items",
           label: "节目条目",
@@ -491,9 +504,10 @@
     castList: {
       label: "演出阵容（嘉宾/乐队/DJ）",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", cast: [], template: "cast-list" });
+        return withLayout({ bodyAlign: "left", cast: [], template: "cast-list", avatarWidth: 150 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
+        imageRangeField("avatarWidth", "头像宽度（px）", 80, 260, 4, 150),
         {
           key: "cast",
           label: "阵容成员",
@@ -535,9 +549,10 @@
     castCards: {
       label: "演出阵容卡片（嘉宾/乐队/DJ）",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", cast: [], template: "cast-cards" });
+        return withLayout({ bodyAlign: "left", cast: [], template: "cast-cards", avatarWidth: 150 });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
+        imageRangeField("avatarWidth", "头像宽度（px）", 80, 260, 4, 150),
         {
           key: "cast",
           label: "阵容成员",
@@ -579,10 +594,11 @@
     boothList: {
       label: "摊位信息列表",
       createDefault: function () {
-        return withLayout({ items: [], columns: "2" });
+        return withLayout({ items: [], columns: "2", imageWidth: 150 });
       },
       fields: LAYOUT_FIELDS.concat([
         { key: "columns", label: "摊位列数", type: "select", options: COLUMN_OPTIONS },
+        imageRangeField("imageWidth", "摊位图大小（px）", 80, 260, 4, 150),
         {
           key: "items",
           label: "摊位条目",

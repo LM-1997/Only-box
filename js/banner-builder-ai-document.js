@@ -59,7 +59,7 @@
   var THEME_WEIGHTS = [400, 500, 600, 700, 800, 900];
   var THEME_FORBIDDEN_KEYS = ["id", "label", "headingFont", "bodyFont"];
   var THEME_ALLOWED_KEYS = THEME_BASE_COLORS
-    .concat(THEME_EXTRA_COLORS, Object.keys(THEME_ENUMS), Object.keys(THEME_NUMBERS), ["headingWeight", "bodyWeight"]);
+    .concat(THEME_EXTRA_COLORS, Object.keys(THEME_ENUMS), Object.keys(THEME_NUMBERS), ["headingWeight", "bodyWeight", "backgroundPreset"]);
 
   /* 提示词中的通用字段段：与 Registry 的 LAYOUT_FIELDS 对应（bodyAlign 仅部分板块拥有，随各板块单独列出） */
   var COMMON_FIELD_KEYS = ["template", "sectionTitle", "width", "contentAlign", "blockBgColor", "blockBgImage", "blockOpacity", "imageRatio", "imageFit"];
@@ -142,6 +142,14 @@
       if (value == null) return;
       if (THEME_WEIGHTS.indexOf(value) < 0) err(path + "." + key, "invalid_option", "themeOverrides." + key + " 只能为: " + THEME_WEIGHTS.join(" / "));
     });
+    /* backgroundPreset（Task #19）：背景预设 id 枚举（引擎 PRESETS + "none"），目录运行时从引擎读取 */
+    var bgValue = ov.backgroundPreset;
+    if (bgValue != null) {
+      initBackgroundCatalog();
+      if (BG_PRESET_IDS.indexOf(bgValue) < 0 && bgValue !== "none") {
+        err(path + ".backgroundPreset", "invalid_option", "themeOverrides.backgroundPreset 只能为: " + BG_PRESET_IDS.join(" / ") + " / none");
+      }
+    }
   }
 
   /* ===== 板块 data 字段递归校验（schema 唯一来源 = Registry） =====
@@ -191,7 +199,8 @@
         if (typeof value !== "string") { err(path, "expected_string", field.label + " 必须是字符串"); return; }
         if (value.length > LIMITS.textareaMax) err(path, "text_too_long", field.label + " 长度不能超过 " + LIMITS.textareaMax + " 字");
         return;
-      case "number": {
+      case "number":
+      case "range": {
         if (typeof value !== "number" || !isFinite(value)) { err(path, "expected_number", field.label + " 必须是有限数字"); return; }
         var min = field.min;
         var max = field.max;
@@ -369,6 +378,7 @@
     Object.keys(THEME_ENUMS).forEach(function (key) { if (typeof ov[key] === "string") out[key] = ov[key]; });
     Object.keys(THEME_NUMBERS).forEach(function (key) { if (typeof ov[key] === "number") out[key] = ov[key]; });
     ["headingWeight", "bodyWeight"].forEach(function (key) { if (typeof ov[key] === "number") out[key] = ov[key]; });
+    if (typeof ov.backgroundPreset === "string") out.backgroundPreset = ov.backgroundPreset;
     return out;
   }
   function normalize(aiResult, options) {
@@ -440,6 +450,32 @@
     candidate.themeOverrides = includeTheme
       ? cloneJson(normalized.themeOverrides || {})
       : cloneJson(isPlainObject(currentDoc.themeOverrides) ? currentDoc.themeOverrides : {});
+    /* 背景预设（Task #19）：AI 输出 backgroundPreset 时写入候选文档的图案背景。
+       取色需要主题色 —— 用 AI 覆盖色（若有）合成临时主题，无覆盖则用当前文档主题。
+       未勾选主题或写 "none" 时保留当前文档背景不动。 */
+    if (includeTheme) {
+      var presetId = normalized.themeOverrides && normalized.themeOverrides.backgroundPreset;
+      var engine = global.BannerBuilderBackgrounds;
+      if (presetId === "none") {
+        candidate.background = null;
+        candidate.backgroundImage = null;
+      } else if (presetId && engine && typeof engine.presetById === "function") {
+        var preset = engine.presetById(presetId);
+        if (preset) {
+          var sizeInfo = C.CANVAS_PRESETS[candidate.ratio] || C.CANVAS_PRESETS[C.DEFAULT_RATIO];
+          var st = Object.assign({}, C.themeStyle(currentDoc.theme));
+          var aiOv = normalized.themeOverrides || {};
+          THEME_BASE_COLORS.forEach(function (key) { if (typeof aiOv[key] === "string") st[key] = aiOv[key]; });
+          var bgParams = engine.presetToParams(preset, st, {
+            width: sizeInfo.pageWidth,
+            height: sizeInfo.pageHeight,
+            fieldHeight: sizeInfo.pageHeight,
+            fieldWidth: sizeInfo.pageWidth,
+          });
+          candidate.background = { type: "parametric", params: bgParams, presetId: preset.id };
+        }
+      }
+    }
     candidate.pages = normalized.pages.map(function (sourcePage) {
       var page = M.createPage();
       page.name = sourcePage.name;
@@ -475,6 +511,7 @@
       case "text": return "文本，" + LIMITS.textMax + " 字内";
       case "textarea": return "多行文本，" + LIMITS.textareaMax + " 字内";
       case "number":
+      case "range":
         return "数字" + (field.min != null ? "，范围 " + field.min + "-" + field.max + (field.step != null ? "，步进 " + field.step : "") : "");
       case "select": {
         var options = field.options || [];
@@ -515,6 +552,31 @@
     });
     return lines.join("\n");
   }
+  /* ===== 背景预设目录（Task #19）：进提示词与生成协议 =====
+     AI 可在 themeOverrides.backgroundPreset 中输出预设 id（枚举），
+     应用时经引擎 presetToParams 以当前主题取色写入 doc.background。
+     目录文案由 buildBackgroundCatalog() 从引擎 PRESETS 动态生成，与 UI 预设库同源。 */
+  var BG_PRESET_IDS = [];
+  var BG_PRESET_LABELS = {};
+  function initBackgroundCatalog() {
+    var engine = global.BannerBuilderBackgrounds;
+    if (!engine || !Array.isArray(engine.PRESETS)) return;
+    BG_PRESET_IDS = engine.PRESETS.map(function (p) { return p.id; });
+    engine.PRESETS.forEach(function (p) { BG_PRESET_LABELS[p.id] = p.label; });
+  }
+  function buildBackgroundCatalog() {
+    initBackgroundCatalog();
+    var engine = global.BannerBuilderBackgrounds;
+    if (!engine || !BG_PRESET_IDS.length) return "";
+    var lines = [];
+    lines.push("可选背景预设（backgroundPreset 的取值，二选一填写）:");
+    engine.PRESETS.forEach(function (p) {
+      lines.push("- " + p.id + " = " + p.label + "（" + p.hint + (p.colorMode === "fixed" ? "，固定配色" : "，配色跟随主题") + "）");
+    });
+    lines.push("- \"none\" = 不设置图案背景（保持纯色底）");
+    return lines.join("\n");
+  }
+
   function buildThemeSection() {
     var lines = [];
     lines.push("【主题微调协议（本次必须包含 themeOverrides）】");
@@ -537,6 +599,8 @@
     lines.push("- h1Scale / h2Scale / h3Scale / bodyScale / captionScale 各级字号缩放，数字 0.7-1.3，步进 0.05");
     lines.push("- headingWeight / bodyWeight 字重，只能为: " + THEME_WEIGHTS.join(" / "));
     lines.push("- lineHeight 行距倍率，数字 0.8-2，步进 0.05；letterSpacing 字距，数字 -2 到 8，步进 0.5");
+    lines.push("- backgroundPreset 可选：从下方背景预设目录中选择一个 id，工具会按当前主题配色生成整条图案背景；不需要背景或不确定时写 \"none\" 或省略");
+    lines.push(buildBackgroundCatalog());
     lines.push("- 不允许出现 " + THEME_FORBIDDEN_KEYS.map(function (k) { return "\"" + k + "\""; }).join(" / ") + " 或其他任何字段");
     return lines.join("\n");
   }
@@ -575,6 +639,7 @@
         soft: "#edf4ee",
         radius: 18,
         divider: "dots",
+        backgroundPreset: "fade-linear",
       };
     }
     return doc;

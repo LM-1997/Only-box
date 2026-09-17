@@ -6,7 +6,7 @@ const window = {};
 /* document 桩：banner-builder.js 末尾按 readyState 决定是否 init，"loading" + 空 addEventListener 可让模块安全加载而不启动 UI */
 const documentStub = { readyState: "loading", addEventListener: function () {}, removeEventListener: function () {} };
 const ctx = vm.createContext({ window, console, document: documentStub });
-["data/fonts.js", "js/banner-builder-themes.js", "js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js", "js/banner-builder-ai-document.js"].forEach(function (file) {
+["data/fonts.js", "js/banner-builder-themes.js", "js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js", "js/banner-builder-backgrounds.js", "js/banner-builder-ai-document.js"].forEach(function (file) {
   vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
 });
 
@@ -919,6 +919,44 @@ expectError("text", false, "", "root_type", "顶层字符串被拒绝");
     render: noopRender,
   });
   assert.equal(okNoThemeKeep.doc.themeOverrides.primary, "#1e7a4f", "未勾选时候选保留原文档主题覆盖");
+
+  /* ===== backgroundPreset 背景预设协议（Task #19） ===== */
+  const BG = window.BannerBuilderBackgrounds;
+
+  /* 合法预设 id 通过校验并进入候选文档背景 */
+  const withBg = Object.assign(validAiDoc(), { themeOverrides: Object.assign(validThemeOverrides(), { backgroundPreset: "fade-linear" }) });
+  const okBg = AD.applyPipeline(JSON.stringify(withBg), {
+    includeTheme: true,
+    currentDoc: current,
+    replace: function (doc) { holder.doc = doc; },
+    render: noopRender,
+  });
+  assert.equal(okBg.ok, true, "带背景预设的管线成功");
+  assert.ok(okBg.doc.background && okBg.doc.background.type === "parametric", "候选文档写入图案背景");
+  assert.equal(okBg.doc.background.presetId, "fade-linear", "背景记录携带 presetId");
+  assert.ok(okBg.doc.background.params && typeof okBg.doc.background.params.spacing === "number", "背景记录含引擎归一化参数");
+  /* AI 主题色参与取色：primary 覆盖后图案 fg 应等于 AI primary */
+  assert.equal(okBg.doc.background.params.fg, "#1e7a4f", "图案颜色取自 AI 主题 primary");
+
+  /* "none" 清除背景 */
+  const withNone = Object.assign(validAiDoc(), { themeOverrides: Object.assign(validThemeOverrides(), { backgroundPreset: "none" }) });
+  const okNone = AD.applyPipeline(JSON.stringify(withNone), {
+    includeTheme: true,
+    currentDoc: current,
+    replace: function (doc) { holder.doc = doc; },
+    render: noopRender,
+  });
+  assert.equal(okNone.ok, true, "backgroundPreset=none 管线成功");
+  assert.equal(okNone.doc.background, null, "none 清除候选背景");
+
+  /* 非法预设 id 被拒绝 */
+  expectError(Object.assign(validAiDoc(), { themeOverrides: Object.assign(validThemeOverrides(), { backgroundPreset: "not-a-preset" }) }), true, "backgroundPreset", "invalid_option", "非法背景预设 id 被拒绝");
+
+  /* 提示词包含背景预设目录 */
+  const promptBg = AD.buildPrompt({ ratio: "9:16", screenMode: "split", themeId: "forest", themeLabel: "森林绿", fontFamily: "sans", headingFont: "", bodyFont: "", includeTheme: true });
+  assert.ok(promptBg.includes("backgroundPreset"), "提示词说明 backgroundPreset 字段");
+  assert.ok(promptBg.includes("fade-linear") && promptBg.includes("细点阵"), "提示词包含背景预设目录");
+  assert.ok(promptBg.includes("固定配色") && promptBg.includes("配色跟随主题"), "提示词区分固定配色与跟随主题预设");
 }
 
 console.log("AI 整份长条数据层测试全部通过");

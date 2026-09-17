@@ -12,7 +12,7 @@
     zoom: 0.46,
     /* BB-R18：用户手动调过缩放后为 true，自动适配不再抢占 */
     zoomManual: false,
-    step: "setup",
+    step: "theme-bg",
     sideView: "library",
     /* AI 整份生成的应用前内存快照：只存内存，不写 localStorage，不进入草稿文件；撤销一次后清空 */
     aiUndoSnapshot: null,
@@ -216,6 +216,80 @@
     if (!value || !value.url) return "";
     return "linear-gradient(rgba(255,255,255,.18),rgba(255,255,255,.18)),url(\"" + value.url + "\")";
   }
+
+  /* ===== 图案背景（Task #18）：三管线共用的渲染辅助 =====
+     doc.background = { type:"parametric", params:{...}, presetId? }
+     - DOM 预览：parametricBackgroundDataUrl() 生成 dataURL 缓存，作 backgroundImage 铺底；
+     - PNG/PSD/PDF：drawPageToCanvas / legacyExportPsd / scene-model 消费同一引擎；
+     - 旧文档（无 background 字段）零影响，backgroundColor/backgroundImage/pattern 语义保留。 */
+  const BG = function () { return global.BannerBuilderBackgrounds; };
+
+  function docBackgroundOf(target) {
+    const bg = target && target.background;
+    return (bg && bg.type === "parametric" && bg.params && typeof bg.params === "object") ? bg : null;
+  }
+
+  /* 图案背景 → dataURL（带缓存；参数指纹变化才重算）。width/height 按目标尺寸覆写。 */
+  const _bgRenderCache = { key: "", url: "" };
+  function parametricBackgroundDataUrl(bgRecord, width, height) {
+    const engine = BG();
+    if (!engine || !bgRecord) return "";
+    const params = Object.assign({}, bgRecord.params, { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) });
+    const key = JSON.stringify(params);
+    if (_bgRenderCache.key === key) return _bgRenderCache.url;
+    try {
+      const canvas = engine.renderToCanvas(params);
+      const url = canvas.toDataURL("image/png");
+      _bgRenderCache.key = key; _bgRenderCache.url = url;
+      return url;
+    } catch (error) { return ""; }
+  }
+  function invalidateBackgroundRenderCache() { _bgRenderCache.key = ""; _bgRenderCache.url = ""; }
+
+  /* 图案背景的底色（params.bg）：DOM/导出在无图案时也用它铺底 */
+  function parametricBackgroundColor(bgRecord) {
+    const engine = BG();
+    if (!engine || !bgRecord) return "";
+    try { return engine.normalize(bgRecord.params).bg; } catch (error) { return ""; }
+  }
+
+  /* ===== 背景冲突消解（图案背景 vs 底色/底图）=====
+     规则：图案背景（doc.background）激活时，其 params.bg 即最终底色——
+     底色字段（backgroundColor）仅作为图案底色的初始值与移除图案后的回退；
+     底图（backgroundImage）在图案背景激活期间被忽略（图案自带底色铺底）。
+     各管线（DOM/PNG/PSD/长图）统一走 effectiveBackgroundColor()，不再各自为政。 */
+  function effectiveBackgroundColor(page) {
+    const target = page || state.doc;
+    const paramBg = docBackgroundOf(target) || (target !== state.doc ? docBackgroundOf(state.doc) : null);
+    if (paramBg) {
+      const fromPattern = parametricBackgroundColor(paramBg);
+      if (fromPattern) return fromPattern;
+    }
+    return (page && page.backgroundColor) || state.doc.backgroundColor || "#ffffff";
+  }
+  function backgroundPatternActive(page) {
+    const target = page || state.doc;
+    return !!(docBackgroundOf(target) || (target !== state.doc ? docBackgroundOf(state.doc) : null));
+  }
+
+  /* ===== 主题跟随背景（Task #15）：切换主题时，未锁定颜色的背景预设重新取主题色 =====
+     themeLocked = true 表示用户在「微调背景图案」里显式改过 fg/bg，此后不再跟随主题；
+     未锁定 + 预设 colorMode 为 theme → 换主题即用新主题的 soft/primary 重新着色。 */
+  function rethemeParametricBackground() {
+    const engine = BG();
+    const bg = docBackgroundOf(state.doc);
+    if (!engine || !bg || bg.themeLocked === true) return;
+    const preset = engine.presetById(bg.presetId);
+    if (!preset || preset.colorMode !== "theme") return;
+    const st = artTheme();
+    const colored = engine.applyThemeColors(bg.params, st);
+    /* 保留用户已调过的非颜色参数，仅换 fg/bg */
+    bg.params.fg = colored.fg;
+    bg.params.bg = colored.bg;
+    /* 底色跟随主题时同步整条底色（冲突消解：移除图案后的回退色与所见一致） */
+    if (colored.bg) state.doc.backgroundColor = colored.bg;
+  }
+
 
   function imageSrc(value) {
     return value && value.url ? value.url : "";
@@ -486,11 +560,50 @@
       if (field.type === "select") renderAll(); else scheduleCanvas();
     });
     wrap.appendChild(input);
-    /* range 类型：值回显 */
+    /* range 类型：滑块 + 数值输入复合控件（可拖动、也可直接键入 px 数值）。
+       键入过程中不回写输入框（避免打断输入），失焦/回车时收敛到合法范围。 */
     if (field.type === "range") {
-      const readout = el("span", "bb-range-readout", input.value + "px");
-      input.addEventListener("input", function () { readout.textContent = input.value + "px"; });
-      wrap.appendChild(readout);
+      const rMin = Number(field.min != null ? field.min : 0);
+      const rMax = Number(field.max != null ? field.max : rMin + 100);
+      const rStep = Number(field.step) > 0 ? Number(field.step) : 1;
+      const clampToStep = function (v) {
+        let n = Math.round(v / rStep) * rStep;
+        n = Math.min(rMax, Math.max(rMin, n));
+        return n;
+      };
+      const row = el("div", "bb-range-row");
+      input.classList.add("bb-range-slider");
+      row.appendChild(input);
+      const num = el("input", "bb-input bb-range-number");
+      num.type = "number";
+      num.min = rMin; num.max = rMax; num.step = rStep;
+      num.value = input.value;
+      num.title = "直接输入 " + rMin + "-" + rMax + " px";
+      num.addEventListener("input", function () {
+        const v = Number(num.value);
+        if (num.value === "" || !Number.isFinite(v)) return; /* 键入中间态不回写 */
+        const clamped = clampToStep(v);
+        obj[field.key] = clamped;
+        input.value = String(clamped);
+        scheduleCanvas();
+      });
+      const settle = function () {
+        const raw = num.value;
+        const v = Number(raw);
+        const base = raw === "" || !Number.isFinite(v) ? (field.fallback != null ? field.fallback : rMin) : v;
+        const clamped = clampToStep(base);
+        num.value = String(clamped);
+        input.value = String(clamped);
+        obj[field.key] = clamped;
+        scheduleCanvas();
+      };
+      num.addEventListener("change", settle);
+      num.addEventListener("blur", settle);
+      input.addEventListener("input", function () { num.value = input.value; });
+      row.appendChild(num);
+      const unit = el("span", "bb-range-unit", "px");
+      row.appendChild(unit);
+      wrap.appendChild(row);
     }
     if (field.type === "color" && field.optional) {
       const clear = el("button", "bb-mini-btn", "跟随默认");
@@ -599,6 +712,18 @@
     const img = el("img", cls || "bb-art-image"); img.src = src; img.alt = alt || ""; return img;
   }
 
+  /* 板块图片大小统一读取：data[key] 未设置（undefined/null/空）→ 返回 0 表示「走模板默认」，
+     渲染端各自按历史公式取默认；设置 → clamp 到 [min,max] 并按 step 收敛。
+     与 PNG 导出（paint*）、场景模型（scene-model）三处同源。 */
+  function imageSizeOf(data, key, min, max, step) {
+    const raw = data[key];
+    if (raw == null || raw === "" || !Number.isFinite(Number(raw))) return 0;
+    const st = Number(step) > 0 ? Number(step) : 1;
+    let v = Math.round(Number(raw) / st) * st;
+    v = Math.min(max, Math.max(min, v));
+    return v;
+  }
+
   function addVisualBody(box, module) {
     const data = module.data;
     const tpl = data.template || "";
@@ -626,6 +751,9 @@
 
   function renderCover(box, data, tpl) {
     const img = visualImage(imageSrc(data.mainImage), "bb-art-cover-image", "主视觉图");
+    /* imageSize：主视觉高度（0=模板默认）；info/split 模板生效，immersive/minimal 不受影响 */
+    const userH = imageSizeOf(data, "imageSize", 0, 1000, 4);
+    if (userH > 0 && img) img.style.maxHeight = userH + "px";
     if (tpl === "info") {
       if (img) { const figure = el("div", "bb-cover-figure"); figure.appendChild(img); box.appendChild(figure); }
       const copy = el("div", "bb-cover-info-copy");
@@ -690,6 +818,9 @@
 
   function renderTicket(box, data, tpl) {
     const qr = visualImage(imageSrc(data.qrImage), "bb-art-qr", "购票二维码");
+    /* qrSize：二维码边长（px，画布坐标系），未设置走 CSS 默认 208 */
+    const qrPx = imageSizeOf(data, "qrSize", 120, 320, 4);
+    if (qrPx && qr) { qr.style.width = qrPx + "px"; qr.style.height = qrPx + "px"; }
     const tiers = data.tiers || [];
     if (tpl === "ticket-cards") {
       const grid = el("div", "bb-ticket-cards");
@@ -744,8 +875,8 @@
       box.appendChild(list);
       if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
     }
-    /* iconSize：整板块统一图标大小（px，画布坐标系），DOM 预览与导出同源 */
-    const size = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
+    /* iconSize：整板块统一图标大小（px，画布坐标系），DOM 预览与导出同源；上限放宽到接近板块容器宽 */
+    const size = Math.round(Math.min(600, Math.max(48, Number(data.iconSize) || 104)));
     box.style.setProperty("--bb-mat-icon-size", size + "px");
     addGrid(box, items, data.columns, "icon", "label", "物料条目");
     if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
@@ -753,6 +884,9 @@
 
   function renderCrossPromo(box, data, tpl) {
     const img = visualImage(imageSrc(data.icon), "bb-art-icon", "联动方图标");
+    /* iconSize：联动图标边长（px，画布坐标系），未设置走 CSS 默认 104 */
+    const iconPx = imageSizeOf(data, "iconSize", 60, 220, 4);
+    if (iconPx && img) { img.style.width = iconPx + "px"; img.style.height = iconPx + "px"; }
     if (tpl === "promo-strip") {
       const strip = el("div", "bb-promo-strip");
       if (img) strip.appendChild(img);
@@ -802,6 +936,9 @@
 
   function renderVenue(box, data, tpl) {
     const img = visualImage(imageSrc(data.photo), "bb-art-side-image", "场地照片");
+    /* photoSize：venue-side 模板右侧照片边长（px，画布坐标系），未设置走 CSS 默认 162 */
+    const photoPx = imageSizeOf(data, "photoSize", 100, 400, 4);
+    if (photoPx && img && tpl !== "venue-focus" && tpl !== "venue-map") { img.style.width = photoPx + "px"; img.style.height = photoPx + "px"; }
     const tags = data.tags || [];
     function buildTags() { const chips = el("div", "bb-venue-tags"); tags.forEach(function (t) { chips.appendChild(el("span", "bb-venue-tag", t)); }); return chips; }
     if (tpl === "venue-focus") {
@@ -869,6 +1006,9 @@
     items.forEach(function (item) {
       const r = el("div", "bb-art-program-row");
       const img = visualImage(imageSrc(item.image), "bb-art-program-image", "节目配图");
+      /* thumbWidth：节目列表配图宽度（px，画布坐标系），未设置走 CSS 默认 162；高度同宽（正方形） */
+      const tw = imageSizeOf(data, "thumbWidth", 80, 300, 4);
+      if (tw && img) { img.style.width = tw + "px"; img.style.height = tw + "px"; }
       if (item.mediaSide === "left" && img) r.appendChild(img);
       const c = el("div");
       if (item.tag) c.appendChild(el("b", null, text(item.tag, "节目")));
@@ -883,9 +1023,10 @@
 
   function renderPerformer(box, data, tpl) {
     const cast = data.cast || [];
-    /* 头像尺寸（按比例换算高度，宽度固定为设计宽的一定比例） */
+    /* 头像尺寸（按比例换算高度，宽度 = avatarWidth 或默认 150） */
+    const avatarW = imageSizeOf(data, "avatarWidth", 80, 260, 4) || 150;
     function avatarSize(ratio) {
-      const w = 150;
+      const w = avatarW;
       switch (ratio) {
         case "1:1": return { w: w, h: Math.round(w) };
         case "3:4": return { w: w, h: Math.round(w * 4 / 3) };
@@ -955,11 +1096,14 @@
 
   function renderBooth(box, data, tpl) {
     const items = data.items || [];
+    /* imageWidth：摊位卡片图边长（px，画布坐标系），未设置走 CSS 默认 150 */
+    const boothImgPx = imageSizeOf(data, "imageWidth", 80, 260, 4);
     if (tpl === "booth-cards") {
       const list = el("div", "bb-booth-cards");
       items.forEach(function (item) {
         const card = el("div", "bb-booth-card");
         const img = visualImage(imageSrc(item.image), "bb-booth-card-image", "摊位图");
+        if (boothImgPx && img) { img.style.width = boothImgPx + "px"; img.style.height = boothImgPx + "px"; }
         if (img) card.appendChild(img);
         const c = el("div");
         c.appendChild(el("strong", null, text(item.name, "摊位")));
@@ -975,6 +1119,8 @@
       if (!items.length) list.appendChild(el("p", "bb-art-caption", "暂无摊位"));
       box.appendChild(list); return;
     }
+    /* booth-grid：网格图高度 = imageWidth（px，画布坐标系），未设置走 CSS 默认 187 */
+    if (boothImgPx) box.style.setProperty("--bb-mat-icon-size", boothImgPx + "px");
     addGrid(box, items, data.columns, "image", "name", "摊位条目", "desc");
   }
 
@@ -1104,6 +1250,40 @@
     return box;
   }
 
+  /* ===== 第 0 步 throwaway 预览卡（Task #16）：空文档时的主题/背景观感演示 =====
+     纯 DOM 展示（bb-dom-only，不进导出），全部取色走主题 CSS 变量，
+     切主题/换背景/微调颜色实时反映。不写入 doc，进入步骤 1 后自然消失。 */
+  function buildThemeBgPreviewCard() {
+    const wrap = el("div", "bb-tbg-preview bb-dom-only");
+    const tag = el("div", "bb-tbg-preview-tag", "预览示意");
+    tag.title = "这是空文档时的临时预览，仅用于查看主题与背景效果，不会保存或导出";
+    wrap.appendChild(tag);
+
+    const hero = el("div", "bb-tbg-preview-hero");
+    hero.appendChild(el("div", "bb-tbg-preview-kicker", "ONLY BOX · LIVE"));
+    hero.appendChild(el("div", "bb-tbg-preview-title", "主题预览标题"));
+    hero.appendChild(el("div", "bb-tbg-preview-sub", "这是当前主题的标题与正文观感"));
+    wrap.appendChild(hero);
+
+    const card = el("div", "bb-tbg-preview-card");
+    card.appendChild(el("div", "bb-tbg-preview-card-title", "板块卡片样式"));
+    const lines = el("div", "bb-tbg-preview-lines");
+    ["正文行示例：当前主题的正文颜色与行距", "强调信息用主题强调色高亮显示"].forEach(function (text) {
+      lines.appendChild(el("span", null, text));
+    });
+    card.appendChild(lines);
+    const chips = el("div", "bb-tbg-preview-chips");
+    ["标签一", "标签二", "标签三"].forEach(function (text) {
+      chips.appendChild(el("span", "bb-tbg-preview-chip", text));
+    });
+    card.appendChild(chips);
+    wrap.appendChild(card);
+
+    const btn = el("div", "bb-tbg-preview-btn", "主题按钮色");
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
   function buildPage(page, index, continuous) {
     const card = el("section", "bb-page-card"); card.dataset.pageId = page.id;
     const isActive = page.id === state.activePageId;
@@ -1122,19 +1302,34 @@
   /* 方案 §2.2：DOM 预览字重吸附——标题基准 800 吸附到当前标题字体实际档位 */
   canvas.style.setProperty("--bb-weight-heading", String(C.snapWeight(C.FONTS[state.doc.headingFont || state.doc.fontFamily || "sans"] || C.FONTS.sans, 800)));
     canvas.style.setProperty("--bb-font-body", C.bodyFontStack(state.doc));
-    canvas.style.setProperty("--bb-page-bg", page.backgroundColor || state.doc.backgroundColor || "#ffffff");
+    canvas.style.setProperty("--bb-page-bg", effectiveBackgroundColor(page));
     canvas.classList.add("bb-pattern-" + safeClassSuffix(artTheme().pattern, "none"));
     if (continuous) {
       if (page.backgroundColor) canvas.style.backgroundColor = page.backgroundColor;
-      if (page.backgroundImage && page.backgroundImage.url) { canvas.style.backgroundImage = docBackgroundStyle(page.backgroundImage); canvas.style.backgroundSize = "cover"; }
+      const pageParamBg = docBackgroundOf(page);
+      if (pageParamBg) {
+        const url = parametricBackgroundDataUrl(pageParamBg, pageSize().pageWidth, pageSize().pageHeight);
+        if (url) { canvas.style.backgroundImage = "url(\"" + url + "\")"; canvas.style.backgroundSize = "100% 100%"; }
+      }
     } else {
-      const pageColor = page.backgroundColor || state.doc.backgroundColor || "#ffffff";
+      const pageColor = effectiveBackgroundColor(page);
       canvas.style.backgroundColor = pageColor;
-      const pageImage = page.backgroundImage || state.doc.backgroundImage;
+      const pageImage = backgroundPatternActive(page) ? null : (page.backgroundImage || state.doc.backgroundImage);
       if (pageImage && pageImage.url) { canvas.style.backgroundImage = docBackgroundStyle(pageImage); canvas.style.backgroundSize = "cover"; }
+      const pageParamBg = docBackgroundOf(page);
+      const docParamBg = docBackgroundOf(state.doc);
+      const paramBg = pageParamBg || docParamBg;
+      if (paramBg) {
+        const url = parametricBackgroundDataUrl(paramBg, pageSize().pageWidth, pageSize().pageHeight);
+        if (url) { canvas.style.backgroundImage = "url(\"" + url + "\")"; canvas.style.backgroundSize = "100% 100%"; }
+      }
     }
     if (!page.modules.length) {
-      if (continuous) {
+      if (state.step === "theme-bg") {
+        /* 第 0 步空文档：throwaway 预览（纯 DOM 演示卡，不入文档不导出），
+           让用户在选主题/背景时看到真实观感；进入后续步骤自动消失。 */
+        canvas.appendChild(buildThemeBgPreviewCard());
+      } else if (continuous) {
         /* 连续模式空屏：不显示「添加第一个板块」提示，仅留轻量可点选占位；导出时整块隐藏不占高度 */
         canvas.classList.add("bb-empty-screen", "bb-dom-only");
       } else {
@@ -1170,7 +1365,9 @@
       const strip = el("div", "bb-strip");
       strip.style.width = pageSize().pageWidth + "px"; strip.style.zoom = state.zoom;
       strip.style.backgroundColor = state.doc.backgroundColor || "#ffffff";
-      if (state.doc.backgroundImage && state.doc.backgroundImage.url) { strip.style.backgroundImage = docBackgroundStyle(state.doc.backgroundImage); strip.style.backgroundSize = "cover"; }
+      /* 图案背景激活时忽略整条底图（图案自带底色铺底），避免双层背景冲突 */
+      const stripParamBg = docBackgroundOf(state.doc);
+      if (!stripParamBg && state.doc.backgroundImage && state.doc.backgroundImage.url) { strip.style.backgroundImage = docBackgroundStyle(state.doc.backgroundImage); strip.style.backgroundSize = "cover"; }
       state.doc.pages.forEach(function (page, index) { strip.appendChild(buildPage(page, index, true)); });
       strip.style.fontFamily = C.headingFontStack(state.doc);
       applyThemeVars(strip);
@@ -1206,7 +1403,7 @@
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
-    ["setup", "edit", "export"].forEach(function (key) {
+    ["theme-bg", "setup", "edit", "export"].forEach(function (key) {
       const bar = els.stepToolbars[key];
       if (bar) bar.hidden = key !== state.step;
     });
@@ -1575,7 +1772,7 @@
     themeCheckLabel.appendChild(themeCheck);
     themeCheckLabel.appendChild(document.createTextNode("同时生成主题"));
     modal.appendChild(themeCheckLabel);
-    modal.appendChild(el("p", null, "勾选后 AI 会额外输出当前主题的配色与风格微调参数（适合支持看图的 AI 配合参考图使用）；默认不勾选，沿用当前主题与已有微调。"));
+    modal.appendChild(el("p", null, "勾选后 AI 会额外输出当前主题的配色与风格微调参数，并可从背景预设目录中选择整条图案背景（适合支持看图的 AI 配合参考图使用）；默认不勾选，沿用当前主题与已有微调。"));
 
     const promptHead = el("div");
     promptHead.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:14px 0 5px";
@@ -1752,6 +1949,197 @@
      无选中（edit 步骤）→ 当前屏设置 + 文档设置入口
      选中板块 → 板块编辑
      export 步骤 → 导出面板（buildExportPanel） */
+  /* ===== 第 0 步「主题与背景」面板：可视化主题选择 + 背景预设库（Task #15/#16） =====
+     - 主题：色卡网格直接点选（19 内置 + 用户导入主题），切换逻辑与文档设置面板下拉一致（字体跟随规则）；
+     - 背景：16 个图案预设缩略图（主题取色预设随当前主题实时换色）+ 纯色/无背景；
+     - 选中预设写入 doc.background（type:"parametric"），三管线（DOM/PNG/PSD-PDF）自动消费；
+     - 空文档时画布显示 throwaway 预览（buildPage 空屏提示已有），真实文档直接预览真实内容。 */
+  function buildThemeBgPanel() {
+    const wrap = el("div");
+    wrap.appendChild(el("div", "bb-panel-divider", "主题配色"));
+    wrap.appendChild(buildThemeCardGrid());
+
+    wrap.appendChild(el("div", "bb-panel-divider", "整条背景"));
+    wrap.appendChild(buildBackgroundPresetGrid());
+    return wrap;
+  }
+
+  /* 主题色卡网格：每张卡显示主题 5 色条 + 名称，点选即切换（含 AI 导入的自定义主题） */
+  function buildThemeCardGrid() {
+    const wrap = el("div", "bb-tbg-theme-grid");
+    const themeImporter = global.BannerBuilderThemeImporter;
+    const options = C.getThemeOptions();
+    options.forEach(function (option) {
+      const st = C.themeStyle(option.value);
+      const isCustom = themeImporter && themeImporter.isCustom(option.value);
+      const card = el("button", "bb-tbg-theme-card" + (option.value === state.doc.theme ? " is-active" : ""));
+      card.type = "button";
+      card.title = (isCustom ? "已导入主题 · " : "") + (st.label || option.label);
+      card.setAttribute("aria-pressed", option.value === state.doc.theme ? "true" : "false");
+      const swatch = el("span", "bb-tbg-theme-swatch");
+      [st.primary, st.primaryDark, st.primarySoft, st.accent, st.soft].forEach(function (color, i) {
+        const chip = el("span", "bb-tbg-theme-chip");
+        chip.style.background = /^#[0-9a-f]{6}$/i.test(String(color)) ? color : "#ffffff";
+        if (i === 0) chip.classList.add("is-primary");
+        swatch.appendChild(chip);
+      });
+      card.appendChild(swatch);
+      card.appendChild(el("span", "bb-tbg-theme-name", (isCustom ? "★ " : "") + option.label));
+      card.addEventListener("click", function () { applyThemeChoice(option.value); });
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
+
+  /* 主题切换统一入口：与文档设置面板下拉完全同语义（字体跟随 + themeDefinition 清理） */
+  function applyThemeChoice(themeId) {
+    if (themeId === state.doc.theme) return;
+    const prev = state.doc.theme;
+    state.doc.theme = themeId;
+    state.doc.themeDefinition = null;
+    const nextSt = C.themeStyle(themeId);
+    const prevSt = C.themeStyle(prev);
+    if (state.doc.fontManual === true) {
+      if (prevSt.headingFont && state.doc.headingFont === prevSt.headingFont) state.doc.headingFont = nextSt.headingFont || "";
+      if (prevSt.bodyFont && state.doc.bodyFont === prevSt.bodyFont) state.doc.bodyFont = nextSt.bodyFont || "";
+    } else {
+      state.doc.headingFont = nextSt.headingFont || "";
+      state.doc.bodyFont = nextSt.bodyFont || "";
+    }
+    if (state.doc.headingFont) ensureFont(state.doc.headingFont);
+    if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
+    rethemeParametricBackground();
+    invalidateBackgroundRenderCache();
+    renderAll();
+  }
+
+  /* 背景预设网格：无背景 / 纯色 / 16 个图案预设（canvas 缩略图实时渲染，主题取色预设跟随当前主题） */
+  function buildBackgroundPresetGrid() {
+    const wrap = el("div");
+    const engine = BG();
+    const docBg = docBackgroundOf(state.doc);
+
+    /* 当前背景状态行 */
+    const status = el("p", "bb-tbg-bg-status");
+    if (docBg) {
+      const preset = engine && engine.presetById(docBg.presetId);
+      status.textContent = "当前背景：" + (preset ? preset.label : "自定义图案");
+    } else if (state.doc.backgroundImage && state.doc.backgroundImage.url) {
+      status.textContent = "当前背景：自定义底图（在编辑步骤可调整）";
+    } else {
+      status.textContent = "当前背景：纯色 " + (state.doc.backgroundColor || "#ffffff");
+    }
+    wrap.appendChild(status);
+
+    const grid = el("div", "bb-tbg-bg-grid");
+    const size = pageSize();
+
+    /* 无背景（清除图案背景与底图，回退底色） */
+    grid.appendChild(buildBgPresetCard("none", "无背景", "纯色底", null, !docBg && !(state.doc.backgroundImage && state.doc.backgroundImage.url)));
+
+    /* 图案预设 */
+    if (engine) {
+      engine.PRESETS.forEach(function (preset) {
+        const active = !!(docBg && docBg.presetId === preset.id);
+        grid.appendChild(buildBgPresetCard(preset.id, preset.label, preset.hint, preset, active));
+      });
+    }
+    wrap.appendChild(grid);
+
+    /* 预设参数微调入口（选中图案背景后可用） */
+    const tuneRow = el("div", "bb-field");
+    const tuneBtn = el("button", "bb-btn ghost", "微调背景图案");
+    tuneBtn.type = "button";
+    tuneBtn.style.cssText = "width:100%";
+    tuneBtn.disabled = !docBg;
+    if (!docBg) tuneBtn.title = "先从上方选择一个图案背景，再微调参数";
+    else tuneBtn.title = "调整图案的密度、尺寸、透明度、颜色与形状";
+    tuneBtn.addEventListener("click", function () { if (docBackgroundOf(state.doc)) showBackgroundTweakModal(); });
+    tuneRow.appendChild(tuneBtn);
+    wrap.appendChild(tuneRow);
+
+    /* 缩略图渲染：预设 → 小 canvas（延迟到插入 DOM 后批量执行，避免阻塞面板构建） */
+    requestAnimationFrame(function () { renderBgPresetThumbnails(grid, size); });
+    return wrap;
+  }
+
+  /* 单个背景预设卡片（缩略图占位 + 文案），data-preset-id 供批量渲染定位 */
+  function buildBgPresetCard(presetId, label, hint, preset, active) {
+    const card = el("button", "bb-tbg-bg-card" + (active ? " is-active" : ""));
+    card.type = "button";
+    card.dataset.presetId = presetId;
+    card.setAttribute("aria-pressed", active ? "true" : "false");
+    const thumb = el("span", "bb-tbg-bg-thumb");
+    const canvas = document.createElement("canvas");
+    canvas.width = 132; canvas.height = 176;
+    thumb.appendChild(canvas);
+    card.appendChild(thumb);
+    const meta = el("span", "bb-tbg-bg-meta");
+    meta.appendChild(el("strong", null, label));
+    meta.appendChild(el("small", null, hint));
+    card.appendChild(meta);
+    card.addEventListener("click", function () { applyBackgroundPreset(presetId, preset); });
+    return card;
+  }
+
+  /* 网格内全部缩略图 canvas 渲染（一次 rAF 批处理；主题取色预设用当前主题实时配色） */
+  function renderBgPresetThumbnails(grid, size) {
+    const engine = BG();
+    if (!engine) return;
+    const st = artTheme();
+    const cards = grid.querySelectorAll(".bb-tbg-bg-card[data-preset-id]");
+    Array.prototype.forEach.call(cards, function (card) {
+      const presetId = card.dataset.presetId;
+      const canvas = card.querySelector("canvas");
+      if (!canvas) return;
+      if (presetId === "none") {
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = state.doc.backgroundColor || "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "rgba(0,0,0,.08)";
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(4.5, 4.5, canvas.width - 9, canvas.height - 9);
+        return;
+      }
+      const preset = engine.presetById(presetId);
+      if (!preset) return;
+      try {
+        const params = engine.presetToParams(preset, st, {
+          width: canvas.width,
+          height: canvas.height,
+          fieldHeight: canvas.height,
+          fieldWidth: canvas.width,
+        });
+        engine.renderToCanvas(params, { canvas: canvas, width: canvas.width, height: canvas.height });
+      } catch (error) { /* 单个缩略图失败不阻塞其余 */ }
+    });
+  }
+
+  /* 背景预设应用：none 清除；preset 写入 doc.background（type:"parametric"，带 presetId） */
+  function applyBackgroundPreset(presetId, preset) {
+    const engine = BG();
+    if (presetId === "none" || !preset || !engine) {
+      state.doc.background = null;
+      state.doc.backgroundImage = null;
+      invalidateBackgroundRenderCache();
+      renderAll();
+      return;
+    }
+    const st = artTheme();
+    const size = pageSize();
+    const params = engine.presetToParams(preset, st, {
+      width: size.pageWidth,
+      height: size.pageHeight,
+      fieldHeight: size.pageHeight,
+      fieldWidth: size.pageWidth,
+    });
+    state.doc.background = { type: "parametric", params: params, presetId: preset.id };
+    /* 冲突消解：图案底色同步写回整条底色，保证移除图案后回退色与所见一致 */
+    if (params.bg) state.doc.backgroundColor = params.bg;
+    invalidateBackgroundRenderCache();
+    renderAll();
+  }
+
   function buildDocSettingsPanel() {
     const wrap = el("div");
     wrap.appendChild(el("div", "bb-panel-divider", "文档设置"));
@@ -1820,6 +2208,8 @@
       }
       if (state.doc.headingFont) ensureFont(state.doc.headingFont);
       if (state.doc.bodyFont) ensureFont(state.doc.bodyFont);
+      rethemeParametricBackground();
+      invalidateBackgroundRenderCache();
       renderAll();
     });
     themeRow.appendChild(themeSel);
@@ -1854,8 +2244,59 @@
     wrap.appendChild(fontWrap);
     /* 背景 */
     wrap.appendChild(el("div", "bb-panel-divider", "整条背景"));
-    wrap.appendChild(buildField({ key: "backgroundColor", label: "整条底色", type: "color", fallback: "#ffffff" }, state.doc));
-    wrap.appendChild(buildField({ key: "backgroundImage", label: "整条底图", type: "image" }, state.doc));
+    /* 图案背景：状态 + 快捷操作（完整预设库在第 0 步） */
+    const paramBg = docBackgroundOf(state.doc);
+    const bgQuick = el("div", "bb-field");
+    if (paramBg) {
+      const engine = BG();
+      const preset = engine && engine.presetById(paramBg.presetId);
+      bgQuick.appendChild(el("label", "bb-field-label", "图案背景：" + (preset ? preset.label : "自定义图案")));
+      const bgBtnRow = el("div");
+      bgBtnRow.style.cssText = "display:flex;gap:6px";
+      const tweakBgBtn = el("button", "bb-btn ghost", "微调图案");
+      tweakBgBtn.type = "button";
+      tweakBgBtn.style.flex = "1";
+      tweakBgBtn.addEventListener("click", showBackgroundTweakModal);
+      bgBtnRow.appendChild(tweakBgBtn);
+      const clearBgBtn = el("button", "bb-btn ghost", "移除");
+      clearBgBtn.type = "button";
+      clearBgBtn.title = "移除图案背景，回退到底色/底图";
+      clearBgBtn.addEventListener("click", function () {
+        state.doc.background = null;
+        invalidateBackgroundRenderCache();
+        renderAll();
+      });
+      bgBtnRow.appendChild(clearBgBtn);
+      bgQuick.appendChild(bgBtnRow);
+    } else {
+      bgQuick.appendChild(el("label", "bb-field-label", "图案背景：无（可到第 0 步选预设）"));
+      const goStep0Btn = el("button", "bb-btn ghost", "去第 0 步选背景");
+      goStep0Btn.type = "button";
+      goStep0Btn.style.cssText = "width:100%";
+      goStep0Btn.addEventListener("click", function () {
+        state.step = "theme-bg";
+        state.selectedModuleId = null;
+        state.sideView = "library";
+        renderAll();
+      });
+      bgQuick.appendChild(goStep0Btn);
+    }
+    wrap.appendChild(bgQuick);
+    /* 图案背景激活时底色/底图由图案承载，禁用两个控件并说明（冲突消解规则的可视化） */
+    const patternActive = !!paramBg;
+    const baseColorField = buildField({ key: "backgroundColor", label: "整条底色", type: "color", fallback: "#ffffff" }, state.doc);
+    const baseImageField = buildField({ key: "backgroundImage", label: "整条底图", type: "image" }, state.doc);
+    if (patternActive) {
+      [baseColorField, baseImageField].forEach(function (fieldWrap) {
+        fieldWrap.style.opacity = ".45";
+        fieldWrap.title = "当前已启用图案背景，底色/底图由图案承载；移除图案后可编辑";
+        fieldWrap.querySelectorAll("input,button,select").forEach(function (ctrl) { ctrl.disabled = true; });
+      });
+      const hint = el("p", "bb-hint", "图案背景启用中：底色与底图暂不生效（移除图案后恢复）");
+      wrap.appendChild(hint);
+    }
+    wrap.appendChild(baseColorField);
+    wrap.appendChild(baseImageField);
     return wrap;
   }
 
@@ -1901,6 +2342,7 @@
 
   function renderPanel() {
     els.panelBody.textContent = "";
+    if (state.step === "theme-bg") { els.panelTitle.textContent = "主题与背景"; els.panelSub.textContent = "先定基调：主题配色 + 图案背景，画布实时预览"; els.panelBody.appendChild(buildThemeBgPanel()); return; }
     if (state.step === "export") { els.panelTitle.textContent = "导出与备份"; els.panelSub.textContent = "选择输出方式，导出高清图片或可编辑文件"; els.panelBody.appendChild(buildExportPanel()); return; }
     const hit = M.findModule(state.doc, state.selectedModuleId);
     if (!hit.module) {
@@ -2559,7 +3001,7 @@
     };
     if (tpl === "info") {
       let y = y0;
-      if (img) { const h = Math.min(Math.round(w * 0.6), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 71; }
+      if (img) { const h = imageSizeOf(data, "imageSize", 0, 1000, 4) || Math.min(Math.round(w * 0.6), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 71; }
       return drawInfoCopy(y, false);
     }
     if (tpl === "minimal") {
@@ -2567,7 +3009,7 @@
     }
     if (tpl === "split") {
       let y = y0;
-      if (img) { const h = Math.min(Math.round(w * 0.64), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 75; }
+      if (img) { const h = imageSizeOf(data, "imageSize", 0, 1000, 4) || Math.min(Math.round(w * 0.64), 1000); ctx.save(); roundRectPath(ctx, x0, y, w, h, 21); ctx.clip(); coverDraw(ctx, img, x0, y, w, h); ctx.restore(); y += h + 75; }
       else { ctx.save(); roundRectPath(ctx, x0, y, w, 354, 21); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore(); y += 400; }
       return drawInfoCopy(y, false);
     }
@@ -2667,7 +3109,8 @@
     const tiers = (data.tiers || []).filter(function (t) { return t && (t.label || t.price); });
     const qr = await loadImage(data.qrImage);
     const tpl = data.template || "qr-side";
-    const qrSize = Math.round(w * 0.32);
+    /* qrSize：二维码边长（px，画布坐标系），未设置走历史默认 round(w*0.32) */
+    const qrSize = imageSizeOf(data, "qrSize", 120, 320, 4) || Math.round(w * 0.32);
     if (tpl === "ticket-focus" || tpl === "ticket-hero") {
       const first = tiers[0];
       const bandH = Math.round(w * 0.42);
@@ -2769,13 +3212,14 @@
       if (note) y = drawRich(ctx, note, x0, y + 7, w, 11, 500, artMuted(), "left", 1.5, "body") + 5;
       return y;
     }
-    /* icon-grid：图标圆角块 + 说明文字；iconSize 与 DOM 预览/PSD 同源（画布坐标系 px） */
+    /* icon-grid：图标圆角块 + 说明文字；iconSize 与 DOM 预览/PSD 同源（画布坐标系 px）。
+       上限放宽到 400（接近板块容器宽），图标按列宽自适应防溢出，大图标时文字行下移避让。 */
     const icons = await Promise.all(items.map(function (it) { return it && it.icon && it.icon.url ? loadImage(it.icon) : Promise.resolve(null); }));
     const cols = Math.max(1, Math.min(4, Number(data.columns) || 2));
     const gap = 20;
     const cw = (w - gap * (cols - 1)) / cols;
-    const iconSize = Math.round(Math.min(200, Math.max(48, Number(data.iconSize) || 104)));
-    const iconBox = Math.min(iconSize, Math.round(cw * 0.92));
+    const iconSize = Math.round(Math.min(600, Math.max(48, Number(data.iconSize) || 104)));
+    const iconBox = Math.min(iconSize, cw - 8 > 0 ? cw - 8 : cw);
     const cellH = Math.max(iconBox + 74, Math.round(cw * 1.15));
     const count = Math.max(1, items.length);
     for (let i = 0; i < count; i += 1) {
@@ -2785,7 +3229,11 @@
       ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.fillStyle = alphaColor("#ffffff", 0.78); ctx.fill(); ctx.restore();
       ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 22); ctx.strokeStyle = alphaColor(P.primary, 0.14); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
       const img = icons[i];
-      if (img) { ctx.save(); roundRectPath(ctx, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox, 24); ctx.clip(); coverDraw(ctx, img, cx + (cw - iconBox) / 2, cy + Math.round(cellH * 0.16), iconBox, iconBox); ctx.restore(); }
+      if (img) {
+        /* 大图标时图标顶部占满卡片上沿（不再 16% 内边距），文字固定在底部避让 */
+        const iconTop = iconBox > cw * 0.9 ? cy + 10 : cy + Math.round(cellH * 0.16);
+        ctx.save(); roundRectPath(ctx, cx + (cw - iconBox) / 2, iconTop, iconBox, iconBox, 24); ctx.clip(); coverDraw(ctx, img, cx + (cw - iconBox) / 2, iconTop, iconBox, iconBox); ctx.restore();
+      }
       drawRich(ctx, text(item.label, "物料条目"), cx + cw / 2, cy + cellH - 34, cw - 16, 25, 600, ink, "center", 1.35, "body");
     }
     y += Math.ceil(count / cols) * (cellH + gap) - gap;
@@ -2800,13 +3248,16 @@
     const value = data.text || "联动推广文案";
     const padY = 24;
     let innerH = 0;
+    /* iconSize：联动图标边长（px，画布坐标系），未设置走历史公式 */
+    const promoIconPx = imageSizeOf(data, "iconSize", 60, 220, 4);
     if (tpl === "promo-centered") {
       const info = textBlockInfo(ctx, value, w - 60, 29, 600, 1.7, "body");
-      innerH = (icon ? Math.round(w * 0.24) + 38 : 0) + info.height + padY * 2 - 30;
+      const iconSide = promoIconPx || Math.round(w * 0.24);
+      innerH = (icon ? iconSide + 38 : 0) + info.height + padY * 2 - 30;
       ctx.save(); roundRectPath(ctx, x0, y0, w, innerH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
       let y = y0 + 36;
       if (icon) {
-        const iw = Math.min(104, Math.round(w * 0.22)); const ih = iw;
+        const iw = Math.min(iconSide, Math.round(w * 0.22)); const ih = iw;
         const ix = x0 + (w - iw) / 2;
         ctx.save(); roundRectPath(ctx, ix, y, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, y, iw, ih); ctx.restore();
         y += ih + 33;
@@ -2819,7 +3270,7 @@
     const bandH = Math.max(100, padY * 2 + textInfo.height);
     ctx.save(); roundRectPath(ctx, x0, y0, w, bandH, 26); ctx.fillStyle = P.primarySoft; ctx.fill(); ctx.restore();
     if (icon) {
-      const iw = Math.min(104, side - 36); const ih = iw;
+      const iw = Math.min(promoIconPx || 104, side); const ih = iw;
       const ix = x0 + (side - iw) / 2; const iy = y0 + (bandH - ih) / 2;
       ctx.save(); roundRectPath(ctx, ix, iy, iw, ih, 26); ctx.clip(); coverDraw(ctx, icon, ix, iy, iw, ih); ctx.restore();
       drawRich(ctx, value, x0 + side + 19, y0 + (bandH - textInfo.height) / 2 + 20, w - side - 40, 29, 600, ink, "left", 1.68, "body");
@@ -2904,8 +3355,8 @@
       if (tags.length) drawChips(ctx, tags, x0 + pad, y, w - pad * 2, chipsOpt);
       return y0 + paneH;
     }
-    /* venue-side：左描述 + 右侧场地照片 */
-    const side = img ? Math.min(163, Math.round(w * 0.4)) : 0;
+    /* venue-side：左描述 + 右侧场地照片；photoSize 控制照片边长（px，画布坐标系） */
+    const side = img ? Math.min(imageSizeOf(data, "photoSize", 100, 400, 4) || 163, Math.round(w * 0.4)) : 0;
     const textW = side ? w - side - 34 : w;
     const textH = textBlockInfo(ctx, data.description || "场地描述", textW, 29, 400, 1.68, "body").height;
     const chipsH = tags.length ? chipRowCount(ctx, tags, textW, 23) : 0;
@@ -2998,12 +3449,13 @@
       y += Math.ceil(Math.max(items.length, 1) / cols) * (ch + gap) - gap;
       return y;
     }
-    /* program-list 默认列表 */
+    /* program-list 默认列表；thumbWidth 控制配图宽度（px，画布坐标系） */
     const itemsShown = items.length ? items : [{}];
+    const pgThumb = imageSizeOf(data, "thumbWidth", 80, 300, 4) || Math.round(w * 0.28);
     for (const item of itemsShown) {
       const img = item.image && item.image.url ? await loadImage(item.image) : null;
       if (img) {
-        const thumb = Math.round(w * 0.28);
+        const thumb = pgThumb;
         const th = Math.min(200, Math.round(thumb * 0.74));
         const ix = item.mediaSide === "left" ? x0 : x0 + w - thumb;
         ctx.save(); roundRectPath(ctx, ix, y + 8, thumb, th, 18); ctx.clip(); coverDraw(ctx, img, ix, y + 8, thumb, th); ctx.restore();
@@ -3032,7 +3484,7 @@
     const tpl = data.template || "cast-list";
     const cast = data.cast || [];
     const avatarDims = function (ratio) {
-      const aw = 150;
+      const aw = imageSizeOf(data, "avatarWidth", 80, 260, 4) || 150;
       if (ratio === "3:4") return { w: aw, h: Math.round(aw * 4 / 3) };
       if (ratio === "1:1.4") return { w: aw, h: Math.round(aw * 1.4) };
       return { w: aw, h: aw };
@@ -3094,7 +3546,9 @@
     };
     const gap = 25;
     if (tpl === "cast-cards") {
-      const cols = Math.max(1, Math.floor(w / 260));
+      /* 卡片列数随头像宽度自适应：大头像时减少列数，保证文字列至少 ~120px */
+      const aw = imageSizeOf(data, "avatarWidth", 80, 260, 4) || 150;
+      const cols = Math.max(1, Math.floor(w / Math.max(260, aw + 150)));
       const cw = Math.floor((w - gap * (cols - 1)) / cols);
       const rows = Math.ceil(Math.max(cast.length, 1) / cols);
       const ch = 340;
@@ -3123,11 +3577,13 @@
     const items = data.items || [];
     const tpl = data.template || "booth-grid";
     let y = y0;
+    /* imageWidth：摊位图边长（px，画布坐标系），未设置走历史公式 */
+    const boothImgPx = imageSizeOf(data, "imageWidth", 80, 260, 4);
     if (tpl === "booth-cards") {
       const list = items.length ? items : [{}];
       for (const item of list) {
         const img = item.image && item.image.url ? await loadImage(item.image) : null;
-        const imgW = Math.min(150, Math.round(w * 0.2));
+        const imgW = boothImgPx || Math.min(150, Math.round(w * 0.2));
         const rowH = Math.max(130, imgW + 48);
         if (img) { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.clip(); coverDraw(ctx, img, x0 + 20, y + 24, imgW, imgW); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, x0 + 20, y + 24, imgW, imgW, 20); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
@@ -3166,7 +3622,7 @@
       const img = imgs[i];
       const hasImg = img || (item.image && item.image.url);
       if (hasImg) {
-        const imgH = Math.round(cw * 0.52);
+        const imgH = boothImgPx ? Math.min(boothImgPx, Math.round(cw * 0.9)) : Math.round(cw * 0.52);
         if (img) { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.clip(); coverDraw(ctx, img, cx, cy, cw, imgH); ctx.restore(); }
         else { ctx.save(); roundRectPath(ctx, cx, cy, cw, imgH, 22); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); }
         drawRich(ctx, text(item.name, "摊位"), cx + 12, cy + imgH + 36, cw - 22, 27, 700, ink, "left", 1.3);
@@ -3508,21 +3964,31 @@
     await readyFontForText(docFontFamily(), collectPageText(page));
     await readyFontsForPage(page);
     const silence = [];
+    /* 图案背景（Task #18）：底色 + 图案整层绘制；场空间按设计页高，
+       画布加高（内容溢出）时图案不漂移。 */
+    const paramBgRef = docBackgroundOf(page) || docBackgroundOf(state.doc);
     if (options.forStrip) {
       if (page.backgroundColor) { ctx.fillStyle = page.backgroundColor; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-      if (page.backgroundImage && page.backgroundImage.url) {
+      if (!paramBgRef && page.backgroundImage && page.backgroundImage.url) {
         const pageBg = await loadImage(page.backgroundImage);
         if (pageBg) coverDraw(ctx, pageBg, 0, 0, canvas.width, canvas.height);
         else silence.push({ type: "page-background", module: "本屏背景", page: (state.doc.pages || []).indexOf(page) + 1 });
       }
     } else {
-      ctx.fillStyle = page.backgroundColor || state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const bgRef = page.backgroundImage || state.doc.backgroundImage;
+      ctx.fillStyle = effectiveBackgroundColor(page); ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const bgRef = backgroundPatternActive(page) ? null : (page.backgroundImage || state.doc.backgroundImage);
       const background = await loadImage(bgRef);
       if (background) coverDraw(ctx, background, 0, 0, canvas.width, canvas.height);
       else if (imageSrc(bgRef)) silence.push({ type: page.backgroundImage ? "page-background" : "doc-background", module: page.backgroundImage ? "本屏背景" : "整条背景" });
     }
-    pageBgColorForHoles = page.backgroundColor || state.doc.backgroundColor || "#ffffff";
+    if (paramBgRef && BG()) {
+      try {
+        /* 图案背景的 params.bg 即最终底色（冲突消解规则），不再被 backgroundColor 覆写 */
+        const bgParams = Object.assign({}, paramBgRef.params);
+        BG().renderToCanvas(bgParams, { canvas: canvas, width: canvas.width, height: canvas.height, fieldHeight: size.pageHeight });
+      } catch (error) { /* 引擎异常按原底色继续 */ }
+    }
+    pageBgColorForHoles = effectiveBackgroundColor(page);
     const pst = artTheme();
     if (pst.pattern && pst.pattern !== "none") drawPatternOverlay(ctx, canvas.width, canvas.height, pst);
     silence.push.apply(silence, await drawModuleStack(ctx, page, 0, layout));
@@ -3649,9 +4115,11 @@
     }
     const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = total; const ctx = canvas.getContext("2d");
     ctx.fillStyle = state.doc.backgroundColor || "#ffffff"; ctx.fillRect(0, 0, width, total);
-    const docImage = await loadImage(state.doc.backgroundImage);
+    /* 图案背景激活时忽略整条底图（各屏图案自带底色），避免双层背景冲突 */
+    const stripDocParamBg = docBackgroundOf(state.doc);
+    const docImage = stripDocParamBg ? null : await loadImage(state.doc.backgroundImage);
     if (docImage) coverDownDraw(ctx, docImage, 0, 0, width, total);
-    else if (imageSrc(state.doc.backgroundImage)) auditSilence([{ type: "doc-background", module: "整条背景" }], "连续长图 ");
+    else if (!stripDocParamBg && imageSrc(state.doc.backgroundImage)) auditSilence([{ type: "doc-background", module: "整条背景" }], "连续长图 ");
     let y0 = 0; const silence = [];
     for (let i = 0; i < rendered.length; i += 1) {
       const h = rendered[i].canvas.height;
@@ -3747,14 +4215,41 @@
     const scene = SM.buildScene({ page: page, layout: layout, doc: state.doc, pageHeight: pageHeight, pageSize: size, registry: R, theme: artTheme(), fonts: SM.fontsOf(state.doc) });
     sceneCtx = { fonts: scene.fonts, multiWeightFamilies: (scene.fonts || []).filter(function (f) { const meta = C.FONTS[f.key]; return meta && Array.isArray(meta.weights) && meta.weights.length > 1; }).map(function (f) { return f.psName; }) };
     const children = [];
-    /* 背景层：铺页面底色，便于在 PS 里改背景 */
+    /* 背景层：铺页面底色，便于在 PS 里改背景（图案背景激活时取图案底色，冲突消解规则） */
     children.push({ name: "背景底色", canvas: (function () {
       const c = document.createElement("canvas"); c.width = size.pageWidth; c.height = pageHeight;
       const cx = c.getContext("2d");
-      cx.fillStyle = page.backgroundColor || "#ffffff";
+      cx.fillStyle = effectiveBackgroundColor(page);
       cx.fillRect(0, 0, c.width, c.height);
       return c;
     })() });
+
+    /* 图案背景层（Task #18，用户决策「PSD 需矢量」）：
+       - circle/square 且点数 ≤800：输出矢量形状组（逐点圆角矩形，透明度预混合进底色）；
+       - 其余形状或超量：整层栅格 canvas（与预览像素一致）。
+       params.bg 即最终底色，不再被 backgroundColor 覆写。 */
+    const paramBgRef = docBackgroundOf(page) || docBackgroundOf(state.doc);
+    if (paramBgRef && BG()) {
+      try {
+        const engine = BG();
+        const bgParams = Object.assign({}, paramBgRef.params, {
+          width: size.pageWidth, height: pageHeight, fieldHeight: size.pageHeight,
+        });
+        const vec = engine.sceneElements(bgParams);
+        if (vec.kind === "vector" && vec.elements && vec.elements.length) {
+          const group = { name: "背景图案 · 矢量（" + vec.count + " 单元）", children: [], opened: false };
+          for (let vi = 0; vi < vec.elements.length; vi += 1) {
+            const el = vec.elements[vi];
+            const layer = sceneElementToPsdLayer(el, null);
+            if (layer) group.children.push(layer);
+          }
+          if (group.children.length) children.push(group);
+        } else {
+          const rasterCanvas = engine.renderToCanvas(bgParams);
+          children.push({ name: "背景图案 · 栅格（" + (vec.reason === "count" ? "单元过多" : "形状不支持矢量") + "）", canvas: rasterCanvas });
+        }
+      } catch (error) { /* 图案背景层失败不阻断导出 */ }
+    }
 
     /* 每板块一组：scene module → ag-psd group（形状/图片/文字） */
     for (let idx = 0; idx < scene.modules.length; idx += 1) {
@@ -4062,6 +4557,24 @@
      themeOverrides 是增量覆盖（只存用户手动改过的字段）。因此这里做「部分覆盖校验」：
      只校验存在的键（hex 格式 / 枚举值 / 数值范围步进 / 字重档位），不要求必填；
      白名单复制而不是深拷贝原对象，杜绝 __proto__ / prototype / constructor / 未知字段。 */
+  /* ===== 图案背景记录白名单校验（Task #18）：草稿/AI 共用 =====
+     合法形态：{ type:"parametric", params:{引擎 normalize 可接受的任意子集}, presetId? }。
+     params 经引擎 normalize 全量归一化（数值钳制/枚举回退/颜色规整），任何异常返回 null
+     （草稿宽容策略：背景记录非法不拒绝整份草稿，仅丢弃背景）。 */
+  function sanitizeDraftBackground(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    if (raw.type !== "parametric" || !raw.params || typeof raw.params !== "object" || Array.isArray(raw.params)) return null;
+    const engine = BG();
+    if (!engine) return null;
+    try {
+      const params = engine.normalize(raw.params);
+      const out = { type: "parametric", params: params };
+      if (typeof raw.presetId === "string" && raw.presetId) out.presetId = raw.presetId;
+      if (raw.themeLocked === true) out.themeLocked = true;
+      return out;
+    } catch (error) { return null; }
+  }
+
   function sanitizeThemeOverrides(raw) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
     const AD = global.BannerBuilderAiDocument;
@@ -4138,6 +4651,8 @@
     if (draft.backgroundImage && typeof draft.backgroundImage === "object" && typeof draft.backgroundImage.url === "string") {
       candidate.backgroundImage = { url: draft.backgroundImage.url, name: draft.backgroundImage.name || "", type: draft.backgroundImage.type || "" };
     }
+    /* Task #18：图案背景记录（type/params/presetId）经引擎 normalize 白名单化后恢复 */
+    candidate.background = sanitizeDraftBackground(draft.background);
     candidate.exportScale = draft.exportScale === 1 || draft.exportScale === 3 ? draft.exportScale : 2;
     candidate.__themeKnown = themeKnown;
     /* BB-R05：themeOverrides 白名单校验 + 规范化复制（拒绝 __proto__/未知字段/超范围数值） */
@@ -4164,6 +4679,7 @@
       if (rawPage.backgroundImage && typeof rawPage.backgroundImage === "object" && typeof rawPage.backgroundImage.url === "string") {
         page.backgroundImage = { url: rawPage.backgroundImage.url, name: rawPage.backgroundImage.name || "", type: rawPage.backgroundImage.type || "" };
       }
+      page.background = sanitizeDraftBackground(rawPage.background);
       if (!Array.isArray(rawPage.modules)) throw new Error("第 " + (pi + 1) + " 屏缺少板块数组");
       if (rawPage.modules.length > DRAFT_LIMITS.maxModulesPerPage) throw new Error("第 " + (pi + 1) + " 屏板块数超过 " + DRAFT_LIMITS.maxModulesPerPage + " 个，疑似损坏或恶意文件");
       page.modules = rawPage.modules.map(function (rawModule, mi) {
@@ -4424,9 +4940,10 @@
       const next = button.dataset.step;
       if (next === state.step) return;
       state.step = next;
-      /* 进入编辑步骤清除选中，避免属性栏在库栏隐藏时残留孤板块面板 */
+      /* 进入非编辑步骤清除选中，避免属性栏在库栏隐藏时残留孤板块面板 */
       if (next !== "edit") state.selectedModuleId = null;
-      /* 步骤 1 默认「板块库」，步骤 2 默认「图层」（多图层树，方便选中与排序） */
+      /* 步骤 0 主题背景 / 步骤 1 设置默认「板块库」，步骤 2 编辑默认「图层」（多图层树，方便选中与排序） */
+      if (next === "theme-bg") state.sideView = "library";
       if (next === "setup") state.sideView = "library";
       if (next === "edit") state.sideView = "layers";
       renderAll();
@@ -4885,6 +5402,35 @@
       row.appendChild(input); row.appendChild(flag); row.appendChild(clear);
       body.appendChild(row);
     });
+
+    /* 背景段（Task #15）：显示当前图案背景状态，提供微调入口 */
+    section("整条背景");
+    const paramBg = docBackgroundOf(state.doc);
+    const bgRow = el("div", "bb-tweak-row");
+    if (paramBg) {
+      const engine = BG();
+      const preset = engine && engine.presetById(paramBg.presetId);
+      bgRow.appendChild(el("span", "bb-tweak-label", "图案背景：" + (preset ? preset.label : "自定义")));
+      const bgBtn = el("button", "bb-btn ghost", "微调图案");
+      bgBtn.type = "button";
+      bgBtn.style.cssText = "padding:4px 12px;font-size:11px";
+      bgBtn.addEventListener("click", function () { maskRemove(); showBackgroundTweakModal(); });
+      bgRow.appendChild(bgBtn);
+    } else {
+      bgRow.appendChild(el("span", "bb-tweak-label", "图案背景：无"));
+      const goBtn = el("button", "bb-btn ghost", "去第 0 步选择");
+      goBtn.type = "button";
+      goBtn.style.cssText = "padding:4px 12px;font-size:11px";
+      goBtn.addEventListener("click", function () {
+        maskRemove();
+        state.step = "theme-bg";
+        state.selectedModuleId = null;
+        state.sideView = "library";
+        renderAll();
+      });
+      bgRow.appendChild(goBtn);
+    }
+    body.appendChild(bgRow);
     modal.appendChild(body);
 
     const actionRow = el("div", "bb-modal-actions");
@@ -4907,22 +5453,162 @@
     }
   }
 
-  /* ===== 排版微调：字号缩放 / 字重 / 行距 / 字距 / 文字颜色（写入 doc.themeOverrides） ===== */
+  /* ===== 背景图案微调（Task #15）：图案背景的密度/尺寸/透明度/颜色/形状编辑 =====
+     直接编辑 doc.background.params（引擎 normalize 后回写），档位按钮 + 数值输入（与 Task #17 同交互范式）。
+     颜色随主题的预设（colorMode:"theme"）改色后转为固定色，不再跟随主题（用户显式覆盖优先）。 */
+  const BG_TWEAK_FIELDS = [
+    { key: "spacing", label: "点间距", type: "number", min: 6, max: 400, step: 2, tiers: [20, 28, 34, 44, 60, 90] },
+    { key: "maxSize", label: "最大尺寸", type: "number", min: 1, max: 60, step: 1, tiers: [4, 8, 12, 18, 26] },
+    { key: "minSize", label: "最小尺寸", type: "number", min: 0, max: 40, step: 0.5, tiers: [0, 1, 2, 4, 8] },
+    { key: "opacity", label: "不透明度", type: "number", min: 0, max: 100, step: 5, tiers: [50, 65, 80, 90, 100] },
+    { key: "jitter", label: "位置抖动", type: "number", min: 0, max: 100, step: 5, tiers: [0, 15, 30, 50] },
+    { key: "rotation", label: "整体旋转", type: "number", min: -180, max: 180, step: 15, tiers: [-45, 0, 45, 90] },
+  ];
+  function showBackgroundTweakModal() {
+    const engine = BG();
+    const bgRecord = docBackgroundOf(state.doc);
+    if (!engine || !bgRecord) return;
+    const existing = document.getElementById("bb-bg-tweak-modal");
+    if (existing) existing.parentNode.removeChild(existing);
+
+    const preset = engine.presetById(bgRecord.presetId);
+    const mask = document.createElement("div");
+    mask.className = "bb-modal-mask";
+    mask.id = "bb-bg-tweak-modal";
+    const modal = document.createElement("div");
+    modal.className = "bb-modal";
+    const title = el("h3", null, "微调背景图案" + (preset ? "「" + preset.label + "」" : ""));
+    title.id = "bb-bg-tweak-modal-title";
+    modal.appendChild(title);
+    const closeA11y = openModalA11y(mask, modal, { titleId: "bb-bg-tweak-modal-title" });
+    modal.appendChild(el("p", null, "调整图案的密度、尺寸与颜色，改动实时反映到画布与导出。"));
+
+    const body = el("div");
+    body.style.marginTop = "6px";
+
+    /* 颜色：底色 + 图案色（改色后预设不再跟随主题） */
+    const colorSection = el("div", "bb-tweak-section", "颜色");
+    body.appendChild(colorSection);
+    [["bg", "底色"], ["fg", "图案色"]].forEach(function (pair) {
+      const key = pair[0], label = pair[1];
+      const row = el("div", "bb-tweak-row");
+      row.appendChild(el("span", "bb-tweak-label", label));
+      const colorInput = el("input", "bb-tweak-input");
+      colorInput.type = "color";
+      colorInput.value = hexToColor(bgRecord.params[key]);
+      colorInput.addEventListener("input", function () {
+        bgRecord.params[key] = colorInput.value;
+        bgRecord.themeLocked = true; /* 显式改色后不再跟随主题（Task #15 决策） */
+        /* 底色改动同步回写整条底色，保证移除图案后回退色与所见一致 */
+        if (key === "bg") state.doc.backgroundColor = colorInput.value;
+        invalidateBackgroundRenderCache();
+        renderAll();
+      });
+      row.appendChild(colorInput);
+      body.appendChild(row);
+    });
+
+    /* 形状 */
+    const shapeSection = el("div", "bb-tweak-section", "形状");
+    body.appendChild(shapeSection);
+    const shapeRow = el("div", "bb-tweak-row");
+    shapeRow.appendChild(el("span", "bb-tweak-label", "图案形状"));
+    const shapeSel = el("select", "bb-tweak-input");
+    [["circle", "圆点"], ["square", "方点"], ["diamond", "菱形"], ["triangle", "三角"], ["polygon", "多边形"]].forEach(function (pair) {
+      const opt = el("option", null, pair[1]);
+      opt.value = pair[0];
+      shapeSel.appendChild(opt);
+    });
+    ensureSelectValue(shapeSel, bgRecord.params.shape || "circle");
+    shapeSel.addEventListener("change", function () {
+      bgRecord.params.shape = shapeSel.value;
+      invalidateBackgroundRenderCache();
+      renderAll();
+    });
+    shapeRow.appendChild(shapeSel);
+    body.appendChild(shapeRow);
+
+    /* 数值档位 */
+    const numSection = el("div", "bb-tweak-section", "密度与尺寸");
+    body.appendChild(numSection);
+    BG_TWEAK_FIELDS.forEach(function (field) {
+      const row = el("div", "bb-tweak-row");
+      row.appendChild(el("span", "bb-tweak-label", field.label));
+      const tierGroup = el("div", "bb-tier-group");
+      const numInput = el("input", "bb-tier-num");
+      numInput.type = "number";
+      numInput.min = String(field.min);
+      numInput.max = String(field.max);
+      numInput.step = String(field.step);
+      numInput.value = bgRecord.params[field.key];
+      function applyValue(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return;
+        const clamped = Math.max(field.min, Math.min(field.max, n));
+        bgRecord.params[field.key] = clamped;
+        numInput.value = String(clamped);
+        Array.prototype.forEach.call(tierGroup.querySelectorAll(".bb-tier-btn"), function (btn) {
+          btn.classList.toggle("is-active", Number(btn.dataset.value) === clamped);
+        });
+        invalidateBackgroundRenderCache();
+        renderAll();
+      }
+      (field.tiers || []).forEach(function (tier) {
+        const btn = el("button", "bb-tier-btn" + (Number(bgRecord.params[field.key]) === tier ? " is-active" : ""), String(tier));
+        btn.type = "button";
+        btn.dataset.value = String(tier);
+        btn.addEventListener("click", function () { applyValue(tier); });
+        tierGroup.appendChild(btn);
+      });
+      numInput.addEventListener("change", function () { applyValue(numInput.value); });
+      tierGroup.appendChild(numInput);
+      row.appendChild(tierGroup);
+      body.appendChild(row);
+    });
+    modal.appendChild(body);
+
+    const actionRow = el("div", "bb-modal-actions");
+    const removeBtn = el("button", "bb-btn ghost", "移除背景图案");
+    removeBtn.type = "button";
+    removeBtn.addEventListener("click", function () {
+      state.doc.background = null;
+      invalidateBackgroundRenderCache();
+      renderAll(); maskRemove();
+    });
+    const closeBtn = el("button", "bb-btn primary", "完成");
+    closeBtn.type = "button";
+    closeBtn.addEventListener("click", function () { maskRemove(); });
+    actionRow.appendChild(removeBtn);
+    actionRow.appendChild(closeBtn);
+    modal.appendChild(actionRow);
+    mask.appendChild(modal);
+    mask.addEventListener("click", function (e) { if (e.target === mask) maskRemove(); });
+    document.body.appendChild(mask);
+
+    function maskRemove() {
+      closeA11y();
+      if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+    }
+  }
+
+  /* ===== 排版微调：字号缩放 / 字重 / 行距 / 字距 / 文字颜色（写入 doc.themeOverrides） =====
+     Task #17：数值类字段不再使用滑块（用户决策「档位按钮+数值输入」）——
+     每个字段给 4~5 个常用档位按钮，点按即达；精确值用右侧数值输入框直接键入。 */
   const TYPE_SCALE_FIELDS = [
-    { key: "typeScale", label: "全局字号缩放", min: 0.7, max: 1.5, step: 0.05 },
-    { key: "h1Scale", label: "主标题 H1", min: 0.7, max: 1.3, step: 0.05 },
-    { key: "h2Scale", label: "板块标题 H2", min: 0.7, max: 1.3, step: 0.05 },
-    { key: "h3Scale", label: "小标题 H3", min: 0.7, max: 1.3, step: 0.05 },
-    { key: "bodyScale", label: "正文", min: 0.7, max: 1.3, step: 0.05 },
-    { key: "captionScale", label: "图注", min: 0.7, max: 1.3, step: 0.05 },
+    { key: "typeScale", label: "全局字号缩放", min: 0.7, max: 1.5, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.25] },
+    { key: "h1Scale", label: "主标题 H1", min: 0.7, max: 1.3, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.2] },
+    { key: "h2Scale", label: "板块标题 H2", min: 0.7, max: 1.3, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.2] },
+    { key: "h3Scale", label: "小标题 H3", min: 0.7, max: 1.3, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.2] },
+    { key: "bodyScale", label: "正文", min: 0.7, max: 1.3, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.2] },
+    { key: "captionScale", label: "图注", min: 0.7, max: 1.3, step: 0.05, tiers: [0.8, 0.9, 1, 1.1, 1.2] },
   ];
   const TYPE_WEIGHT_FIELDS = [
     { key: "headingWeight", label: "标题字重" },
     { key: "bodyWeight", label: "正文字重" },
   ];
   const TYPE_SPACING_FIELDS = [
-    { key: "lineHeight", label: "行距倍率", min: 0.8, max: 2.0, step: 0.05 },
-    { key: "letterSpacing", label: "字距 (px)", min: -2, max: 8, step: 0.5 },
+    { key: "lineHeight", label: "行距倍率", min: 0.8, max: 2.0, step: 0.05, tiers: [1, 1.15, 1.3, 1.5, 1.75] },
+    { key: "letterSpacing", label: "字距 (px)", min: -2, max: 8, step: 0.5, tiers: [0, 1, 2, 4, 6] },
   ];
   const TYPE_COLOR_FIELDS = [
     { key: "ink", label: "正文墨色" },
@@ -4974,7 +5660,7 @@
       return { flag: flag, clear: clear };
     }
 
-    /* 滑杆字段（缩放 / 行距 / 字距） */
+    /* 数值字段（缩放 / 行距 / 字距）：档位按钮 + 数值输入（Task #17 替换滑块） */
     function renderRangeField(fields) {
       fields.forEach(function (field) {
         const cur = overrideOf(field.key);
@@ -4982,25 +5668,49 @@
         const value = cur != null ? cur : preset;
         const row = el("div", "bb-tweak-row");
         row.appendChild(el("span", "bb-tweak-label", field.label));
-        const slider = el("input", "bb-tweak-range");
-        slider.type = "range"; slider.min = String(field.min); slider.max = String(field.max); slider.step = String(field.step);
-        slider.value = String(value);
+        /* 档位按钮组：点按即设值；当前值与某档位一致时高亮该档 */
+        const tierGroup = el("div", "bb-tier-group");
+        tierGroup.setAttribute("role", "group");
+        tierGroup.setAttribute("aria-label", field.label + " 档位");
         const num = el("input", "bb-tweak-val");
         num.type = "number"; num.min = String(field.min); num.max = String(field.max); num.step = String(field.step);
         num.value = String(value);
         const parts = appendInherit(row, cur);
-        function applyRange() {
-          const v = Number(num.value);
-          const clamped = Number.isFinite(v) ? Math.min(field.max, Math.max(field.min, v)) : field.min;
-          slider.value = String(clamped); num.value = String(clamped);
-          setOverride(field.key, clamped);
-          parts.flag.textContent = "已覆盖"; parts.clear.style.display = "inline";
+        const formatTier = function (v) {
+          const r = Math.round(v * 100) / 100;
+          return String(r);
+        };
+        function refreshTierActive() {
+          const buttons = tierGroup.querySelectorAll("button");
+          for (let bi = 0; bi < buttons.length; bi += 1) {
+            const bv = Number(buttons[bi].dataset.value);
+            buttons[bi].classList.toggle("is-active", Math.abs(bv - Number(num.value)) < 1e-9);
+          }
         }
-        slider.addEventListener("input", function () { num.value = slider.value; applyRange(); });
-        num.addEventListener("change", applyRange);
+        function applyValue(v, fromTier) {
+          const clamped = Number.isFinite(v) ? Math.min(field.max, Math.max(field.min, v)) : field.min;
+          /* 按 step 收敛，避免档位与输入框出现 1.23456 之类长尾 */
+          const snapped = field.step > 0 ? Math.round(clamped / field.step) * field.step : clamped;
+          const finalV = Math.round(Math.min(field.max, Math.max(field.min, snapped)) * 100) / 100;
+          num.value = String(finalV);
+          setOverride(field.key, finalV);
+          parts.flag.textContent = "已覆盖"; parts.clear.style.display = "inline";
+          refreshTierActive();
+          if (!fromTier) num.focus();
+        }
+        (field.tiers || []).forEach(function (tv) {
+          const btn = el("button", "bb-tier-btn", formatTier(tv));
+          btn.type = "button";
+          btn.dataset.value = String(tv);
+          btn.title = field.label + " " + formatTier(tv);
+          btn.addEventListener("click", function () { applyValue(tv, true); });
+          tierGroup.appendChild(btn);
+        });
+        num.addEventListener("change", function () { applyValue(Number(num.value), false); });
         parts.clear.addEventListener("click", function () { clearOverride(field.key); });
-        row.appendChild(slider); row.appendChild(num);
+        row.appendChild(tierGroup); row.appendChild(num);
         body.appendChild(row);
+        refreshTierActive();
       });
     }
 
@@ -5241,7 +5951,7 @@
     return bytes.buffer;
   }
 
-  function init() { if (initialized) return; initialized = true; els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.stepToolbars = { setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); preloadDefaultFont(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); setupZoomAutoFit(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoomManual = true; state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
+  function init() { if (initialized) return; initialized = true; els.ratioGroup = document.getElementById("ratioGroup"); els.screenModeGroup = document.getElementById("screenModeGroup"); els.sizeReadout = document.getElementById("sizeReadout"); els.addPageBtn = document.getElementById("addPageBtn"); els.stats = document.getElementById("docStats"); els.importThemeBtn = document.getElementById("importThemeBtn"); els.importModuleBtn = document.getElementById("importModuleBtn"); els.generateAiDocumentBtn = document.getElementById("generateAiDocumentBtn"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplCount = document.getElementById("myTplCount"); els.myTplList = document.getElementById("myTplList"); els.zoomOutBtn = document.getElementById("zoomOutBtn"); els.zoomInBtn = document.getElementById("zoomInBtn"); els.zoomFitBtn = document.getElementById("zoomFitBtn"); els.zoomValue = document.getElementById("zoomValue"); els.packFontsToggle = document.getElementById("packFontsToggle"); els.saveDraftBtn = document.getElementById("saveDraftBtn"); els.loadDraftInput = document.getElementById("loadDraftInput"); els.libraryList = document.getElementById("libraryList"); els.libraryHint = document.getElementById("libraryHint"); els.myTplArea = document.getElementById("myTplArea"); els.myTplList = document.getElementById("myTplList"); els.myTplCount = document.getElementById("myTplCount"); els.canvasBody = document.getElementById("canvasBody"); els.panelTitle = document.getElementById("panelTitle"); els.panelSub = document.getElementById("panelSub"); els.panelBody = document.getElementById("panelBody"); els.stepBar = document.getElementById("stepBar"); els.sideTabs = document.getElementById("sideTabs"); els.libraryPane = document.getElementById("libraryPane"); els.layerPane = document.getElementById("layerPane"); els.layerTree = document.getElementById("layerTree"); els.addPageBtnSide = document.getElementById("addPageBtnSide"); els.workbench = document.getElementById("workbench"); els.exportScaleGroup = document.getElementById("exportScaleGroup"); els.exportSizeReadout = document.getElementById("exportSizeReadout"); els.stepToolbars = { "theme-bg": document.querySelector(".bb-toolbar-theme-bg"), setup: document.querySelector(".bb-toolbar-setup"), edit: document.querySelector(".bb-toolbar-edit"), export: document.querySelector(".bb-toolbar-export") }; state.activePageId = state.doc.pages[0].id; refreshFontSelects(); ensureFont(docFontFamily()); bindEvents(); preloadDefaultFont(); renderAll(); renderMyTemplates(); bootstrapUserFonts(); setupZoomAutoFit(); global.bannerBuilder = { state: state, get doc() { return state.doc; }, toJSON: function () { return M.toJSON(state.doc); }, exportPng: exportPng, exportStripPng: exportStripPng, exportPsd: exportPsd, setZoom: function (z) { state.zoomManual = true; state.zoom = z; renderToolbar(); renderCanvas(); }, renderAll: renderAll }; }
   /* 启动时载入用户已导入的字体（IndexedDB），注入 Constants 并刷新三个字体下拉。 */
   function bootstrapUserFonts() {
     var importer = global.BannerBuilderFontImporter;
