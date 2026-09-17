@@ -822,10 +822,19 @@
   }
 
   function renderTicket(box, data, tpl) {
-    const qr = visualImage(imageSrc(data.qrImage), "bb-art-qr", "购票二维码");
-    /* qrSize：二维码边长（px，画布坐标系），未设置走 CSS 默认 208 */
-    const qrPx = imageSizeOf(data, "qrSize", 120, 320, 4);
-    if (qrPx && qr) { qr.style.width = qrPx + "px"; qr.style.height = qrPx + "px"; }
+    /* 多平台二维码：与「物料监修」同一套网格逻辑（可添加多条、可选列数）。
+       旧草稿的单一 qrImage 自动并入为首条，保持向后兼容。 */
+    const qrList = (Array.isArray(data.qrItems) && data.qrItems.length)
+      ? data.qrItems
+      : (data.qrImage && data.qrImage.url ? [{ icon: data.qrImage, label: "" }] : []);
+    const qrPx = imageSizeOf(data, "qrSize", 120, 320, 4) || 208;
+    const buildQrGrid = function () {
+      if (!qrList.length) return null;
+      const wrap = el("div", "bb-ticket-qr-grid");
+      wrap.style.setProperty("--bb-mat-icon-size", qrPx + "px");
+      addGrid(wrap, qrList, data.qrColumns || "2", "icon", "label", "购票平台");
+      return wrap;
+    };
     const tiers = data.tiers || [];
     if (tpl === "ticket-cards") {
       const grid = el("div", "bb-ticket-cards");
@@ -833,17 +842,17 @@
       if (!tiers.length) grid.appendChild(el("p", "bb-art-caption", "暂无票档"));
       box.appendChild(grid);
       if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
-      if (qr) box.appendChild(el("div", "bb-ticket-qr-wrap", qr)); return;
+      const qg = buildQrGrid(); if (qg) box.appendChild(qg); return;
     }
     if (tpl === "ticket-focus") {
       const focus = el("div", "bb-ticket-focus");
       const first = tiers[0];
       if (first) { focus.appendChild(el("strong", "bb-ticket-focus-price", text(first.price, "价格"))); focus.appendChild(el("span", "bb-ticket-focus-label", text(first.label, "票档"))); }
-      if (qr) focus.appendChild(qr);
       box.appendChild(focus);
       const rest = tiers.slice(1);
       if (rest.length) { const list = el("div", "bb-ticket-rest"); rest.forEach(function (t) { list.appendChild(el("div", "bb-ticket-rest-item", text(t.label, "") + "　" + text(t.price, ""))); }); box.appendChild(list); }
-      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
+      const qg = buildQrGrid(); if (qg) box.appendChild(qg); return;
     }
     if (tpl === "ticket-hero") {
       const first = tiers[0];
@@ -853,15 +862,15 @@
       box.appendChild(hero);
       const rest = tiers.slice(1);
       if (rest.length) { const list = el("div", "bb-ticket-rest"); rest.forEach(function (t) { list.appendChild(el("div", "bb-ticket-rest-item", text(t.label, "") + "　" + text(t.price, ""))); }); box.appendChild(list); }
-      if (qr) box.appendChild(el("div", "bb-ticket-qr-wrap", qr));
-      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note)); return;
+      if (data.note) box.appendChild(el("p", "bb-art-caption", data.note));
+      const qg = buildQrGrid(); if (qg) box.appendChild(qg); return;
     }
     const row = el("div", "bb-art-split");
     const copy = el("div");
     tiers.forEach(function (tier) { const p = el("div", "bb-art-ticket"); p.appendChild(el("b", null, text(tier.label, "票档"))); p.appendChild(el("span", null, text(tier.price, "价格"))); copy.appendChild(p); });
     if (!tiers.length) copy.appendChild(el("p", "bb-art-caption", "暂无票档"));
     if (data.note) copy.appendChild(el("p", "bb-art-caption", data.note));
-    row.appendChild(copy); if (qr) row.appendChild(qr); box.appendChild(row);
+    row.appendChild(copy); const qg = buildQrGrid(); if (qg) row.appendChild(qg); box.appendChild(row);
   }
 
   function renderMaterials(box, data, tpl) {
@@ -3109,36 +3118,60 @@
     return y0 + paneH;
   }
 
+  function paintQrGridPx(ctx, list, imgs, x0, y, gridW, cols, qrSize, P, ink) {
+    /* 多平台二维码网格画板绘制（与 paintMaterials icon-grid 同构）。
+       二维码必须 contain 不裁切（裁变形会损坏扫码）；列超宽时自适应缩小单元格。 */
+    const gap = 20;
+    const cw = (gridW - gap * (cols - 1)) / cols;
+    const box = Math.max(48, Math.min(qrSize, cw - 16 > 0 ? cw - 16 : cw));
+    const cellH = box + 50;
+    const count = list.length;
+    for (let i = 0; i < count; i += 1) {
+      const item = list[i] || {};
+      const cx = x0 + (i % cols) * (cw + gap);
+      const cy = y + Math.floor(i / cols) * (cellH + gap);
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 18); ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.restore();
+      ctx.save(); roundRectPath(ctx, cx, cy, cw, cellH, 18); ctx.strokeStyle = alphaColor(P.primary, 0.14); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+      const img = imgs[i];
+      if (img) {
+        const qx = cx + (cw - box) / 2, qy = cy + 12;
+        ctx.save(); roundRectPath(ctx, qx, qy, box, box, 12); ctx.clip(); containDraw(ctx, img, qx, qy, box, box); ctx.restore();
+      }
+      if (item.label) drawRich(ctx, text(item.label, "平台"), cx + cw / 2, cy + cellH - 16, Math.max(cw - 12, 30), 21, 600, ink, "center", 1);
+    }
+    return y + Math.ceil(count / cols) * (cellH + gap) - gap;
+  }
+
   async function paintTicket(ctx, data, x0, y0, w) {
     const P = artTheme(); const ink = artInk(); let y = y0;
     const tiers = (data.tiers || []).filter(function (t) { return t && (t.label || t.price); });
-    const qr = await loadImage(data.qrImage);
     const tpl = data.template || "qr-side";
-    /* qrSize：二维码边长（px，画布坐标系），未设置走历史默认 round(w*0.32) */
     const qrSize = imageSizeOf(data, "qrSize", 120, 320, 4) || Math.round(w * 0.32);
+    /* 多平台二维码（物料同款网格）：向后兼容旧草稿单一 qrImage → 首条 */
+    const qrList = (Array.isArray(data.qrItems) && data.qrItems.length)
+      ? data.qrItems
+      : (data.qrImage && data.qrImage.url ? [{ icon: data.qrImage, label: "" }] : []);
+    const qrImgs = qrList.length ? await Promise.all(qrList.map(function (it) { return it && it.icon && it.icon.url ? loadImage(it.icon) : Promise.resolve(null); })) : [];
+    const qrCols = Math.max(1, Math.min(4, Number(data.qrColumns) || 2));
+    function qrGridAt(x, gridW) {
+      if (!qrList.length) return y;
+      const by = paintQrGridPx(ctx, qrList, qrImgs, x, y + 16, gridW, qrCols, qrSize, P, ink);
+      return by + 4;
+    }
     if (tpl === "ticket-focus" || tpl === "ticket-hero") {
       const first = tiers[0];
       const bandH = Math.round(w * 0.42);
       ctx.save(); roundRectPath(ctx, x0, y, w, bandH, 30); const g = ctx.createLinearGradient(x0, y, x0 + w, y + bandH); g.addColorStop(0, P.primary); g.addColorStop(1, P.primaryDark); ctx.fillStyle = g; ctx.fill(); ctx.restore();
-      if (qr && tpl === "ticket-focus") {
-        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize, 18); ctx.fill(); ctx.restore();
-        ctx.save(); roundRectPath(ctx, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize, 18); ctx.clip(); containDraw(ctx, qr, x0 + w - qrSize - 26, y + (bandH - qrSize) / 2, qrSize, qrSize); ctx.restore();
-      }
       if (first) {
         ctx.fillStyle = "#ffffff"; ctx.textAlign = "left";
-        y = drawRich(ctx, text(first.price, "价格"), x0 + 22, y + Math.round(bandH * 0.34), w * 0.6, 71, 900, "#ffffff", "left", 1) + 6;
-        if (first.label) y = drawRich(ctx, first.label, x0 + 22, y + 8, w * 0.6, 27, 600, "rgba(255,255,255,.9)", "left") + 8;
-      } else y = drawRich(ctx, "价格", x0 + 22, y + Math.round(bandH * 0.4), w * 0.6, 71, 900, "#ffffff", "left") + 6;
+        y = drawRich(ctx, text(first.price, "价格"), x0 + 18, y + Math.round(bandH * 0.34), w * 0.72, 71, 900, "#ffffff", "left", 1) + 6;
+        if (first.label) y = drawRich(ctx, first.label, x0 + 18, y + 8, w * 0.72, 27, 600, "rgba(255,255,255,.9)", "left") + 8;
+      } else y = drawRich(ctx, "价格", x0 + 18, y + Math.round(bandH * 0.4), w * 0.72, 71, 900, "#ffffff", "left") + 6;
       y += Math.round(bandH * 0.18);
       const rest = tiers.slice(1);
       if (rest.length) y = drawChips(ctx, rest.map(function (t) { return [t.label, t.price].filter(Boolean).join("　"); }), x0, y + 14, w, { size: 25, color: ink, border: alphaColor(P.primary, 0.4), fill: "#ffffff", lw: 2 });
-      if (qr && tpl === "ticket-hero") {
-        y += 24;
-        const qw = qrSize + 24; const qh = qrSize + 24;
-        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.fill(); ctx.restore();
-        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 20); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 12, y + 12, qrSize, qrSize); ctx.restore();
-        y += qh + 8;
-      }
+      /* 多平台二维码：价格横幅下方整宽网格（原单张二维码改为多条网格） */
+      if (qrList.length) y = qrGridAt(x0, w);
       if (data.note) y = drawRich(ctx, data.note, x0, y + 15, w, 23, 500, artMuted(), "left", 1.5, "body") + 10;
       return y;
     }
@@ -3158,18 +3191,13 @@
       if (!tiers.length) { ctx.save(); roundRectPath(ctx, x0, y, w, 140, 24); ctx.fillStyle = P.soft; ctx.fill(); ctx.restore(); drawRich(ctx, "暂无票档", x0 + w / 2, y + 30, w, 27, 600, artMuted(), "center", 1); y += 60; }
       else y += Math.ceil(Math.min(tiers.length, 6) / cols) * (ch + gap) - gap;
       if (data.note) y = drawRich(ctx, data.note, x0, y + 21, w, 23, 500, artMuted(), "left", 1.5, "body") + 14;
-      if (qr) {
-        y += 18; const qw = qrSize + 32; const qh = qrSize + 32;
-        ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.fill(); ctx.restore();
-        ctx.save(); roundRectPath(ctx, x0 + (w - qw) / 2, y, qw, qh, 22); ctx.clip(); containDraw(ctx, qr, x0 + (w - qw) / 2 + 16, y + 16, qrSize, qrSize); ctx.restore();
-        y += qh + 6;
-      }
+      if (qrList.length) y = qrGridAt(x0, w);
       return y;
     }
-    /* 默认 qr-side / 其余：左侧票档行 + 右侧二维码 */
+    /* 默认 qr-side / 其余：左侧票档行 + 右侧二维码网格 */
     const splitGap = 30;
-    const qrSide = qr ? qrSize + 40 : 0;
-    const leftW = qrSide ? w - qrSide - splitGap : w;
+    const sideW = qrList.length ? Math.min(qrSize + 44, Math.round(w * 0.45)) : 0;
+    const leftW = sideW ? w - sideW - splitGap : w;
     let ly = y;
     if (!tiers.length) { drawRich(ctx, "暂无票档", x0, ly + 8, leftW, 27, 600, artMuted(), "left", 1); ly += 50; }
     tiers.slice(0, 8).forEach(function (tier) {
@@ -3179,12 +3207,9 @@
       ly += 63;
       drawLine(ctx, x0, ly, x0 + leftW, ly, alphaColor(P.primary, 0.14), 2);
     });
-    if (qr) {
-      const qx = x0 + leftW + splitGap;
-      ctx.save(); ctx.fillStyle = "#ffffff"; roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.fill(); ctx.restore();
-      ctx.save(); roundRectPath(ctx, qx, y, qrSide, qrSide, 20); ctx.clip(); containDraw(ctx, qr, qx + 20, y + 20, qrSize, qrSize); ctx.restore();
-    }
-    y = Math.max(ly, qr ? y + qrSide : ly);
+    let qrBottom = y;
+    if (qrList.length) qrBottom = paintQrGridPx(ctx, qrList, qrImgs, x0 + leftW + splitGap, y + 16, sideW, qrCols, qrSize, P, ink);
+    y = Math.max(ly, qrBottom);
     if (data.note) y = drawRich(ctx, data.note, x0, y + 19, w, 23, 500, artMuted(), "left", 1.5, "body") + 10;
     return y;
   }

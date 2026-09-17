@@ -4,8 +4,8 @@
      1) pdf-lib 底层 API 手工构造 OCG 字典，图层能否被正确挂载到页面与目录；
      2) PDF/A-3b 合规结构（XMP 元数据 / ICC OutputIntent / AF+附件 Source / 字体完整嵌入）。
    运行：node scripts/demo-pdf-a3b-ocg.js [字体路径]
-   产物：.tmp-verapdf/demo-ocg.pdf（普通带图层 PDF）
-         .tmp-verapdf/demo-a3b.pdf（PDF/A-3b 结构 + 附件）
+   产物：_archive/verapdf/demo-ocg.pdf（普通带图层 PDF）
+         _archive/verapdf/demo-a3b.pdf（PDF/A-3b 结构 + 附件）
    ================================================================ */
 "use strict";
 
@@ -15,7 +15,7 @@ const { PDFDocument, PDFName, PDFArray, PDFDict, PDFString, PDFHexString, PDFNum
 const fontkit = require("@pdf-lib/fontkit");
 
 const ROOT = path.join(__dirname, "..");
-const OUT_DIR = path.join(ROOT, ".tmp-verapdf");
+const OUT_DIR = path.join(ROOT, "_archive", "verapdf");
 const ICC_PATH = path.join(OUT_DIR, "icc", "sRGB-v2-magic.icc");
 
 function xmpTimestamp(date) {

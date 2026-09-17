@@ -739,8 +739,8 @@ expectError("text", false, "", "root_type", "顶层字符串被拒绝");
   const tier = nT.value.pages[0].modules[0].data.tiers[0];
   assert.equal(tier.label, "早鸟", "条目 AI 字段保留");
   assert.equal(tier.price, "", "条目缺失子字段补默认");
-  assert.equal(nT.value.pages[0].modules[0].data.qrImage, null, "条目外图片默认 null");
-  assert.equal(nT.value.pages[0].modules[0].data.qrPlacement, "right", "select 默认值为首项");
+  assert.ok(Array.isArray(nT.value.pages[0].modules[0].data.qrItems), "多平台二维码默认空数组");
+  assert.equal(nT.value.pages[0].modules[0].data.qrColumns, "2", "二维码列数默认 2 列");
 
   /* 未知字段即使未经校验也不保留 */
   const nE = AD.normalize({ schemaVersion: 1, name: "x", pages: [{ name: "p", modules: [{ type: "cover", data: { title: "t", evil: "y" } }] }] }, { includeTheme: false });

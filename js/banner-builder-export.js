@@ -81,9 +81,13 @@
     const suppress = document.createElement("style");
     suppress.id = "bb-export-suppress-tags";
     /* 导出白名单反向过滤：凡标记为「仅屏幕显示」的界面元素（板块上移/下移按钮、屏序号标签、
-       空屏提示等）一律不进导出位图。核心内容始终保留，仅剥离编辑器交互件。 */
+       空屏提示等）一律不进导出位图。核心内容始终保留，仅剥离编辑器交互件。
+       另外必须把 .bb-strip 的 overflow:hidden 覆盖为 visible：条幅内首屏画布受
+       aspect-ratio 约束只有 1334px 高，后续内容纵向溢出画布；若保留 hidden，
+       克隆到位图化沙箱后这些溢出内容会被裁掉（导出长图底部被截断）。 */
     suppress.textContent = ".bb-dom-only,.bb-slice-tag,.bb-art-actions{display:none!important}"
       + ".bb-page-canvas,.bb-strip,.bb-page-card{outline:none!important;box-shadow:none!important}"
+      + ".bb-strip{overflow:visible!important}"
       + ".bb-art-module{outline:none!important}";
     document.head.appendChild(suppress);
     try {
@@ -560,6 +564,10 @@
     maxPixels: 130 * 1000 * 1000,         /* 总像素上限（宽×高） */
     maxEstimatedBytes: 700 * 1024 * 1024, /* 估算 RGBA 内存上限（宽×高×4） */
   });
+  /* 连续长图导出底部安全托底像素：条幅内首屏画布受 aspect-ratio 约束固定
+     1334px，后续模块内容纵向溢出；克隆到位图化沙箱后因子像素舍入可能导致
+     溢出内容的最底部几像素被 SVG viewBox 裁掉。附加此值给 stripH 保底。 */
+  const STRIP_EXPORT_BOTTOM_PAD = 80;
   function assertExportBudget(width, height, label) {
     const w = Math.ceil(Number(width) || 0);
     const h = Math.ceil(Number(height) || 0);
@@ -597,7 +605,9 @@
         const node = findPreviewCanvas(page.id);
         if (!node) throw new Error("找不到第 " + (i + 1) + " 屏的预览画布");
         TR("page" + i + "-node zoom=" + (getComputedStyle(node).zoom || "?") + " h=" + node.offsetHeight + "/" + node.scrollHeight);
-        const exportH = Math.max(node.offsetHeight, node.scrollHeight);
+        let exportH = Math.max(node.offsetHeight, node.scrollHeight);
+        /* 内容溢出画布（scrollHeight > offsetHeight）时同样有底部子像素被裁风险，附同样保底 */
+        if (node.scrollHeight > node.offsetHeight) exportH += STRIP_EXPORT_BOTTOM_PAD;
       const bgColor = canvasExportBg(node, page);
       const canvas = await rasterizeDomToCanvas(node, size.pageWidth, exportH, scale, bgColor);
       TR("page" + i + "-rasterized:" + canvas.width + "x" + canvas.height);
@@ -626,7 +636,7 @@
         ? document.getElementById("canvasBody").querySelector(".bb-strip")
         : null;
       if (!stripNode) throw new Error("连续模式预览未激活，请先切换到「连续」再导出长图");
-      const stripH = Math.max(stripNode.offsetHeight, stripNode.scrollHeight);
+      const stripH = Math.max(stripNode.offsetHeight, stripNode.scrollHeight) + STRIP_EXPORT_BOTTOM_PAD;
       /* BB-R11：长图位图化前检查资源预算（宽 × 总高 × 倍率） */
       assertExportBudget(size.pageWidth * scale, stripH * scale, "连续长图导出");
       const canvas = await rasterizeDomToCanvas(stripNode, size.pageWidth, stripH, scale);

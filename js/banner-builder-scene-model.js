@@ -244,9 +244,30 @@
       } else if (module.type === "crossPromo" && data.icon) {
         const cpIcon = imageSizeOf(data, "iconSize", 60, 220, 4) || 120;
         addImg("联动方图标", data.icon, item.x, px(headY + 20), cpIcon, cpIcon, "contain");
-      } else if (module.type === "ticketInfo" && data.qrImage) {
-        const qrSide = imageSizeOf(data, "qrSize", 120, 320, 4) || 208;
-        addImg("购票二维码", data.qrImage, px(item.x + item.w - qrSide - 20), px(headY + 20), qrSide, qrSide, "contain");
+      } else if (module.type === "ticketInfo") {
+        /* 多平台二维码网格：每张二维码独立图层 + 平台名称文字，方便 PSD 逐张编辑 */
+        const qrList = (Array.isArray(data.qrItems) && data.qrItems.length)
+          ? data.qrItems
+          : (data.qrImage && data.qrImage.url ? [{ icon: data.qrImage, label: "" }] : []);
+        const qrSize = imageSizeOf(data, "qrSize", 120, 320, 4) || 208;
+        const qrSide = qrSize + 40;
+        let qrY = headY + 20;
+        const qrCols = Math.max(1, Math.min(4, Number(data.qrColumns) || 2));
+        const gap = 20;
+        const cw = (qrSide - gap * (qrCols - 1)) / qrCols;
+        const box = Math.max(48, Math.min(qrSize, cw - 16 > 0 ? cw - 16 : cw));
+        qrList.forEach(function (qrItem, qi) {
+          if (qrItem.icon && qrItem.icon.url) {
+            const col = qi % qrCols;
+            const row = Math.floor(qi / qrCols);
+            const cx = px(item.x + item.w - qrSide + col * (cw + gap));
+            const cy = px(qrY + row * (box + 46 + gap));
+            addImg("购票二维码 " + (qi + 1), qrItem.icon, cx + Math.round((cw - box) / 2), cy + 12, box, box, "contain");
+            if (qrItem.label) {
+              addT("平台名 " + (qi + 1), qrItem.label, cx + cw / 2, px(qrY + row * (box + 46 + gap) + box + 24), 21, st.primaryDark, "center");
+            }
+          }
+        });
       } else if (module.type === "castList") {
         /* BB-R09：列表式阵容——每位成员头像独立图层（左列头像，与预览布局一致） */
         const castAvatarW = imageSizeOf(data, "avatarWidth", 80, 260, 4) || 120;

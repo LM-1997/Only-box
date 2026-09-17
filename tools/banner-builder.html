@@ -1,4 +1,57 @@
 <!DOCTYPE html>
+<!--
+  ===== WYSIWYG 输出底线（所见即所得）=====
+  本工具导出的 PNG（分屏/连续长图）必须与屏幕预览完全一致。任何在页面样式、
+  DOM 结构、导出管线中的修改，都不得破坏以下 WYSIWYG 保障链：
+
+  1. 导出前以 zoom=1 重建预览（js/banner-builder-export.js → withDesignZoom）。
+     预览使用的 CSS zoom 必须被复原为设计原尺寸，避免缩放导致的布局差异。
+
+  2. 字体内联：SVG-as-image 沙箱不继承页面字体，也不能加载外链资源。导出时必须
+     通过 buildFontCss() 把当前文档使用的字体对应的所有 @font-face 规则中的
+     字体二进制（.woff2 等）全部转成 data: URL 内联到沙箱内的 <style> 中。
+     ★ CDN 字体（FontSource / jsDelivr）的 @font-face 使用相对路径 url(./files/...)，
+     必须用 baseUrl 解析为绝对 CDN 地址后再 fetch → dataURL。
+     ★ 所有字体文件 fetch 必须有超时（fetchWithTimeout / fetchAsDataUrl），失败丢弃
+     该条 @font-face（不注入沙箱），绝不保留无法解析的相对路径或 CDN 原始 URL。
+     ★ <link> 必须声明 crossorigin="anonymous"（js/banner-builder.js → ensureFont），
+     否则 cssRules 会被浏览器封锁导致 buildFontCss 静默返回空。
+     ★ buildFontCss 有签名缓存：同次导出 audit + rasterize 共享一份，避免重复抓取。
+
+  3. 资源内联：图片（<img> src）、CSS 背景图（blockBgImage 等）及数据中的
+     data: URL 都会被内联为 data URL（inlineResources / html-to-image）。
+
+  4. 底色处理：连续模式（长条）下 .bb-page-canvas 的 CSS background-color 固定为
+     transparent（底色由 .bb-strip 的 backgroundColor 承载）。单屏导出时必须通过
+     canvasExportBg() 显式传 page.backgroundColor || doc.backgroundColor，
+     不得依赖 nodeBackground()（会因透明回落白色，深色主题下浅色文字不可见）。
+
+  5. 编辑器交互件白名单反向过滤：仅以下类名的交互件允许在导出时隐藏——
+     .bb-dom-only / .bb-slice-tag / .bb-art-actions。任何新增 UI 元素如果不应
+     出现在最终导出图中，必须挂载其中一类；反之，任何内容模块严禁使用这些类名。
+
+  6. 底部保底：条幅内首屏画布受 aspect-ratio 约束固定 1334px，后续模块内容
+     纵向溢出画布。导出使用 scrollHeight 计算高度，并额外附加
+     STRIP_EXPORT_BOTTOM_PAD（80px）缓冲子像素舍入导致的底部裁切。
+
+  7. 验证方法：修改后必须在浏览器中加载实际文档（含 CDN 字体 + 深色主题），
+     用「导出连续长图」和「导出当前屏 PNG」分别验证——
+       a) 导出 PNG 尺寸与预览 DOM 的 scrollHeight 一致（加上保底像素后）
+       b) 字体字形与预览一致（无回退系统字体导致的换行漂移/重叠）
+       c) 底色与预览一致（非白色浅衬）
+       d) 图片与预览一致（无缺失/位置偏移）
+       e) 所有单元测试（tests/banner-builder*.test.js）通过
+
+  8. 核心文件：
+     - tools/banner-builder.html（本文件）
+     - js/banner-builder.js（UI + 渲染 + 导出入口）
+     - js/banner-builder-export.js（导出管线 + 字体内联 + 位图化）
+     - js/banner-builder-scene-model.js（PSD/PDF 场景建模）
+     - js/banner-builder-pdf-export.js（PDF 导出）
+     - js/banner-builder-backgrounds.js（图案背景引擎）
+
+  底线原则：只要预览中能看到，导出图中就必须有，且位置/颜色/字体完全一致。
+-->
 <html lang="zh-CN" data-page-node-id="e8x3jnVJsJzvWjExTshdy6">
 <head data-page-node-id="adwGSQEbrm5Bt3g0MYgveP">
   <meta charset="UTF-8" data-page-node-id="20CmUZLskUhCCjRyHHFGXp">
@@ -305,6 +358,15 @@
     .bb-color-input::-webkit-color-swatch-wrapper{padding:2px}.bb-color-input::-webkit-color-swatch{border:0;border-radius:4px}
     /* ===== 演出阵容内容容器：grid/flex 列内防长文本撑破 ===== */
     .bb-cast-info{min-width:0}
+    /* ===== 滑块复合控件修正（.bb-input 的 width:100%/min-height:36px/padding 会
+       覆盖前面的 .bb-range-* 规则，导致数值框撑满整行、滑块被压成 0 宽无法拖动。
+       放在样式表末尾重新覆盖：滑块占满剩余空间，数值框收窄为 48px 紧凑输入） ===== */
+    .bb-range-row{display:flex;align-items:center;gap:7px}
+    .bb-range-row .bb-range-slider{width:auto!important;min-width:0;flex:1 1 auto;min-height:auto!important;height:22px;padding:0!important;border:0;margin:0;background:transparent;accent-color:var(--ob-primary);cursor:pointer}
+    .bb-range-row .bb-range-number{width:48px!important;min-width:48px;max-width:48px;flex:0 0 48px;min-height:27px!important;padding:3px 5px!important;text-align:right;font-variant-numeric:tabular-nums}
+    .bb-range-unit{flex:0 0 auto;color:var(--ob-muted);font-size:11px;font-weight:800}
+    /* ===== 票务多平台二维码网格（物料同款网格）：二维码必须 contain 不裁切 ===== */
+    .bb-ticket-qr-grid .bb-art-grid-image{height:var(--bb-mat-icon-size,208px);object-fit:contain;background:#fff;border-radius:12px}
   </style>
 </head>
 <body class="bb-page" data-page-node-id="gEDCPzwlAU0pHnj4YFuEuf">

@@ -295,11 +295,20 @@
     ticketInfo: {
       label: "票务信息",
       createDefault: function () {
-        return withLayout({ bodyAlign: "left", qrImage: null, tiers: [], note: "", qrPlacement: "right", qrSize: 208 });
+        return withLayout({ bodyAlign: "left", qrItems: [], qrColumns: "2", qrSize: 208, tiers: [], note: "" });
       },
       fields: [BODY_ALIGN_FIELD].concat(LAYOUT_FIELDS, [
-        { key: "qrImage", label: "购票二维码", type: "image" },
-        { key: "qrPlacement", label: "二维码位置", type: "select", options: QR_PLACEMENT_OPTIONS },
+        {
+          key: "qrItems",
+          label: "购票平台二维码",
+          type: "objectList",
+          itemLabel: "二维码",
+          fields: [
+            { key: "icon", label: "二维码", type: "image" },
+            { key: "label", label: "平台名称", type: "text", placeholder: "例如：秀动" },
+          ],
+        },
+        { key: "qrColumns", label: "二维码列数", type: "select", options: COLUMN_OPTIONS },
         imageRangeField("qrSize", "二维码大小（px）", 120, 320, 4, 208),
         {
           key: "tiers",
@@ -316,14 +325,17 @@
       summary: function (data) {
         const tiers = data.tiers || [];
         const first = tiers[0];
+        const qrCount = (data.qrItems || []).length || (data.qrImage && data.qrImage.url ? 1 : 0);
         return [
           layoutSummary(data),
           { label: "票档", value: first ? countLabel(tiers.length, "档") + "：" + [first.label, first.price].filter(Boolean).join(" ") : countLabel(tiers.length, "档") },
-          { label: "二维码", value: optionLabel(QR_PLACEMENT_OPTIONS, data.qrPlacement) },
+          { label: "二维码", value: qrCount ? countLabel(qrCount, "个") + " · " + (data.qrColumns || "2") + " 列" : "未设置" },
         ];
       },
       thumbs: function (data) {
-        return withBlockThumb(data, data.qrImage && data.qrImage.url ? [data.qrImage] : []);
+        const list = (data.qrItems || []).map(function (item) { return item.icon; }).filter(function (icon) { return icon && icon.url; });
+        if (!list.length && data.qrImage && data.qrImage.url) list.push(data.qrImage);
+        return withBlockThumb(data, list);
       },
     },
 
