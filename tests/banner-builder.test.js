@@ -6,7 +6,7 @@ const window = {};
 /* document 桩：banner-builder.js 末尾按 readyState 决定是否 init，"loading" + 空 addEventListener 可让模块安全加载而不启动 UI */
 const documentStub = { readyState: "loading", addEventListener: function () {}, removeEventListener: function () {} };
 const ctx = vm.createContext({ window, console, document: documentStub });
-["data/fonts.js", "js/banner-builder-themes.js", "js/banner-builder-constants.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js", "js/banner-builder-backgrounds.js", "js/banner-builder-ai-document.js"].forEach(function (file) {
+["data/fonts.js", "js/banner-builder-themes.js", "js/banner-builder-constants.js", "js/banner-builder-utils.js", "js/banner-builder-font.js", "js/banner-builder-registry.js", "js/banner-builder-model.js", "js/banner-builder-mytemplates.js", "js/banner-builder-module-importer.js", "js/banner-builder-backgrounds.js", "js/banner-builder-ai-document.js"].forEach(function (file) {
   vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file });
 });
 
@@ -962,6 +962,11 @@ expectError("text", false, "", "root_type", "顶层字符串被拒绝");
 console.log("AI 整份长条数据层测试全部通过");
 
 /* ============ 草稿恢复候选构造（banner-builder.js 内部纯函数） ============ */
+/* 渲染层、UI 构件层、草稿逻辑层、事件层需在 banner-builder.js 之前加载（主脚本依赖 BannerBuilderRender / BannerBuilderUi / BannerBuilderDraft / BannerBuilderEvents 全局） */
+vm.runInContext(fs.readFileSync("js/banner-builder-render.js", "utf8"), ctx, { filename: "js/banner-builder-render.js" });
+vm.runInContext(fs.readFileSync("js/banner-builder-ui.js", "utf8"), ctx, { filename: "js/banner-builder-ui.js" });
+vm.runInContext(fs.readFileSync("js/banner-builder-draft.js", "utf8"), ctx, { filename: "js/banner-builder-draft.js" });
+vm.runInContext(fs.readFileSync("js/banner-builder-events.js", "utf8"), ctx, { filename: "js/banner-builder-events.js" });
 vm.runInContext(fs.readFileSync("js/banner-builder.js", "utf8"), ctx, { filename: "js/banner-builder.js" });
 const DraftTools = window.BannerBuilderDraftTools;
 assert.ok(DraftTools && typeof DraftTools.buildDraftCandidate === "function", "草稿候选构造器已暴露");

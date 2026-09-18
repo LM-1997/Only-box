@@ -1,0 +1,12 @@
+# OS / editor junk
+Thumbs.db
+.DS_Store
+desktop.ini
+*.log
+
+# Local tooling
+node_modules/
+# Archived temp / sandbox files（已归档的临时文件与沙箱）
+_archive/
+# Local notes / memory
+.workbuddy/

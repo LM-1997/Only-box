@@ -1,0 +1,201 @@
+/* tool-common.css — 仅依赖 --ob-* 变量（only-box.css 已定义），不新增全局变量 */
+/* 所有工具面板共用的布局与控件样式。每个工具页在 <style> 中只保留自身特有的样式。 */
+
+:root { --tool-panel: rgba(255,255,255,.84); --tool-line: #dce4dd; }
+[hidden] { display: none !important; }
+
+.tool-area {
+  width: min(1080px, calc(100% - 40px));
+  margin: 34px auto 0;
+}
+
+.panel {
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid var(--tool-line);
+  border-radius: var(--ob-radius);
+  background: var(--tool-panel);
+  box-shadow: var(--ob-shadow);
+}
+
+.work-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, .9fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* ── 字段区 ── */
+.field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.hint,
+.field-help {
+  margin: 0;
+  color: var(--ob-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* ── 文本 / 日期 输入 ── */
+.text-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--tool-line);
+  border-radius: 12px;
+  color: var(--ob-ink);
+  background: #fff;
+  font-weight: 650;
+}
+
+.text-input:focus-visible {
+  outline: 3px solid rgba(35,107,79,.18);
+  border-color: var(--ob-primary);
+}
+
+textarea.text-input {
+  min-height: 180px;
+  padding: 12px;
+  line-height: 1.8;
+  resize: vertical;
+}
+
+.date-input {
+  width: 200px;
+  height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--tool-line);
+  border-radius: 12px;
+  color: var(--ob-ink);
+  background: #fff;
+  font-weight: 750;
+}
+
+/* ── 按钮 ── */
+.btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: .16s;
+}
+
+.btn.primary {
+  color: #fff;
+  background: var(--ob-primary);
+  box-shadow: 0 9px 22px rgba(35,107,79,.18);
+}
+
+.btn.primary:hover { background: var(--ob-primary-dark); }
+.btn.secondary { color: var(--ob-ink); background: #e8eee9; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── 分段按钮组 ── */
+.segmented {
+  display: inline-grid;
+  grid-template-columns: var(--seg-cols, 1fr 1fr);
+  padding: 4px;
+  border: 1px solid var(--tool-line);
+  border-radius: 13px;
+  background: #eef2ee;
+}
+
+.segmented button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--ob-muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.segmented button.active {
+  color: #fff;
+  background: var(--ob-primary);
+  box-shadow: 0 5px 14px rgba(35,107,79,.2);
+}
+
+/* ── 预览区 ── */
+.preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.preview-head h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -.03em;
+}
+
+.canvas-wrap {
+  overflow: auto;
+  max-height: var(--canvas-max-h, none);
+  border: 1px solid var(--tool-line);
+  border-radius: 14px;
+  background: #e5e9e5;
+}
+
+.canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+}
+
+/* ── 状态条 ── */
+.status {
+  min-height: 20px;
+  margin: 12px 0 0;
+  color: var(--ob-muted);
+  font-size: 12px;
+}
+
+/* ── 文件选择行 ── */
+.file-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── 复选框行 ── */
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 860px) {
+  .work-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .tool-area { width: calc(100% - 24px); margin-top: 22px; }
+  .panel { padding: 16px; }
+  .segmented { width: 100%; }
+}

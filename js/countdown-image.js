@@ -199,26 +199,15 @@
     if (state.targetDate) generate().catch(() => {});
   });
 
-  controls.bgInput.addEventListener("change", async event => {
+  controls.bgInput.addEventListener("change", event => {
     const file = event.target.files[0];
     event.target.value = "";
     if (!file) return;
-    const token = ++state.loadToken;
-    let opened = null;
-    try {
-      opened = await MobileImageUpload.open(file);
-      if (token !== state.loadToken) {
-        opened.release();
-        return;
-      }
+    OnlyBoxUI.openImage(file, () => ++state.loadToken, "", controls.status).then(result => {
       if (state.background) state.background.release();
-      state.background = { image: opened.image, release: opened.release };
-      opened = null;
+      state.background = { image: result.image, release: result.release };
       if (state.targetDate) generate().catch(() => {});
-    } catch (error) {
-      if (opened) opened.release();
-      controls.status.textContent = MobileImageUpload.errorMessage(error);
-    }
+    }).catch(() => {});
   });
 
   controls.clearBgBtn.addEventListener("click", () => {
@@ -234,18 +223,8 @@
     });
   });
 
-  controls.zipBtn.addEventListener("click", async () => {
-    if (!state.files.length) return;
-    controls.zipBtn.disabled = true;
-    controls.status.textContent = "正在加载打包组件……";
-    try {
-      await CanvasUtils.exportZip(state.files, "countdown-series.zip");
-      controls.status.textContent = "ZIP 已下载。";
-    } catch (error) {
-      controls.status.textContent = "打包失败，请检查网络后重试。";
-    } finally {
-      controls.zipBtn.disabled = false;
-    }
+  controls.zipBtn.addEventListener("click", () => {
+    OnlyBoxUI.downloadZip(controls.zipBtn, state.files, "countdown-series.zip", controls.status);
   });
 
   window.addEventListener("beforeunload", () => {

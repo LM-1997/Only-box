@@ -155,26 +155,16 @@
   }
 
   /* 通用图片载入（Logo / 背景图）：loadToken 防竞态，替换旧图先释放。 */
-  async function loadImage(file, kind) {
-    const tokenKey = kind === "logo" ? "logoLoadToken" : "bgLoadToken";
-    const token = ++state[tokenKey];
-    let opened = null;
-    controls.status.textContent = kind === "logo" ? "正在读取 Logo……" : "正在读取背景图……";
-    try {
-      opened = await MobileImageUpload.open(file);
-      if (token !== state[tokenKey]) {
-        opened.release();
-        return;
-      }
+  function loadImage(file, kind) {
+    const nextToken = kind === "logo" ? () => ++state.logoLoadToken : () => ++state.bgLoadToken;
+    const loadingMsg = kind === "logo" ? "正在读取 Logo……" : "正在读取背景图……";
+    const loadedMsg = kind === "logo" ? "Logo 已载入，显示在牌面顶部居中。" : "主视觉背景已载入，文字已切换为白色并叠加遮罩。";
+    OnlyBoxUI.openImage(file, nextToken, loadingMsg, controls.status).then(result => {
       if (state[kind]) state[kind].release();
-      state[kind] = { image: opened.image, release: opened.release };
-      opened = null;
-      controls.status.textContent = kind === "logo" ? "Logo 已载入，显示在牌面顶部居中。" : "主视觉背景已载入，文字已切换为白色并叠加遮罩。";
+      state[kind] = { image: result.image, release: result.release };
+      OnlyBoxUI.setStatus(controls.status, loadedMsg);
       renderPreview();
-    } catch (error) {
-      if (opened) opened.release();
-      controls.status.textContent = MobileImageUpload.errorMessage(error);
-    }
+    }).catch(() => {});
   }
 
   controls.generateBtn.addEventListener("click", () => {
@@ -223,36 +213,18 @@
     renderPreview();
   });
 
-  controls.overlayRange.addEventListener("input", () => {
-    state.overlayOpacity = Number(controls.overlayRange.value);
-    controls.overlayValue.textContent = state.overlayOpacity + "%";
+  OnlyBoxUI.bindRange(controls.overlayRange, controls.overlayValue, "%", value => {
+    state.overlayOpacity = value;
     renderPreview();
   });
 
-  document.querySelectorAll("[data-theme]").forEach(button => {
-    button.addEventListener("click", () => {
-      state.theme = button.dataset.theme;
-      document.querySelectorAll("[data-theme]").forEach(other => {
-        const active = other === button;
-        other.classList.toggle("active", active);
-        other.setAttribute("aria-pressed", String(active));
-      });
-      renderPreview();
-    });
+  OnlyBoxUI.bindSegmented("theme", value => {
+    state.theme = value;
+    renderPreview();
   });
 
-  controls.zipBtn.addEventListener("click", async () => {
-    if (!state.files.length) return;
-    controls.zipBtn.disabled = true;
-    controls.status.textContent = "正在加载打包组件……";
-    try {
-      await CanvasUtils.exportZip(state.files, "booth-signs.zip");
-      controls.status.textContent = "ZIP 已下载。";
-    } catch (error) {
-      controls.status.textContent = "打包失败，请检查网络后重试。";
-    } finally {
-      controls.zipBtn.disabled = false;
-    }
+  controls.zipBtn.addEventListener("click", () => {
+    OnlyBoxUI.downloadZip(controls.zipBtn, state.files, "booth-signs.zip", controls.status);
   });
 
   window.addEventListener("beforeunload", () => {

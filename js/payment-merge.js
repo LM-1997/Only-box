@@ -117,10 +117,11 @@
       if (previous && previous.cropper) previous.cropper.destroy();
       if (previous && previous.release) previous.release();
       state[platform] = { image: opened.image, src: opened.src, qr, autoQr: { ...qr }, cropper: null, release: opened.release, name: file.name, width: opened.image.naturalWidth, height: opened.image.naturalHeight };
+      const wasConverted = opened.converted;
       opened = null;
       setupPaymentCropper(platform);
       updateMeta(platform);
-      controls.status.textContent = opened.converted ? "HEIC 照片已转换，可继续调整。" : "图片已载入，可继续调整。";
+      controls.status.textContent = wasConverted ? "HEIC 照片已转换，可继续调整。" : "图片已载入，可继续调整。";
       render();
     } catch (error) {
       if (opened) opened.release();
@@ -882,12 +883,13 @@
       state.backgroundRelease = opened.release;
       state.backgroundImageSrc = opened.src;
       state.backgroundImage = opened.image;
+      const wasConverted = opened.converted;
       opened = null;
       state.backgroundColorOpacity = 0;
       controls.bgColorOpacityRange.value = "0";
       controls.bgColorOpacityValue.textContent = "0%";
       setupBackgroundCropper();
-      controls.status.textContent = opened.converted ? "HEIC 背景已转换。" : "背景图片已载入。";
+      controls.status.textContent = wasConverted ? "HEIC 背景已转换。" : "背景图片已载入。";
       render();
     } catch (error) {
       if (opened) opened.release();

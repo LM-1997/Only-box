@@ -129,7 +129,7 @@
       ctx.textAlign = "left";
     }
 
-    controls.status.textContent = "预览已更新，共 " + state.items.length + " 个条目。";
+    OnlyBoxUI.setStatus(controls.status, "预览已更新，共 " + state.items.length + " 个条目。");
   }
 
   function renderRows() {
@@ -222,14 +222,7 @@
   });
 
   controls.downloadBtn.addEventListener("click", () => {
-    canvas.toBlob(blob => {
-      if (!blob) {
-        controls.status.textContent = "生成失败，请重试。";
-        return;
-      }
-      CanvasUtils.downloadBlob(blob, CanvasUtils.sanitizeFilename((state.title.trim() || "价目表")) + "-价目表.png");
-      controls.status.textContent = "PNG 已下载。";
-    }, "image/png");
+    OnlyBoxUI.downloadCanvasPng(canvas, CanvasUtils.sanitizeFilename((state.title.trim() || "价目表")) + "-价目表", controls.status);
   });
 
   window.addEventListener("beforeunload", () => clearTimeout(state.renderTimer));

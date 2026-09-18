@@ -3,7 +3,8 @@
   "private": true,
   "description": "Only-box 纯前端工具箱（GitHub Pages 静态站点）。package.json 仅声明本地开发/测试依赖，运行时不依赖任何构建流程或后端。",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:e2e": "node --test \"tests/e2e/*.test.js\""
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",

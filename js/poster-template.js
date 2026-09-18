@@ -118,71 +118,38 @@
     scheduleRender();
   });
 
-  document.querySelectorAll("[data-template]").forEach(button => {
-    button.addEventListener("click", () => {
-      state.template = button.dataset.template;
-      document.querySelectorAll("[data-template]").forEach(other => {
-        const active = other === button;
-        other.classList.toggle("active", active);
-        other.setAttribute("aria-pressed", String(active));
-      });
-      render();
-    });
-  });
-
-  document.querySelectorAll("[data-tone]").forEach(button => {
-    button.addEventListener("click", () => {
-      state.tone = button.dataset.tone;
-      document.querySelectorAll("[data-tone]").forEach(other => {
-        const active = other === button;
-        other.classList.toggle("active", active);
-        other.setAttribute("aria-pressed", String(active));
-      });
-      render();
-    });
-  });
-
-  controls.bgInput.addEventListener("change", async event => {
-    const file = event.target.files[0];
-    event.target.value = "";
-    if (!file) return;
-    const token = ++state.loadToken;
-    let opened = null;
-    controls.status.textContent = "正在读取背景图……";
-    try {
-      opened = await MobileImageUpload.open(file);
-      if (token !== state.loadToken) {
-        opened.release();
-        return;
-      }
-      if (state.background) state.background.release();
-      state.background = { image: opened.image, release: opened.release };
-      opened = null;
-      controls.status.textContent = "背景图已载入并居中裁切铺满。";
-      render();
-    } catch (error) {
-      if (opened) opened.release();
-      controls.status.textContent = MobileImageUpload.errorMessage(error);
-    }
-  });
-
-  controls.clearBgBtn.addEventListener("click", () => {
-    if (state.background) state.background.release();
-    state.background = null;
-    controls.bgInput.value = "";
-    controls.status.textContent = "已恢复品牌绿渐变背景。";
+  OnlyBoxUI.bindSegmented("template", value => {
+    state.template = value;
     render();
   });
 
+  OnlyBoxUI.bindSegmented("tone", value => {
+    state.tone = value;
+    render();
+  });
+
+  OnlyBoxUI.bindImageUpload({
+    input: controls.bgInput,
+    clearBtn: controls.clearBgBtn,
+    loadToken: () => ++state.loadToken,
+    statusEl: controls.status,
+    loadingMsg: "正在读取背景图……",
+    loadedMsg: "背景图已载入并居中裁切铺满。",
+    clearedMsg: "已恢复品牌绿渐变背景。",
+    onLoaded: (image, release) => {
+      if (state.background) state.background.release();
+      state.background = { image, release };
+      render();
+    },
+    onClear: () => {
+      if (state.background) state.background.release();
+      state.background = null;
+      render();
+    }
+  });
+
   controls.downloadBtn.addEventListener("click", () => {
-    canvas.toBlob(blob => {
-      if (!blob) {
-        controls.status.textContent = "生成失败，请重试。";
-        return;
-      }
-      CanvasUtils.downloadBlob(blob, CanvasUtils.sanitizeFilename(state.title.trim() || "海报") + "-poster.png");
-      controls.status.textContent = "高清 PNG 已下载。";
-    }, "image/png");
+    OnlyBoxUI.downloadCanvasPng(canvas, CanvasUtils.sanitizeFilename(state.title.trim() || "海报") + "-poster", controls.status);
   });
 
   window.addEventListener("beforeunload", () => {

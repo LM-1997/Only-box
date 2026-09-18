@@ -111,8 +111,13 @@ global.window = global;
 });
 const PdfExport = global.BannerBuilderPdfExport;
 
+const FONT_PATH = ".tmp-verapdf/fonts/NotoSansSC-Regular.otf";
+/* 字体文件由外部准备（不入库）。缺失时导出器回落到 PDF 标准字体，
+   此时不会有 /FontFile 流——字体相关的字节断言要跟着降级，否则误报。 */
+const FONT_AVAILABLE = fs.existsSync(FONT_PATH);
+
 async function buildTestPdf() {
-  const fontPath = ".tmp-verapdf/fonts/NotoSansSC-Regular.otf";
+  const fontPath = FONT_PATH;
   const hasFont = fs.existsSync(fontPath);
   const fontBytes = hasFont ? new Uint8Array(fs.readFileSync(fontPath)) : null;
   const iccPath = ".tmp-verapdf/icc/sRGB-v2-magic.icc";
@@ -155,7 +160,10 @@ async function buildTestPdf() {
   assert.ok(s.indexOf("/AFRelationship") > 0 && s.indexOf("/Source") > 0, "附件 AFRelationship=/Source");
   assert.ok(s.indexOf("/EmbeddedFile") > 0 && (s.indexOf("application/json") > 0 || s.indexOf("application#2Fjson") > 0), "EmbeddedFile JSON 附件");
   assert.ok(s.indexOf("/OCProperties") > 0 && s.indexOf("/OCGs") > 0, "OCProperties/OCGs");
-  assert.ok(s.indexOf("/FontFile") > 0 || out.embeddedKeys.length === 0, "字体已嵌入（FontFile）");
+  assert.ok(s.indexOf("/FontFile") > 0 || !FONT_AVAILABLE, "字体可用时必须嵌入 FontFile 流");
+  if (!FONT_AVAILABLE) {
+    console.warn("[提示] 未找到 " + FONT_PATH + "，本次导出回落到 PDF 标准字体，字体嵌入断言已跳过");
+  }
 
   /* 内容流解压断言：OC 包裹 + 圆角算子 + 空流防护 */
   const zlib = require("node:zlib");
